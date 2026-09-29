@@ -41,6 +41,36 @@ createServer(async (req, res) => {
     }
     const path = new URL(req.url, "http://127.0.0.1").pathname;
     res.setHeader("Cache-Control", "no-store");
+    if (path === "/hover-preview") {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end('<html><head><meta charset="UTF-8"><title>Alchemy · 动态避让预览</title></head><body style="margin:0"><iframe title="悬浮避让示例" src="/hover-fixture" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
+      return;
+    }
+    if (path === "/hover-fixture") {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(`<html><head><meta charset="UTF-8"><script src="/preview.js"></script><style>
+        body{margin:0;padding:24px;background:#fffaef;color:#141111;font:14px system-ui;min-height:140vh}
+        h1{font-size:20px}select{padding:8px;margin-bottom:16px;max-width:100%}
+        .card{position:relative;width:min(520px,100%);border-radius:24px;overflow:hidden}
+        .card img{display:block;width:100%;height:auto}.card button{position:absolute;border:0;border-radius:24px;padding:14px 18px;font:700 14px system-ui;cursor:pointer}
+        .save{right:12px;top:12px;background:#e60023;color:white}.board{left:12px;top:12px;background:#fff}
+        .share{bottom:12px;right:12px;background:#fff}.board{display:none}.card[data-layout="crowded"] .board{display:block}
+        .card[data-layout="delayed"] .save{display:none}.card[data-layout="delayed"].entered .save{display:block}
+        .card[data-layout="small"]{width:95px}.card[data-layout="small"] .save,.card[data-layout="small"] .share{display:none}
+        .card[data-layout="blocked"] .save{inset:0;border-radius:0}.status{margin:12px 0}
+      </style></head><body><h1>动态避让 · 示例页面</h1><p>仅测试悬浮选图，不调用 Codex</p>
+        <label>布局 <select id="layout"><option value="save">右上保存按钮</option><option value="crowded">两侧操作按钮</option><option value="delayed">保存按钮延迟出现</option><option value="small">窄图片</option><option value="blocked">图片被控件占满</option></select></label>
+        <div class="card" data-layout="save">${'<div>'.repeat(12)}<img alt="避让测试图" src="${image}">${'</div>'.repeat(12)}<button class="board">我的图板 ▾</button><button class="save">保存</button><button class="share">分享 ↑</button></div>
+        <p class="status" role="status">网站按钮尚未点击</p>
+        <script>
+          const card=document.querySelector('.card');
+          document.querySelector('#layout').onchange=e=>{card.dataset.layout=e.target.value;card.classList.remove('entered')};
+          let reveal;card.onpointerenter=()=>{reveal=setTimeout(()=>card.classList.add('entered'),600)};
+          card.onpointerleave=()=>{clearTimeout(reveal);card.classList.remove('entered')};
+          card.querySelectorAll('button').forEach(button=>button.onclick=()=>document.querySelector('.status').textContent='网站按钮可用：'+button.textContent);
+        </script><script src="/content-scripts/content.js"></script></body></html>`);
+      return;
+    }
     if (path === "/panel-preview") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       // Keep installed top-frame extensions from covering the build under test.

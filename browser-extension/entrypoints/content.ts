@@ -6,6 +6,7 @@ import panelCss from "./popup/style.css?inline";
 import shellCss from "./popup/shell.css?inline";
 import { request } from "../lib/client";
 import { logo } from "../lib/brand";
+import { imageActionEnvironment, placeImageAction, type ActionPlacement } from "../lib/image-action-placement";
 import type { ImageTarget } from "../lib/types";
 
 export default defineContentScript({
@@ -15,7 +16,7 @@ export default defineContentScript({
     host.style.cssText =
       "all:initial;position:fixed;z-index:2147483647;pointer-events:none;inset:0;";
     const shadow = host.attachShadow({ mode: "closed" });
-    shadow.innerHTML = `<button class="pick" type="button" title="将这张图片交给本机 Codex 提取风格"><img src="${logo}" alt="">逆向风格</button>
+    shadow.innerHTML = `<button class="pick" type="button" aria-label="逆向风格" title="逆向风格 · 将这张图片交给本机 Codex"><img src="${logo}" alt=""><span>逆向风格</span></button>
     <section class="panel" role="dialog" aria-label="Alchemy 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC ALCHEMY</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
     <div class="notice" role="alert" hidden><div></div><button class="refresh" type="button">刷新网页</button><button class="dismiss" type="button">关闭</button></div>`;
     const styles = document.createElement("style");
@@ -39,6 +40,7 @@ export default defineContentScript({
       }
       notice.hidden = true;
       panel.hidden = false;
+      button.style.display = "none";
       if (wasHidden) {
         returnFocus ||= (shadow.activeElement || document.activeElement) as HTMLElement;
         closeButton.focus({ preventScroll: true });
@@ -54,6 +56,7 @@ export default defineContentScript({
       panel.hidden = true;
       root?.unmount();
       root = undefined;
+      position();
       if (returnFocus?.isConnected && returnFocus.getClientRects().length) returnFocus.focus({ preventScroll: true });
       returnFocus = undefined;
     };
@@ -69,6 +72,10 @@ export default defineContentScript({
     shadow.querySelector(".refresh")!.addEventListener("click", () => location.reload());
     shadow.querySelector(".dismiss")!.addEventListener("click", () => { notice.hidden = true; });
     let selected: { element: Element; src: string } | undefined;
+    let placement: ActionPlacement | undefined;
+    let anchor: DOMRect | undefined;
+    let fullSize: { width: number; height: number } | undefined;
+    let positioningFrame = 0;
     let busy = false;
     const rect = (element: Element): ImageTarget["rect"] => {
       const r = element.getBoundingClientRect();
@@ -82,18 +89,39 @@ export default defineContentScript({
       };
     };
     const position = () => {
-      if (!selected?.element.isConnected || busy) {
+      if (!selected?.element.isConnected || busy || !panel.hidden || document.hidden) {
         button.style.display = "none";
         return;
       }
       const r = selected.element.getBoundingClientRect();
-      if (r.bottom < 35 || r.top > innerHeight - 25) {
+      if (r.bottom <= 0 || r.right <= 0 || r.top >= innerHeight || r.left >= innerWidth) {
         button.style.display = "none";
         return;
       }
-      button.style.display = "block";
-      button.style.left = `${Math.max(8, Math.min(innerWidth - 130, r.right - 124))}px`;
-      button.style.top = `${Math.max(8, r.top + 10)}px`;
+      if (!fullSize) {
+        button.style.visibility = "hidden";
+        button.style.display = "inline-flex";
+        const measured = button.getBoundingClientRect();
+        fullSize = { width: measured.width, height: measured.height };
+        button.style.visibility = "";
+      }
+      const previous = placement && anchor ? {
+        ...placement,
+        left: placement.left + r.left - anchor.left, right: placement.right + r.left - anchor.left,
+        top: placement.top + r.top - anchor.top, bottom: placement.bottom + r.top - anchor.top,
+      } : undefined;
+      const { obstacles, isClear } = imageActionEnvironment(selected.element, host);
+      placement = placeImageAction(r, { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, fullSize, obstacles, previous, isClear);
+      anchor = r;
+      button.style.display = placement ? "inline-flex" : "none";
+      if (!placement) return;
+      button.dataset.compact = String(placement.compact);
+      button.style.left = `${placement.left}px`;
+      button.style.top = `${placement.top}px`;
+    };
+    const schedulePosition = () => {
+      if (positioningFrame) return;
+      positioningFrame = requestAnimationFrame(() => { positioningFrame = 0; position(); });
     };
     ctx.addEventListener(document, "pointermove", (event) => {
       if (event.composedPath().includes(host) || busy) return;
@@ -130,14 +158,25 @@ export default defineContentScript({
           break;
         }
       }
-      selected = found;
-      position();
+      if (!found && shadow.activeElement === button) return;
+      if (selected?.element !== found?.element || selected?.src !== found?.src) {
+        placement = undefined;
+        anchor = undefined;
+        selected = found;
+        schedulePosition();
+      }
     });
-    ctx.addEventListener(window, "scroll", position, {
+    ctx.addEventListener(window, "scroll", schedulePosition, {
       capture: true,
       passive: true,
     });
-    ctx.addEventListener(window, "resize", position);
+    ctx.addEventListener(window, "resize", schedulePosition);
+    ctx.addEventListener(document, "visibilitychange", schedulePosition);
+    ctx.addEventListener(document, "pointerleave", () => {
+      if (shadow.activeElement !== button) { selected = undefined; schedulePosition(); }
+    });
+    // Hover controls can be mounted late or animated without any pointer movement.
+    ctx.setInterval(() => { if (selected && panel.hidden && !document.hidden) schedulePosition(); }, 240);
     button.addEventListener("click", async (event) => {
       if (!event.isTrusted || !selected || busy) return;
       event.preventDefault();
@@ -180,12 +219,14 @@ export default defineContentScript({
         opening?.cancel();
         panel.hidden = true;
         notice.hidden = true;
+        schedulePosition();
         reply({ ok: true });
       }
     };
     browser.runtime.onMessage.addListener(geometry);
     ctx.onInvalidated(() => {
       opening?.cancel();
+      cancelAnimationFrame(positioningFrame);
       root?.unmount();
       host.remove();
       browser.runtime.onMessage.removeListener(geometry);

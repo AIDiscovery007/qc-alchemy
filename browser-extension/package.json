@@ -2,7 +2,7 @@
   "name": "qc-alchemy-extension",
   "description": "Turn selected images into prompts with your local Codex agent.",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "scripts": {
     "dev": "wxt",
