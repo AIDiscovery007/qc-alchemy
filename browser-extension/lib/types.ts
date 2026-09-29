@@ -1,5 +1,5 @@
 export type Mode = "style" | "recreate" | "reenact";
-export type ReenactInput = {
+export type SubjectInput = {
   subjectImage: string;
   basePrompt: string; // User task instruction; keep the field name for saved jobs.
   promptSourceJobId?: string;
@@ -13,7 +13,7 @@ export type Selection = {
   stage?: string;
   error?: string;
   jobId?: string;
-  reenact?: ReenactInput;
+  reenact?: SubjectInput; // Shared two-image input; retain the saved field name.
   subjectError?: string;
 };
 export type Result = {
@@ -35,7 +35,7 @@ export type Job = {
   result?: Result;
   error?: string;
   threadId?: string;
-  reenact?: Omit<ReenactInput, "subjectImage">;
+  reenact?: Omit<SubjectInput, "subjectImage">;
 };
 export type ImageTarget = {
   src: string;

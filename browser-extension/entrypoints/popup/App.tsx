@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
-import type { Job, Mode, ReenactInput, Selection } from "../../lib/types";
-import ReenactForm from "./ReenactForm";
+import type { Job, Mode, SubjectInput, Selection } from "../../lib/types";
+import SubjectForm from "./SubjectForm";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -143,7 +143,7 @@ export default function App() {
       setBusy(false);
     }
   };
-  const start = async (mode: Mode = preferences.mode, reenact?: ReenactInput) => {
+  const start = async (mode: Mode = preferences.mode, reenact?: SubjectInput) => {
     if (!selection?.image || busy || savingMode) return;
     setBusy(true);
     setError("");
@@ -209,7 +209,7 @@ export default function App() {
   const exportResult = () => {
     if (!job?.result) return;
     const r = job.result;
-    const inputs = job.mode === "reenact" ? "\n使用方法：生成图片时，先附图 1（用户主体图），再附图 2（原始参考模板），然后使用下方提示词。此 Markdown 不包含图片文件。\n" : "";
+    const inputs = job.reenact ? "\n使用方法：生成图片时，先附图 1（用户主体图），再附图 2（原始参考图），然后使用下方提示词。此 Markdown 不包含图片文件。\n" : "";
     const markdown = `# ${r.title}\n\n来源：${job.sourceUrl || "网页图片"}\n模式：${modeName(job.mode)}\n${inputs}\n## 视觉观察\n${r.observations.map((x) => `- ${x}`).join("\n")}\n\n## 中文提示词\n${r.promptZh}\n\n## English prompt\n${r.promptEn}\n\n## 排除项\n${r.negativePrompt || "无"}\n\n## 不确定性\n${r.uncertainties.join("\n") || "无额外说明"}\n`;
     const url = URL.createObjectURL(
       new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
@@ -376,7 +376,7 @@ export default function App() {
               </section>
             )}
 
-            {selection?.image && preferences.mode !== "reenact" && (
+            {selection?.image && preferences.mode === "recreate" && (
               <figure className="image-card">
                 <img src={selection.image} alt="本次选择的参考图片" />
                 <figcaption>
@@ -399,7 +399,7 @@ export default function App() {
                 disabled={savingMode || busy}
                 onClick={() => saveMode("style")}
               >
-                提取风格<span>用于新的主体</span>
+                提取风格<span>保留主体，换风格</span>
               </button>
               <button
                 className={preferences.mode === "recreate" ? "active" : ""}
@@ -420,6 +420,8 @@ export default function App() {
                 ? `正在执行「${modeName(activeJob.mode)}」。完成或取消后，可用同一张图再次逆向。`
                 : preferences.mode === "reenact"
                   ? "默认以图 1 为主体、图 2 为风格与重演模板。可编辑任务指令，自定义保留与迁移的内容。原结果保留在历史记录中。"
+                  : preferences.mode === "style"
+                  ? "上传图 1，保留它的主体、内容与构图，只迁移图 2 的视觉风格。也可仅提取通用风格，留待以后替换主体。"
                   : result
                   ? `当前结果为「${modeName(activeJob.mode)}」。点击下方按钮，用同一张图生成「${modeName(preferences.mode)}」提示词，原结果保留在历史记录中。`
                   : "选好模式后点击下方按钮开始；后续点击网页悬浮按钮也会沿用此模式。"}
@@ -452,7 +454,7 @@ export default function App() {
                 {job?.status === "cancelled" && (
                   <p className="muted">任务已取消，可重新开始。</p>
                 )}
-                {selection && preferences.mode !== "reenact" && (
+                {selection && preferences.mode === "recreate" && (
                   <button
                     className="primary"
                     disabled={!connected || busy || savingMode || running || loadingJob || !selection.image}
@@ -471,11 +473,12 @@ export default function App() {
               </>
             )}
 
-            {selection && <ReenactForm key={selection.id} selection={selection} job={activeJob}
-              active={preferences.mode === "reenact"}
+            {selection && (["style", "reenact"] as const).map((mode) => <SubjectForm key={`${selection.id}-${mode}`} mode={mode} selection={selection} job={activeJob}
+              active={preferences.mode === mode}
               disabled={!connected || busy || savingMode || running || loadingJob || !selection.image}
-              submitting={busy} onSubmit={(input) => start("reenact", input)} />}
-            {!selection && preferences.mode === "reenact" && <p className="fine">先从网页选一张参考图，或打开一条已有逆向记录。</p>}
+              submitting={busy} onSubmit={(input) => start(mode, input)}
+              onExtract={mode === "style" ? () => start("style") : undefined} />)}
+            {!selection && preferences.mode !== "recreate" && <p className="fine">先从网页选一张参考图，或打开一条已有逆向记录。</p>}
 
             {result && (
               <section className="result">
@@ -515,10 +518,10 @@ export default function App() {
                     {lang === "zh" ? result.promptZh : result.promptEn}
                   </p>
                 </div>
-                {activeJob.mode === "style" && (
+                {activeJob.mode === "style" && !activeJob.reenact && (
                   <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
                 )}
-                {activeJob.mode === "reenact" && <p className="fine">出图时按顺序附上图 1（主体图）、图 2（参考模板），再使用此提示词。</p>}
+                {activeJob.reenact && <p className="fine">出图时按顺序附上图 1（主体图）、图 2（参考图），再使用此提示词。</p>}
                 {result.negativePrompt && (
                   <details>
                     <summary>排除项</summary>

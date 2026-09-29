@@ -199,28 +199,28 @@ test("reports agent failure without inventing a result", async (t) => {
   assert.equal(failed.result, undefined);
 });
 
-test("reenact validates all three inputs and the template/prompt pairing before calling Codex", async (t) => {
+for (const mode of ["style", "reenact"]) test(`${mode} validates supplied subject inputs and template/prompt pairing before calling Codex`, async (t) => {
   let calls = 0;
   const { request } = await setup(t, async () => { calls++; return result; });
   const source = await (await request("/jobs", submit())).json();
   await waitFor(request, source.id, "completed");
   const reenact = { subjectImage: image, basePrompt: result.promptZh, promptSourceJobId: source.id };
   for (const input of [
-    undefined, {}, { basePrompt: "test" }, { subjectImage: image, basePrompt: " " },
+    ...(mode === "reenact" ? [undefined] : [null]), {}, { basePrompt: "test" }, { subjectImage: image, basePrompt: " " },
     { ...reenact, subjectImage: "data:image/png;base64,aGVsbG8=" },
     { ...reenact, basePrompt: "x".repeat(20001) },
     { ...reenact, promptSourceJobId: "../../token" },
   ]) {
-    assert.equal((await request("/jobs", submit({ mode: "reenact", reenact: input }))).status, 400);
+    assert.equal((await request("/jobs", submit({ mode, reenact: input }))).status, 400);
   }
   const otherImage = "data:image/jpeg;base64,/9j/2Q==";
-  const mismatch = await request("/jobs", submit({ image: otherImage, mode: "reenact", reenact }));
+  const mismatch = await request("/jobs", submit({ image: otherImage, mode, reenact }));
   assert.equal(mismatch.status, 400);
   assert.match((await mismatch.json()).error, /来源不一致/);
   assert.equal(calls, 1);
 });
 
-test("reenact sends two distinct images and the edited prompt, restores them from history, and keeps old output", async (t) => {
+for (const mode of ["style", "reenact"]) test(`${mode} sends two distinct images and edited instructions, restores history, and keeps old output`, async (t) => {
   const inputs = [];
   const { request, dir } = await setup(t, async (args) => {
     inputs.push({ mode: args.mode, template: await readFile(args.imagePath), subject: args.subjectImagePath && await readFile(args.subjectImagePath), prompt: args.basePrompt });
@@ -230,11 +230,11 @@ test("reenact sends two distinct images and the edited prompt, restores them fro
   await waitFor(request, source.id, "completed");
   const subjectImage = "data:image/jpeg;base64,/9j/2Q==";
   const reenact = { subjectImage, basePrompt: "Edited [SUBJECT] prompt", promptSourceJobId: source.id };
-  const response = await request("/jobs", submit({ mode: "reenact", reenact }));
+  const response = await request("/jobs", submit({ mode, reenact }));
   assert.equal(response.status, 202);
   const job = await response.json();
   await waitFor(request, job.id, "completed");
-  assert.equal(inputs[1].mode, "reenact");
+  assert.equal(inputs[1].mode, mode);
   assert.deepEqual(inputs[1].template, decodeImage(image).bytes);
   assert.deepEqual(inputs[1].subject, decodeImage(subjectImage).bytes);
   assert.equal(inputs[1].prompt, reenact.basePrompt);
@@ -246,7 +246,7 @@ test("reenact sends two distinct images and the edited prompt, restores them fro
   assert.deepEqual(history.find(x => x.id === source.id).result, result);
   assert.equal(history.find(x => x.id === job.id).reenact.subjectImage, undefined, "history metadata must not include full images");
   assert.equal(JSON.parse(await readFile(join(dir, `${job.id}.json`))).reenact.basePrompt, reenact.basePrompt);
-  const retry = await (await request("/jobs", submit({ ...restored, mode: "reenact" }))).json();
+  const retry = await (await request("/jobs", submit({ ...restored, mode }))).json();
   await waitFor(request, retry.id, "completed");
   assert.deepEqual(inputs[2], inputs[1]);
   await rm(join(dir, `${job.id}-subject.jpeg`));
@@ -254,6 +254,10 @@ test("reenact sends two distinct images and the edited prompt, restores them fro
   assert.equal(missing.image, image, "a missing subject must not hide the template or result");
   assert.match(missing.subjectError, /主体图已不存在/);
   assert.equal(missing.reenact.subjectImage, "");
+  const generic = await (await request("/jobs", submit())).json();
+  await waitFor(request, generic.id, "completed");
+  assert.equal(inputs[3].subject, undefined);
+  assert.equal(generic.reenact, undefined);
 });
 
 test("reenact accepts default and custom task instructions without an earlier extraction", async (t) => {
@@ -283,10 +287,17 @@ test("Codex receives subject first, template second, and the submitted user task
   assert.ok(input.find(x => x.type === "skill" && x.name === "alchemy"));
   assert.ok(input.find(x => x.type === "text" && x.text.includes(JSON.stringify(args.basePrompt))));
   for (const mode of ["style", "recreate"]) {
-    const single = agentInput({ ...args, mode });
+    const single = agentInput({ ...args, mode, subjectImagePath: undefined });
     assert.deepEqual(single.filter(x => x.type === "localImage").map(x => x.path), ["/template.png"]);
     assert.ok(!single.some(x => x.text?.includes(args.basePrompt)));
   }
+  const transfer = agentInput({ ...args, mode: "style" });
+  assert.deepEqual(transfer.filter(x => x.type === "localImage").map(x => x.path), ["/subject.png", "/template.png"]);
+  assert.ok(transfer.some(x => x.text?.includes(JSON.stringify(args.basePrompt))));
+  assert.match(transfer[0].text, /保留结构，仅迁移风格/);
+  assert.match(transfer[0].text, /默认由图 1 提供主体身份、内容、姿态/);
+  assert.throws(() => agentInput({ ...args, mode: "style", basePrompt: " " }), /缺少/);
+  assert.deepEqual(agentInput({ ...args, mode: "recreate" }).filter(x => x.type === "localImage").map(x => x.path), ["/template.png"]);
   assert.throws(() => agentInput({ ...args, mode: "reenact", subjectImagePath: undefined }), /缺少/);
 });
 

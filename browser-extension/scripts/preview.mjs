@@ -48,9 +48,9 @@ createServer(async (req, res) => {
         const job = ${JSON.stringify(job)};
         if (state === 'running') { job.status='running';job.stage='Codex 正在观察图片…';delete job.result; }
         if (state === 'failed') { job.status='failed';job.error='Codex 连接失败，请检查登录状态后重试';delete job.result; }
-        const data = { preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'}, selection:state==='empty'?undefined:{id:'preview',jobId:state==='reenact-new'?undefined:'preview',image:${JSON.stringify(image)},capture:'original',sourceUrl:job.sourceUrl} };
+        const data = { preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'}, selection:state==='empty'?undefined:{id:'preview',jobId:state.endsWith('-new')?undefined:'preview',image:${JSON.stringify(image)},capture:'original',sourceUrl:job.sourceUrl} };
         const listeners = new Set();
-        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.6'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.7'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:state')return {ok:true,value:{preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection}};
           if(message.type==='alchemy:query')return {ok:true,value:message.path==='/health'?{ready:true,skill:'alchemy · 预览'}:message.path==='/jobs'?[job]:job};
           if(message.type==='alchemy:mode'){data.preferences.mode=message.mode;return {ok:true};}

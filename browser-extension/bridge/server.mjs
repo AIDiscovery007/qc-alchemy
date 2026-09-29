@@ -133,7 +133,7 @@ export async function createBridge({
             ?.trim();
         } catch {}
         json(200, {
-          version: "0.1.6",
+          version: "0.1.7",
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size,
@@ -207,9 +207,9 @@ export async function createBridge({
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
       const { bytes, extension } = decodeImage(body.image);
       let subject, reenact;
-      if (body.mode === "reenact") {
+      if (body.mode === "reenact" || (body.mode === "style" && body.reenact !== undefined)) {
         if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim())
-          throw bad("主体重演需要主体图和任务指令");
+          throw bad("双图任务需要主体图和任务指令");
         if (body.reenact.basePrompt.length > 20000) throw bad("任务指令最多 20000 字符");
         subject = decodeImage(body.reenact.subjectImage);
         // Keep the paired images within the extension's storage quota.

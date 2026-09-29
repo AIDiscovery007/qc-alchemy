@@ -146,9 +146,19 @@ test("reruns the current or historical image with the explicitly selected mode",
   const withoutInputs = await send({ type: "alchemy:start", id: storage.selection.id, mode: "reenact" });
   assert.match(withoutInputs.error, /主体图/);
   assert.equal(submitted.length, 3);
+  const transfer = { subjectImage: "style-subject", basePrompt: "Keep the subject structure; transfer only rendering." };
+  const style = await send({ type: "alchemy:start", referenceJobId: oldJob, mode: "style", reenact: transfer });
+  assert.equal(style.value.job.mode, "style");
+  assert.deepEqual(submitted[3].reenact, transfer);
+  assert.equal(submitted[3].image, "historical-image");
+  assert.equal(storage.selection.reenact.subjectImage, "style-subject");
+  assert.match((await send({ type: "alchemy:start", id: storage.selection.id, mode: "style", reenact: { basePrompt: "missing subject" } })).error, /主体图/);
+  assert.equal(submitted.length, 4);
   await send({ type: "alchemy:start", id: storage.selection.id, mode: "style" });
-  assert.equal(submitted[3].reenact, undefined, "single-image modes must not receive stale subject inputs");
+  assert.equal(submitted[4].reenact, undefined, "generic extraction must not receive stale subject inputs");
   assert.equal(storage.selection.reenact, undefined);
+  await send({ type: "alchemy:start", id: storage.selection.id, mode: "recreate", reenact: transfer });
+  assert.equal(submitted[5].reenact, undefined, "recreation uses only the reference even if subject inputs are supplied");
 });
 
 test("page panel can read results without receiving the pairing token", async () => {
@@ -176,7 +186,7 @@ test("page panel can read results without receiving the pairing token", async ()
   assert.equal(handlers.message({ type: "alchemy:state" }, { ...sender, frameId: 1 }, () => assert.fail("iframe reply")), undefined);
 });
 
-test("hover in reenact mode captures the template without starting an incomplete job", async () => {
+for (const mode of ["style", "reenact"]) test(`hover in ${mode} mode captures the template without starting an incomplete job`, async () => {
   const calls = [];
   const { handlers, chrome } = await background(async (url) => {
     calls.push(url);
@@ -189,7 +199,7 @@ test("hover in reenact mode captures the template without starting an incomplete
       async convertToBlob() { return new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }); }
     },
   });
-  const storage = { preferences: { token: "test", mode: "reenact" } };
+  const storage = { preferences: { token: "test", mode } };
   chrome.storage.local.get = async () => storage;
   chrome.storage.local.set = async (value) => Object.assign(storage, value);
   const sender = { id: "test", frameId: 0, tab: { id: 4, windowId: 1, url: "https://example.com" } };

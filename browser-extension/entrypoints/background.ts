@@ -6,7 +6,7 @@ import type {
   Job,
   Mode,
   Preferences,
-  ReenactInput,
+  SubjectInput,
   Selection,
 } from "../lib/types";
 
@@ -80,7 +80,7 @@ export default defineBackground(() => {
       );
       if (!preferences?.token) {
         selection.stage = "图片已就绪，请先连接本机 Codex";
-      } else if (preferences.mode === "reenact") {
+      } else if (preferences.mode !== "recreate") {
         selection.stage = "参考图已就绪，请补充主体图；任务指令已默认填好";
       } else {
         const job = await bridge<Job>("/jobs", preferences.token, {
@@ -111,7 +111,7 @@ export default defineBackground(() => {
       throw error;
     }
   };
-  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: ReenactInput) => {
+  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: SubjectInput) => {
     if (selecting) throw new Error("正在处理图片，请稍候");
     selecting = true;
     try {
@@ -120,7 +120,7 @@ export default defineBackground(() => {
         "selection",
       ])) as { preferences?: Preferences; selection?: Selection };
       if (!["style", "recreate", "reenact"].includes(mode)) throw new Error("无效模式");
-      if (mode === "reenact" && (typeof reenact?.subjectImage !== "string" || !reenact.subjectImage || typeof reenact.basePrompt !== "string" || !reenact.basePrompt.trim()))
+      if ((mode === "reenact" || (mode === "style" && reenact !== undefined)) && (typeof reenact?.subjectImage !== "string" || !reenact.subjectImage || typeof reenact.basePrompt !== "string" || !reenact.basePrompt.trim()))
         throw new Error("请上传主体图并填写任务指令");
       const selection = referenceJobId
         ? { ...await reference(referenceJobId, stored.preferences?.token || ""), id: crypto.randomUUID() }
@@ -132,10 +132,10 @@ export default defineBackground(() => {
         mode,
         sourceUrl: selection.sourceUrl,
         capture: selection.capture,
-        reenact: mode === "reenact" ? reenact : undefined,
+        reenact: mode !== "recreate" ? reenact : undefined,
       });
       const next = { ...selection, jobId: job.id, stage: job.stage, error: undefined,
-        reenact: mode === "reenact" ? reenact : undefined, subjectError: undefined };
+        reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined };
       await browser.storage.local.set({ selection: next });
       return { selection: next, job };
     } finally {
