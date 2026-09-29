@@ -6,9 +6,14 @@
 
 插件内逆向后，调用 Codex imagegen 生成。
 
-| 图 1 · 主体原图 | 图 2 · 参考模板 | 生成结果 |
-| --- | --- | --- |
-| ![主体原图](subject.png) | ![参考模板](reference.png) | ![生成结果](result.png) |
+<table>
+  <tr><th width="33%">图 1 · 主体原图</th><th width="33%">图 2 · 参考模板</th><th width="33%">生成结果</th></tr>
+  <tr>
+    <td valign="top"><a href="subject.png"><img src="subject.png" width="280" alt="主体原图" /></a></td>
+    <td valign="top"><a href="reference.png"><img src="reference.png" width="280" alt="参考模板" /></a></td>
+    <td valign="top"><a href="result.png"><img src="result.png" width="280" alt="生成结果" /></a></td>
+  </tr>
+</table>
 
 <details>
 <summary>查看完整 Prompt（中文）</summary>
