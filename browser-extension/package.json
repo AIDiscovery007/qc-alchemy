@@ -1,0 +1,33 @@
+{
+  "name": "qc-alchemy-extension",
+  "description": "Turn selected images into prompts with your local Codex agent.",
+  "private": true,
+  "version": "0.1.6",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "icons": "node scripts/icons.mjs",
+    "prebuild": "npm run icons",
+    "build": "wxt build",
+    "prezip": "npm run icons",
+    "zip": "wxt zip",
+    "bridge": "node bridge/server.mjs",
+    "preview": "node scripts/preview.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "^1.1.5",
+    "typescript": "^5.9.3",
+    "web-ext": "^10.5.0",
+    "wxt": "^0.21.3"
+  }
+}

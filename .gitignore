@@ -1,0 +1,5 @@
+# This repository snapshot contains only the browser extension.
+# Local skills, experiments, downloaded images and prompts remain on disk.
+/*
+!/.gitignore
+!/browser-extension/
