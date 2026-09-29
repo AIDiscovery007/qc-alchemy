@@ -5,6 +5,33 @@ import { runInNewContext } from "node:vm";
 
 const build = new URL("../.output/chrome-mv3/", import.meta.url);
 
+test("deleting projects validates ids and clears only the deleted active selection after success", async () => {
+  const id = "a".repeat(64), other = "b".repeat(64);
+  let fail = false;
+  const calls = [];
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: !fail, json: async () => fail ? { error: "任务正在执行" } : { deletedIds: JSON.parse(options.body).ids } };
+  });
+  const storage = { preferences: { token: "secret" }, selection: { id, projectId: id, image: "saved image", jobId: "saved job" } };
+  chrome.storage.local.get = async () => storage;
+  chrome.storage.local.remove = async (key) => { delete storage[key]; };
+  const sender = { id: "test", frameId: 0, url: "https://pinterest.com/", tab: { id: 4 } };
+  const send = (ids) => new Promise((resolve) => handlers.message({ type: "alchemy:delete-projects", ids }, sender, resolve));
+  for (const ids of [[], [id, "../token"], null, [7], Array(1001).fill(id)]) assert.ok((await send(ids)).error);
+  assert.equal(calls.length, 0);
+  assert.equal((await send([other])).ok, true);
+  assert.equal(storage.selection.projectId, id);
+  fail = true;
+  assert.match((await send([id])).error, /任务正在执行/);
+  assert.equal(storage.selection.image, "saved image");
+  fail = false;
+  assert.equal((await send([id])).ok, true);
+  assert.equal(storage.selection, undefined);
+  assert.ok(calls.every((call) => call.url.endsWith("/projects/delete") && call.options.headers.Authorization === "Bearer secret"));
+  assert.equal(handlers.message({ type: "alchemy:delete-projects", ids: [id] }, { ...sender, id: "other" }, () => assert.fail("untrusted reply")), undefined);
+});
+
 test("generation messages keep credentials in background and constrain job endpoints", async () => {
   const calls = [];
   const { handlers } = await background(async (url, options) => {

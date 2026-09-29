@@ -5,7 +5,7 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
 import { runGeneration, imagegenSkillPath } from "./generation.mjs";
-import { createProjectStore, projectIdFor } from "./projects.mjs";
+import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./projects.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_IMAGE = 8 * 1024 * 1024;
@@ -73,6 +73,7 @@ export async function createBridge({
   generationSkillPath = imagegenSkillPath(),
 } = {}) {
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  await recoverProjectDeletion(dataDir);
   const tokenPath = join(dataDir, "token");
   let token;
   try {
@@ -128,7 +129,10 @@ export async function createBridge({
     }
   }
   projects = await createProjectStore({ dataDir, jobs, readReference: async (id) => decodeImage(await storedImage(id)) });
+  let mutationTail = Promise.resolve();
+  let deletionFailed = false;
   const server = createServer(async (req, res) => {
+    let releaseMutation;
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     const json = (status, value) => {
@@ -167,6 +171,13 @@ export async function createBridge({
       )
         throw bad("配对码不正确，请在设置中重新连接", 401);
       const path = new URL(req.url, "http://127.0.0.1").pathname;
+      // Keep deletion and task setup from writing the same project concurrently.
+      if (req.method === "POST") {
+        const previous = mutationTail;
+        mutationTail = new Promise((resolve) => { releaseMutation = resolve; });
+        await previous;
+        if (deletionFailed) throw bad("项目清理未完成，请重启本机服务后重试", 503);
+      }
       if (req.method === "GET" && path === "/health") {
         let skill;
         try {
@@ -175,7 +186,7 @@ export async function createBridge({
             ?.trim();
         } catch {}
         json(200, {
-          version: "0.1.9",
+          version: "0.1.15",
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size,
@@ -184,6 +195,18 @@ export async function createBridge({
       }
       if (req.method === "GET" && path === "/projects") {
         json(200, projects.list());
+        return;
+      }
+      if (req.method === "POST" && path === "/projects/delete") {
+        const { ids } = await readBody(req);
+        if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || ids.some((id) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)))
+          throw bad("请选择有效项目");
+        const unique = [...new Set(ids)];
+        const history = unique.flatMap((id) => projects.get(id)?.jobs || []);
+        if (history.some((job) => job.status === "running" || controllers.has(job.id) || job.generations?.some((item) => item.status === "running" || controllers.has(item.id))))
+          throw bad("所选项目仍在逆向或生图，请完成或取消任务后再删除", 409);
+        try { json(200, { deletedIds: await projects.remove(unique) }); }
+        catch (error) { deletionFailed = true; throw error; }
         return;
       }
       if (req.method === "POST" && path === "/projects") {
@@ -222,10 +245,11 @@ export async function createBridge({
         if (generationMatch[2] && !generation) throw bad("生图记录不存在", 404);
         if (req.method === "GET" && generationMatch[3] === "image") {
           if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
+          const imagePath = resolve(dataDir, `${generation.id}-generated.${generation.extension}`);
           let bytes;
-          try { bytes = await readFile(join(dataDir, `${generation.id}-generated.${generation.extension}`)); }
+          try { bytes = await readFile(imagePath); }
           catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
-          json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}` });
+          json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath });
           return;
         }
         if (req.method === "POST" && generationMatch[3] === "cancel") {
@@ -412,6 +436,8 @@ export async function createBridge({
         json(error.status || 500, {
           error: error.status ? error.message : "本机服务异常，请检查终端日志",
         });
+    } finally {
+      releaseMutation?.();
     }
   });
   server.on("close", () => {

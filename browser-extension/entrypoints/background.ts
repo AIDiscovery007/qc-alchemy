@@ -180,23 +180,44 @@ export default defineBackground(() => {
         return reference(message.id, token);
       case "alchemy:project-reference":
         return projectReference(message.id, token);
+      case "alchemy:delete-projects": {
+        if (!Array.isArray(message.ids) || !message.ids.length || message.ids.length > 1000 || message.ids.some((id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)))
+          throw new Error("请选择有效项目");
+        if (selecting) throw new Error("正在处理图片，请稍后重试");
+        selecting = true;
+        try {
+          const result = await bridge<{ deletedIds: string[] }>("/projects/delete", token, { ids: message.ids });
+          const latest = await browser.storage.local.get("selection") as { selection?: Selection };
+          if (latest.selection?.projectId && result.deletedIds.includes(latest.selection.projectId))
+            await browser.storage.local.remove("selection");
+          return result;
+        } finally { selecting = false; }
+      }
       case "alchemy:open-project": {
         if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id)) throw new Error("无效项目");
-        const project = await bridge<Project>(`/projects/${message.id}`, token);
-        let next: Selection;
-        try { next = await projectReference(message.id, token); }
-        catch (error) { next = { id: project.id, projectId: project.id, sourceUrl: project.sourceUrl, capture: project.capture, error: (error as Error).message }; }
-        await browser.storage.local.set({ selection: next });
-        return next;
+        if (selecting) throw new Error("正在处理项目，请稍后重试");
+        selecting = true;
+        try {
+          const project = await bridge<Project>(`/projects/${message.id}`, token);
+          let next: Selection;
+          try { next = await projectReference(message.id, token); }
+          catch (error) { next = { id: project.id, projectId: project.id, sourceUrl: project.sourceUrl, capture: project.capture, error: (error as Error).message }; }
+          await browser.storage.local.set({ selection: next });
+          return next;
+        } finally { selecting = false; }
       }
       case "alchemy:ensure-project": {
         if (!selection?.image || selection.id !== message.id) throw new Error("所选图片已变化，请重试");
-        const project = await bridge<Project>("/projects", token, { image: selection.image, sourceUrl: selection.sourceUrl, capture: selection.capture });
-        const latest = await browser.storage.local.get("selection") as { selection?: Selection };
-        if (latest.selection?.id !== selection.id) throw new Error("所选图片已变化，请重试");
-        const next = { ...selection, projectId: project.id };
-        await browser.storage.local.set({ selection: next });
-        return next;
+        if (selecting) throw new Error("正在处理项目，请稍后重试");
+        selecting = true;
+        try {
+          const project = await bridge<Project>("/projects", token, { image: selection.image, sourceUrl: selection.sourceUrl, capture: selection.capture });
+          const latest = await browser.storage.local.get("selection") as { selection?: Selection };
+          if (latest.selection?.id !== selection.id) throw new Error("所选图片已变化，请重试");
+          const next = { ...selection, projectId: project.id };
+          await browser.storage.local.set({ selection: next });
+          return next;
+        } finally { selecting = false; }
       }
       case "alchemy:generate":
       case "alchemy:generation-cancel":
@@ -221,7 +242,7 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

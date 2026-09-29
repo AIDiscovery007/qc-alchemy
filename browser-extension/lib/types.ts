@@ -48,6 +48,7 @@ export type ProjectSummary = {
   sourceUrl: string;
   capture: "original" | "screenshot";
   jobCount: number;
+  busy: boolean;
   modes: Partial<Record<Mode, { status: string; hasImage: boolean }>>;
 };
 export type Project = ProjectSummary & { jobs: Job[] };

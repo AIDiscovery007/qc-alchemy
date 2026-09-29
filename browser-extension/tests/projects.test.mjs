@@ -1,11 +1,97 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import { createBridge, decodeImage } from "../bridge/server.mjs";
 import { projectIdFor } from "../bridge/projects.mjs";
+
+test("deleting a project removes every lane and owned image, preserves others and stays deleted after restart", async (t) => {
+  const { request, dir, restart } = await setup(t);
+  const keep = await (await request("/projects", post({ image: otherImage }))).json();
+  const token = await readFile(join(dir, "token"));
+  const removedJobs = [];
+  for (const mode of ["style", "recreate", "reenact"]) {
+    const response = await request("/jobs", post({ image, mode, ...(mode !== "recreate" ? { reenact: { subjectImage: otherImage, basePrompt: "保留主体" } } : {}) }));
+    const job = await settled(request, (await response.json()).id);
+    await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
+    removedJobs.push(await settled(request, job.id));
+  }
+  const projectId = removedJobs[0].projectId;
+  await writeFile(join(dir, "user-download.png"), "user file");
+  const response = await request("/projects/delete", post({ ids: [projectId] }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { deletedIds: [projectId] });
+  for (const job of removedJobs) {
+    assert.equal((await request(`/jobs/${job.id}`)).status, 404);
+    assert.equal((await request(`/jobs/${job.id}/reference`)).status, 404);
+    assert.equal((await request(`/jobs/${job.id}/generations/${job.generations[0].id}/image`)).status, 404);
+  }
+  const files = await readdir(dir);
+  assert.ok(!files.some((name) => name.includes(projectId) || removedJobs.some((job) => name.includes(job.id) || job.generations.some((item) => name.includes(item.id)))));
+  assert.equal(await readFile(join(dir, "user-download.png"), "utf8"), "user file");
+  assert.deepEqual(await readFile(join(dir, "token")), token);
+  await restart();
+  assert.deepEqual((await (await request("/projects")).json()).map((item) => item.id), [keep.id]);
+  assert.equal((await request(`/projects/${projectId}/reference`)).status, 404);
+  assert.equal((await (await request(`/projects/${keep.id}/reference`)).json()).image, otherImage);
+  const recreated = await (await request("/projects", post({ image }))).json();
+  assert.equal(recreated.id, projectId);
+  assert.equal(recreated.jobCount, 0);
+  assert.deepEqual(recreated.jobs, []);
+});
+
+test("bulk deletion validates the full batch, requires authentication, and handles repeats", async (t) => {
+  const { request, restart } = await setup(t);
+  const first = await (await request("/projects", post({ image }))).json();
+  const second = await (await request("/projects", post({ image: otherImage }))).json();
+  const body = post({ ids: [first.id, second.id] });
+  assert.equal((await request("/projects/delete", { ...body, headers: { Authorization: "" } })).status, 401);
+  assert.equal((await request("/projects/delete", { ...body, headers: { Origin: "https://pinterest.com" } })).status, 403);
+  for (const ids of [[], [first.id, "../token"], [null], first.id, Array(1001).fill(first.id)]) {
+    assert.equal((await request("/projects/delete", post({ ids }))).status, 400);
+    assert.equal((await (await request("/projects")).json()).length, 2);
+  }
+  const responses = await Promise.all([request("/projects/delete", body), request("/projects/delete", post({ ids: [first.id, first.id] }))]);
+  assert.ok(responses.every((response) => response.status === 200));
+  await restart();
+  assert.deepEqual(await (await request("/projects")).json(), []);
+});
+
+for (const task of ["analysis", "generation"]) test(`a running ${task} blocks its whole deletion batch without touching other projects`, async (t) => {
+  let finish;
+  const wait = () => new Promise((resolve) => { finish = resolve; });
+  const { request } = await setup(t, task === "analysis" ? { agent: wait } : { generator: wait });
+  const keep = await (await request("/projects", post({ image: otherImage }))).json();
+  const job = await (await request("/jobs", post({ image, mode: "recreate" }))).json();
+  if (task === "generation") {
+    await settled(request, job.id);
+    await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
+  }
+  const ids = [keep.id, job.projectId];
+  assert.equal((await request("/projects/delete", post({ ids }))).status, 409);
+  assert.equal((await (await request("/projects")).json()).length, 2);
+  assert.equal((await (await request(`/projects/${job.projectId}`)).json()).busy, true);
+  // Unrelated idle projects remain deletable while Codex is working.
+  assert.equal((await request("/projects/delete", post({ ids: [keep.id] }))).status, 200);
+  finish(task === "analysis" ? result : decodeImage(image));
+  await settled(request, job.id);
+  assert.equal((await request("/projects/delete", post({ ids: [job.projectId] }))).status, 200);
+});
+
+test("startup finishes an interrupted deletion before importing its old jobs", async (t) => {
+  const id = "00000000-0000-0000-0000-000000000007";
+  const projectId = projectIdFor(decodeImage(image).bytes);
+  const { request, dir } = await setup(t, {}, async (dir) => {
+    await writeFile(join(dir, `${id}.json`), JSON.stringify({ id, projectId, createdAt: new Date().toISOString(), status: "completed", mode: "style", result }));
+    await writeFile(join(dir, `${id}.png`), decodeImage(image).bytes);
+    await writeFile(join(dir, ".project-deletion.json"), JSON.stringify([`${id}.json`, `${id}.png`, `project-${projectId}.json`]));
+  });
+  assert.deepEqual(await (await request("/projects")).json(), []);
+  assert.deepEqual(await (await request("/jobs")).json(), []);
+  assert.ok(!(await readdir(dir)).includes(".project-deletion.json"));
+});
 
 const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=";
 const otherImage = "data:image/jpeg;base64,/9j/2Q==";

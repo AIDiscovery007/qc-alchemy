@@ -1,5 +1,6 @@
 const paths = {
   chevronDown: "m6 9 6 6 6-6",
+  trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
   settings: "M4 7h16M4 17h16M8 4v6M16 14v6",
   history: "M3 7h6l2 2h10v11H3V7ZM3 7V4h7l2 3h7v2",
   back: "m10 5-7 7 7 7M3 12h18",

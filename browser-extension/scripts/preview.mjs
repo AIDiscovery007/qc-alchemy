@@ -72,7 +72,7 @@ createServer(async (req, res) => {
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
         const projects=[{id:projectId,title:'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
-        const summary=(project)=>({...project,jobCount:project.jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=project.jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))});
+        const summary=(project)=>({...project,busy:project.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:project.jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=project.jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))});
         const selection=(project)=>({id:project.id,projectId:project.id,image:template,capture:'original',sourceUrl:project.sourceUrl});
         const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'?undefined:selection(projects[0])};
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
@@ -80,6 +80,14 @@ createServer(async (req, res) => {
         globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.9'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection})};
           if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',active:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
+          if(message.type==='alchemy:delete-projects') {
+            if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
+            if(projects.some(p=>message.ids.includes(p.id)&&summary(p).busy))return {error:'所选项目仍在逆向或生图'};
+            await new Promise(resolve=>setTimeout(resolve,500));
+            for(let i=projects.length-1;i>=0;i--)if(message.ids.includes(projects[i].id))projects.splice(i,1);
+            if(message.ids.includes(data.selection?.projectId))data.selection=undefined;
+            return {ok:true,value:{deletedIds:message.ids}};
+          }
           if(message.type==='alchemy:mode'){data.preferences.mode=message.mode;return {ok:true};}
           if(message.type==='alchemy:project-reference'||message.type==='alchemy:open-project') {
             const next=selection(projects.find(p=>p.id===message.id));
@@ -98,7 +106,7 @@ createServer(async (req, res) => {
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
           if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
-          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template}};
+          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template,path:'/example/Alchemy/'+message.generationId+'-generated.png'}};
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png'};

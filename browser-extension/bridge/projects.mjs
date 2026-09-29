@@ -1,9 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, readdir, writeFile, rename } from "node:fs/promises";
+import { readFile, readdir, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export const projectIdFor = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
+
+// Finish interrupted deletions before legacy jobs can recreate their projects.
+export async function recoverProjectDeletion(dataDir) {
+  const path = join(dataDir, ".project-deletion.json");
+  let files;
+  try { files = JSON.parse(await readFile(path, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return; throw error; }
+  if (!Array.isArray(files) || files.some((file) => typeof file !== "string" ||
+    !/^(?:project-[a-f0-9]{64}|[a-f0-9-]{36}(?:-subject)?|[\w-]+-generated)[.](?:json|png|jpeg|webp)$/.test(file)))
+    throw new Error("项目删除记录无效，已停止清理");
+  for (const file of files) await rm(join(dataDir, file), { force: true });
+  await rm(path);
+}
 
 export async function createProjectStore({ dataDir, jobs, readReference }) {
   const records = new Map();
@@ -68,10 +81,29 @@ export async function createProjectStore({ dataDir, jobs, readReference }) {
       }
     }
     const updatedAt = [project.updatedAt, ...history.flatMap((job) => [job.createdAt, ...(job.generations || []).map((generation) => generation.createdAt).filter(Boolean)])].sort().at(-1);
-    return { id: project.id, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length, modes };
+    return { id: project.id, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length,
+      busy: history.some((job) => job.status === "running" || job.generations?.some((item) => item.status === "running")), modes };
   }
   return {
     register,
+    async remove(ids) {
+      const history = ids.flatMap(projectJobs);
+      const images = (prefix) => ["png", "jpeg", "webp"].map((extension) => `${prefix}.${extension}`);
+      const files = ids.flatMap((id) => [`project-${id}.json`, ...images(`project-${id}`)]);
+      for (const job of history) {
+        files.push(`${job.id}.json`, ...images(job.id), ...images(`${job.id}-subject`));
+        for (const generation of job.generations || []) {
+          if (/^[\w-]+$/.test(generation.id)) files.push(...images(`${generation.id}-generated`));
+        }
+      }
+      const journal = join(dataDir, ".project-deletion.json");
+      await writeFile(`${journal}.tmp`, JSON.stringify(files), { mode: 0o600 });
+      await rename(`${journal}.tmp`, journal);
+      await recoverProjectDeletion(dataDir);
+      for (const job of history) jobs.delete(job.id);
+      for (const id of ids) records.delete(id);
+      return ids;
+    },
     list: () => [...records.values()].map((project) => summary(project)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     get(id) {
       const project = records.get(id);

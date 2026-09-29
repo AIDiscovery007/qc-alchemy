@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from "../../lib/types";
-import ProjectItem from "./ProjectItem";
+import ProjectHistory from "./ProjectHistory";
 import SubjectForm from "./SubjectForm";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
@@ -28,6 +28,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const modeRevision = useRef(0);
   const projectRevision = useRef(0);
   const selectionRevision = useRef(0);
+  const deletingProjects = useRef(false);
   const [settings, setSettings] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -74,13 +75,18 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         setPreferences((previous) => ({ ...value.preferences,
           mode: revision === modeRevision.current && revision % 2 === 0 ? value.preferences.mode : previous.mode,
         }));
-        if (!initialized) setSettings(!value.preferences.paired);
+        const firstRefresh = !initialized;
+        if (firstRefresh) setSettings(!value.preferences.paired);
         initialized = true;
-        if (value.selection && snapshotRevision === selectionRevision.current) {
+        if (!deletingProjects.current && !value.selection && snapshotRevision === selectionRevision.current) {
+          previous = undefined;
+          setSelection(undefined);
+          setProject(undefined);
+        } else if (!deletingProjects.current && value.selection && snapshotRevision === selectionRevision.current) {
           const next = { ...value.selection,
             image: value.selection.image || (previous?.id === value.selection.id ? previous.image : undefined),
           };
-          if (previous?.id !== next.id) { setHistoryOpen(false); setError(""); }
+          if (previous?.id !== next.id) { if (!firstRefresh) setHistoryOpen(false); setError(""); }
           previous = next;
           setSelection(next);
         }
@@ -107,25 +113,29 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
+      const revision = projectRevision.current;
       try {
-        const revision = projectRevision.current;
         const health = await query<{ ready: boolean; skill: string; active: number }>("/health");
         if (cancelled) return;
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
         setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到 Alchemy 技能");
-        if (selection?.projectId) {
+        if (historyOpen && !deletingProjects.current) {
+          const items = await query<ProjectSummary[]>("/projects");
+          if (!cancelled && revision === projectRevision.current) setProjects(items);
+        }
+        if (selection?.projectId && !deletingProjects.current) {
           const value = await query<Project>(`/projects/${selection.projectId}`);
           if (!cancelled && revision === projectRevision.current) setProject(value);
         }
       } catch (e) {
-        if (!cancelled) { setConnected(false); setConnectionText((e as Error).message); }
+        if (!cancelled && revision === projectRevision.current) { setConnected(false); setConnectionText((e as Error).message); }
       }
       if (!cancelled) timer = setTimeout(refresh, 2000);
     };
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [preferences.paired, selection?.projectId]);
+  }, [preferences.paired, selection?.projectId, historyOpen]);
 
   useEffect(() => {
     if (!job?.reenact || references[job.id] || referenceErrors[job.id]) return;
@@ -210,6 +220,22 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       setHistoryOpen(false);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
+  };
+  const deleteProjects = async (ids: string[]) => {
+    setBusy(true);
+    setError("");
+    selectionRevision.current++;
+    projectRevision.current++;
+    deletingProjects.current = true;
+    try {
+      const { deletedIds } = await request<{ deletedIds: string[] }>({ type: "alchemy:delete-projects", ids });
+      const removedJobs = activeProject && deletedIds.includes(activeProject.id) ? activeProject.jobs.map((job) => job.id) : [];
+      setProjects((items) => items.filter((item) => !deletedIds.includes(item.id)));
+      if (selection?.projectId && deletedIds.includes(selection.projectId)) { setSelection(undefined); setProject(undefined); }
+      setVersions((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
+      setReferences((items) => Object.fromEntries(Object.entries(items).filter(([id, value]) => !removedJobs.includes(id) && !deletedIds.includes(value.projectId || ""))));
+      setReferenceErrors((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
+    } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
   };
   const cancel = async () => {
     if (!job) return;
@@ -311,11 +337,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
 
       <main>
         {historyOpen ? (
-          <section className="history">
-            <h1>项目记录</h1>
-            {!projects.length && <p className="muted">还没有项目。从网页选择一张参考图开始。</p>}
-            {projects.map((item) => <ProjectItem key={item.id} project={item} disabled={busy} onOpen={() => openProject(item)} />)}
-          </section>
+          <ProjectHistory projects={projects} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
         ) : (
           <>
             {!selection && (

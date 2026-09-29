@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { request } from "../../lib/client";
 import type { Job } from "../../lib/types";
 import Icon from "./Icon";
@@ -10,24 +10,33 @@ export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("");
-  const [image, setImage] = useState("");
+  const [asset, setAsset] = useState<{ key: string; image: string; path?: string }>();
+  const [copied, setCopied] = useState("");
+  const [copyError, setCopyError] = useState("");
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const copyRevision = useRef(0);
   const [imageError, setImageError] = useState("");
   const generations = job.generations || [];
   const generation = generations.find((item) => item.id === selected) || generations.at(-1);
+  const assetKey = `${job.id}:${generation?.id}`;
+  const image = asset?.key === assetKey ? asset.image : "";
+  const imagePath = asset?.key === assetKey ? asset.path : undefined;
   const running = generations.find((item) => item.status === "running");
   const generic = job.mode === "style" && !job.reenact;
   const incomplete = /\[SUBJECT\]/i.test(lang === "zh" ? job.result!.promptZh : job.result!.promptEn);
 
   useEffect(() => {
-    setImage("");
+    setAsset(undefined);
+    setCopied("");
+    setCopyError("");
     setImageError("");
     if (generation?.status !== "completed") return;
     let cancelled = false;
-    void request<{ image: string }>({ type: "alchemy:generation-image", id: job.id, generationId: generation.id }).then(
-      (value) => { if (!cancelled) setImage(value.image); },
+    void request<{ image: string; path?: string }>({ type: "alchemy:generation-image", id: job.id, generationId: generation.id }).then(
+      (value) => { if (!cancelled) setAsset({ ...value, key: assetKey }); },
       (error) => { if (!cancelled) setImageError(error.message); },
     );
-    return () => { cancelled = true; };
+    return () => { cancelled = true; copyRevision.current++; clearTimeout(copyTimer.current); };
   }, [job.id, generation?.id, generation?.status]);
 
   const act = async (cancel = false) => {
@@ -41,15 +50,19 @@ export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
     finally { setBusy(false); }
   };
 
-  const download = () => {
-    if (!image || !generation) return;
-    const bytes = Uint8Array.from(atob(image.slice(image.indexOf(",") + 1)), (char) => char.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: image.slice(5, image.indexOf(";")) }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `alchemy-${generation.id.slice(0, 8)}.${generation.extension}`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const copyPath = async () => {
+    setCopyError("");
+    if (!imagePath) { setCopyError("请重启本机服务后复制图片路径。"); return; }
+    const revision = copyRevision.current;
+    try {
+      await navigator.clipboard.writeText(imagePath);
+      if (revision !== copyRevision.current) return;
+      setCopied(assetKey);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(""), 1800);
+    } catch {
+      if (revision === copyRevision.current) setCopyError("复制失败，可手动复制下方路径。");
+    }
   };
 
   return <section className="generation-card" aria-label="图片生成">
@@ -70,7 +83,10 @@ export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
     {generation?.status === "completed" && <>
       {imageError ? <div className="error" role="alert">{imageError}</div> : image ? <>
         <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
-        <button className="secondary" onClick={download}><Icon name="download" />下载图片</button>
+        <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite">
+          <Icon name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}
+        </button>
+        {copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>}
       </> : <p className="fine" role="status">正在读取生成图片…</p>}
     </>}
   </section>;
