@@ -18,7 +18,7 @@ export async function bridge<T>(
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    throw new Error("连接不到本机服务，请在项目目录运行 npm run bridge");
+    throw new Error("连接不到本机服务，请在 browser-extension 目录运行 npm start");
   }
   const value = await response.json();
   if (!response.ok)

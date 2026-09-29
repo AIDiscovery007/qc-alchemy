@@ -1,5 +1,7 @@
 # QC Alchemy for Chrome
 
+首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.16**。
+
 <img src="assets/brand/alchemy.svg" width="72" height="72" alt="QC Alchemy logo" />
 
 将网页中选中的图片交给本机 Codex，通过现有 `alchemy` 技能逆向为提示词。使用 WXT 官方 React + TypeScript 模板、Manifest V3。
@@ -45,20 +47,22 @@
 
 ## 首次使用
 
-要求：Chrome 116+、Node.js 22.15+（建议当前 LTS）、已安装并登录的 Codex CLI。本机实测版本为 Codex CLI 0.153.4。
+要求：可加载 MV3 扩展的浏览器、Node.js 22.15+、已安装并登录的 Codex CLI。首发在 macOS 验证。
 
 ```bash
 cd browser-extension
-npm install
-npm run build
-npm run bridge
+npm run setup
+npm start
+npm run pair
 ```
 
-1. 保持 bridge 终端运行，复制终端输出的配对码。
-2. Chrome 打开 `chrome://extensions`，启用开发者模式，点击「加载已解压的扩展程序」，选择本目录的 `.output/chrome-mv3`。
-3. 点击工具栏 QC Alchemy 打开弹窗，在设置中粘贴配对码并连接。
-4. 打开或刷新 Pinterest 等网页，将鼠标移到图片上，点击「逆向风格」。也可右键图片选择「用 Alchemy 逆向图片风格」。
-5. 网页内浮层打开模板项目，选择一条路径并生成提示词，再按需生成图片。支持复制、导出 Markdown、取消任务及查看项目与版本。也可随时从工具栏弹窗查看。
+`setup` 检查环境、安装锁定依赖并构建；Alchemy 运行 skill 已随仓库提供。`start` 后台启动本机服务，重复运行复用现有服务和配对码；`pair` 显示本机配对码。`npm run status` 查看状态，`npm stop` 停止服务并保留数据。重启电脑后再次运行 `npm start`。
+
+1. 在 Codex 内置浏览器的扩展管理中加载 `.output/chrome-mv3`（支持 ZIP 的客户端也可导入 Release 的 Chrome ZIP）。首次加载及权限确认可能需要用户手动完成。
+2. Chrome 则打开 `chrome://extensions`，启用开发者模式并加载该目录。不同浏览器分别安装。
+3. 打开 Alchemy 设置，粘贴本机配对码并连接。
+4. 打开或刷新 Pinterest 等网页，悬停图片点击「逆向风格」，或右键图片选择 Alchemy。
+5. 网页浮层打开模板项目，选择路径生成提示词，再按需生成图片。
 
 首次默认「提取风格」，选中参考图后上传自己的主体图，再生成风格转换提示词；「完整复刻」只使用参考图。悬浮选图和切换路径均不会自动开始逆向，需点击生成按钮。任务执行中仍可查看其他路径，下一次调用需等待完成或取消。
 
@@ -104,7 +108,7 @@ npm run bridge
 ## 本机 Codex 与技能
 
 - 不集成模型 API、不保存 API Key；通过 `codex app-server` 的 stdio JSON-RPC 调用本机 Codex，沿用其登录和默认模型。本机 Agent 仍可能使用云端模型，并非离线推理。
-- 显式发送 `localImage` 和 `skill` 输入。项目真实技能名为 `alchemy`，位于 `../.agents/skills/alchemy/SKILL.md`；QC Alchemy 是扩展产品名。
+- 显式发送 `localImage` 和 `skill` 输入。项目真实技能名为 `alchemy`，随仓库提供于 `.agents/skills/alchemy/SKILL.md`；QC Alchemy 是扩展产品名。
 - Agent 采用只读 sandbox，不自动批准交互式工具操作。逆向输出使用 JSON Schema 约束和本机校验；生图使用内置工具保存并由 bridge 复制结果。
 - 每次逆向创建独立 Codex 会话；未接管当前桌面聊天，也未验证自动在桌面 App 中展示会话。
 - 2026-09-29 已在 Codex 内置浏览器的 Pinterest 实测 0.1.2：点击悬浮按钮、读取原图、调用本机 Alchemy、显示真实提示词及读取历史记录均通过。不要求原生扩展侧边栏或扩展 iframe。
@@ -119,8 +123,10 @@ npm run bridge
 CODEX_BIN=/absolute/path/to/codex \
 ALCHEMY_SKILL_PATH=/absolute/path/to/alchemy/SKILL.md \
 IMAGEGEN_SKILL_PATH=/absolute/path/to/imagegen/SKILL.md \
-npm run bridge
+npm run setup
 ```
+
+随后运行 `npm start`，路径会从 `.local/runtime.json` 恢复；环境变量可覆盖保存值。
 
 需保留技能的 `references/` 等伴随文件。启动前可用 `codex --version`、`codex login status` 检查 CLI；CLI 不在 PATH 时设置 `CODEX_BIN`。
 
@@ -152,7 +158,7 @@ imagegen 默认位于 `$CODEX_HOME/skills/.system/imagegen/SKILL.md`（未设置
 
 0.1.14 品牌标识采用 Raft 的亮黄 `#ffd440`、墨黑 `#141111`、青色 `#27ccf3` 与粉色 `#fe7da8`，以几何 A、圆角卡片和右下硬阴影呼应插件界面。品牌源图为 `assets/brand/alchemy.svg`。界面内嵌该 SVG，避免扩展资源地址在网页浮层中不可用；`npm run icons` 从同一源图生成 `public/icon/` 中的 16/32/48/96/128 px 图标。`build` 与 `zip` 会先更新图标。
 
-Git 仅保存 `browser-extension/` 与根目录忽略规则。本地 `.local/`（配对令牌、Prompt JSON、参考图、截图）、下载/实验目录、依赖与构建产物不提交，也不会被删除；必要的品牌 SVG/PNG 和项目配置 JSON 正常提交。`alchemy` 技能是外部前置依赖，需在本机安装并通过上面的 `ALCHEMY_SKILL_PATH` 指定；当前工作区已有技能不包含在此次 Git 快照中。
+Git 保存 `browser-extension/`、根目录 README 与忽略规则。本地 `.local/`（配对令牌、Prompt JSON、参考图、截图）、下载/实验目录、依赖与构建产物不提交，也不会被删除；必要的品牌 SVG/PNG 和项目配置 JSON 正常提交。`alchemy` 的发布副本位于本目录 `.agents/skills/alchemy/`，包含运行所需参考文档；不包含作者的历史案例、Prompt JSON、来源索引或图片。`ALCHEMY_SKILL_PATH` 可指定其他完整安装。`imagegen` 使用新用户自己 Codex 中的技能，不随本仓库分发。
 
 ```bash
 npm run dev       # WXT 开发模式

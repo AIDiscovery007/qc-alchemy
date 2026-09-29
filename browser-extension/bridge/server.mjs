@@ -8,6 +8,7 @@ import { runGeneration, imagegenSkillPath } from "./generation.mjs";
 import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./projects.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const MAX_IMAGE = 8 * 1024 * 1024;
 const MAX_BODY = 24 * 1024 * 1024;
 const bad = (message, status = 400) =>
@@ -66,11 +67,12 @@ export async function createBridge({
   dataDir = resolve(process.env.ALCHEMY_DATA_DIR || join(root, ".local")),
   skillPath = resolve(
     process.env.ALCHEMY_SKILL_PATH ||
-      join(root, "../.agents/skills/alchemy/SKILL.md"),
+      join(root, ".agents/skills/alchemy/SKILL.md"),
   ),
   agent = runAgent,
   generator = runGeneration,
   generationSkillPath = imagegenSkillPath(),
+  allowShutdown = false,
 } = {}) {
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   await recoverProjectDeletion(dataDir);
@@ -131,6 +133,7 @@ export async function createBridge({
   projects = await createProjectStore({ dataDir, jobs, readReference: async (id) => decodeImage(await storedImage(id)) });
   let mutationTail = Promise.resolve();
   let deletionFailed = false;
+  let shuttingDown = false;
   const server = createServer(async (req, res) => {
     let releaseMutation;
     res.setHeader("Cache-Control", "no-store");
@@ -176,6 +179,7 @@ export async function createBridge({
         const previous = mutationTail;
         mutationTail = new Promise((resolve) => { releaseMutation = resolve; });
         await previous;
+        if (shuttingDown) throw bad("服务正在停止，请重新启动后再试。", 503);
         if (deletionFailed) throw bad("项目清理未完成，请重启本机服务后重试", 503);
       }
       if (req.method === "GET" && path === "/health") {
@@ -186,11 +190,21 @@ export async function createBridge({
             ?.trim();
         } catch {}
         json(200, {
-          version: "0.1.15",
+          service: "qc-alchemy",
+          version,
+          managed: allowShutdown,
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size,
         });
+        return;
+      }
+      if (req.method === "POST" && path === "/shutdown" && allowShutdown) {
+        if (controllers.size) throw bad("任务执行中，请完成或在插件内取消后再停止服务。", 409);
+        shuttingDown = true;
+        json(200, { stopped: true });
+        server.close();
+        server.closeIdleConnections();
         return;
       }
       if (req.method === "GET" && path === "/projects") {
@@ -450,7 +464,7 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const { server, token, tokenPath } = await createBridge();
+  const { server, tokenPath } = await createBridge({ allowShutdown: process.env.ALCHEMY_MANAGED === "1" });
   const port = Number(process.env.ALCHEMY_PORT || 43187);
   server.on("error", (error) => {
     console.error(
@@ -462,7 +476,7 @@ if (
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(
-      `QC Alchemy 本机服务：http://127.0.0.1:${port}\n在插件设置中粘贴配对码：${token}\n配对码保存在 ${tokenPath}\n仅调用本机 Codex，按 Ctrl+C 停止。`,
+      `QC Alchemy ${version} 本机服务：http://127.0.0.1:${port}\n运行 npm run pair 查看配对码（保存在 ${tokenPath}）。\n仅调用本机 Codex，按 Ctrl+C 停止。`,
     );
   });
   for (const signal of ["SIGINT", "SIGTERM"])

@@ -2,4 +2,5 @@
 # Local skills, experiments, downloaded images and prompts remain on disk.
 /*
 !/.gitignore
+!/README.md
 !/browser-extension/

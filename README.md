@@ -1,0 +1,70 @@
+# QC Alchemy
+
+<img src="browser-extension/assets/brand/alchemy.svg" width="72" height="72" alt="QC Alchemy" />
+
+**选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
+
+当前版本 **0.1.16**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录、模型和额度。
+
+- **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
+- **完整复刻**：分析参考图的内容、构图和视觉表现。
+- **主体重演**：以你的主体重演参考图，任务指令可编辑。
+- **继续生图**：把原图和生成的提示词交给 Codex 的 imagegen，结果保存在本机。
+
+## 让 Codex 帮你安装
+
+在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
+
+```text
+请帮我安装并启动 QC Alchemy 0.1.16：
+https://github.com/AIDiscovery007/qc-alchemy
+
+请获取仓库的 v0.1.16 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
+然后实际完成环境检查、初始化、构建、本机服务启动和配对准备，
+优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
+需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
+不要覆盖已有安装、项目记录或 Codex 全局配置。
+完成后打开 Pinterest，让我能点击图片上的“逆向风格”开始使用。
+请分别说明服务、扩展加载、配对是否已实际验证，尚未完成的步骤不要标为完成。
+```
+
+Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登录和浏览器权限确认可能需要你手动完成**；扩展管理入口因客户端版本而异。Codex 内置浏览器已在开发环境验证过，不保证每个客户端或受管账号都开放第三方扩展加载。没有对应入口时可使用 Chrome。
+
+## 自己安装
+
+需要 Git、Node.js **22.15+**、已安装并登录的 Codex CLI，以及可加载 Chrome MV3 扩展的浏览器。首发在 macOS 验证；其他系统尚未实测。生图额外需要本机 `imagegen` skill 和账户支持的内置生图能力。
+
+```bash
+git clone --branch v0.1.16 --single-branch https://github.com/AIDiscovery007/qc-alchemy.git
+cd qc-alchemy/browser-extension
+npm run setup
+npm start
+npm run pair
+```
+
+`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.16)。在 Alchemy 设置粘贴 `pair` 输出的本机配对码，再刷新网页。
+
+**首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
+
+以后在 `browser-extension` 目录使用：
+
+| 命令 | 用途 |
+| --- | --- |
+| `npm start` | 启动或复用后台服务 |
+| `npm run status` | 查看连接、版本及运行中的任务数 |
+| `npm run doctor` | 检查 CLI 登录、Alchemy 和 imagegen skill |
+| `npm run pair` | 显示配对码，仅粘贴到本机插件设置 |
+| `npm stop` | 停止后台服务，保留项目与配对码；任务进行中会拒绝停止 |
+| `npm run bridge` | 前台运行，适合查看日志或排查问题 |
+
+后台服务不等于开机自启，电脑重启后运行 `npm start`。升级前先完成或取消任务，再停止旧服务、更新文件、重新构建并启动，最后重新加载扩展和刷新网页。
+
+## 数据与能力边界
+
+图片、提示词、生成结果、配对码及本机配置留在 `browser-extension/.local/`，不提交 Git。服务仅监听 `127.0.0.1:43187`，需要配对码。调用本机 Codex 不等于离线推理，图片会按你的 Codex 配置交给模型处理。首次安装不会自动提交图片或消耗生图额度。
+
+悬浮按钮按网页控件位置动态避让；复杂 canvas、跨域 iframe 或被遮挡的图片不保证支持。没有安全空位时可用图片右键入口。逆向结果是近似复刻或风格迁移方案，不保证还原原始 Prompt 或逐像素一致。
+
+- [完整安装步骤与排错](browser-extension/docs/INSTALL_WITH_CODEX.md)
+- [使用方法与开发说明](browser-extension/README.md)
+- [下载 0.1.16](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.16)
