@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, SubjectInput, Selection } from "../../lib/types";
 import SubjectForm from "./SubjectForm";
+import GenerationPanel from "./GenerationPanel";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -222,6 +223,7 @@ export default function App() {
   };
   const activeJob = job?.id === selection?.jobId ? job : undefined;
   const running = activeJob?.status === "running";
+  const generating = activeJob?.generations?.some((item) => item.status === "running");
   const restoring = historicalSelection && !historicalSelection.image && !referenceError;
   const loadingJob = !!selection?.jobId && !activeJob;
   const reading =
@@ -457,7 +459,7 @@ export default function App() {
                 {selection && preferences.mode === "recreate" && (
                   <button
                     className="primary"
-                    disabled={!connected || busy || savingMode || running || loadingJob || !selection.image}
+                    disabled={!connected || busy || savingMode || running || generating || loadingJob || !selection.image}
                     onClick={() => start()}
                     aria-busy={busy || running}
                   >
@@ -475,7 +477,7 @@ export default function App() {
 
             {selection && (["style", "reenact"] as const).map((mode) => <SubjectForm key={`${selection.id}-${mode}`} mode={mode} selection={selection} job={activeJob}
               active={preferences.mode === mode}
-              disabled={!connected || busy || savingMode || running || loadingJob || !selection.image}
+              disabled={!connected || busy || savingMode || running || generating || loadingJob || !selection.image}
               submitting={busy} onSubmit={(input) => start(mode, input)}
               onExtract={mode === "style" ? () => start("style") : undefined} />)}
             {!selection && preferences.mode !== "recreate" && <p className="fine">先从网页选一张参考图，或打开一条已有逆向记录。</p>}
@@ -534,6 +536,8 @@ export default function App() {
                     <p>{result.uncertainties.join("\n")}</p>
                   </details>
                 )}
+                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || busy || !!running}
+                  onUpdate={(updated) => setJob((current) => current?.id === updated.id ? updated : current)} />
                 <button className="secondary" onClick={exportResult}>
                   导出 Markdown ↓
                 </button>

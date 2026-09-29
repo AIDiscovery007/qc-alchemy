@@ -7,6 +7,7 @@ import { once } from "node:events";
 import { request as httpRequest } from "node:http";
 import { createBridge, decodeImage } from "../bridge/server.mjs";
 import { agentInput, parseResult } from "../bridge/agent.mjs";
+import { generationInput } from "../bridge/generation.mjs";
 
 const image =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=";
@@ -18,11 +19,11 @@ const result = {
   negativePrompt: "",
   uncertainties: [],
 };
-async function setup(t, agent = async () => result) {
+async function setup(t, agent = async () => result, generator) {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-test-"));
   const skillPath = join(dir, "SKILL.md");
   await writeFile(skillPath, "---\nname: alchemy\n---\nTest skill");
-  const app = await createBridge({ dataDir: dir, skillPath, agent });
+  const app = await createBridge({ dataDir: dir, skillPath, agent, generator, generationSkillPath: skillPath });
   app.server.listen(0, "127.0.0.1");
   await once(app.server, "listening");
   const url = `http://127.0.0.1:${app.server.address().port}`;
@@ -46,6 +47,100 @@ async function setup(t, agent = async () => result) {
       }),
   };
 }
+
+async function waitGeneration(request, id, status) {
+  for (let i = 0; i < 100; i++) {
+    const job = await (await request(`/jobs/${id}`)).json();
+    if (job.generations?.at(-1)?.status === status && !(await (await request("/health")).json()).active) return job;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Generation did not reach ${status}`);
+}
+
+test("imagegen receives exact prompt, exclusions, explicit skill and ordered real images", () => {
+  const args = { imagePath: "/reference.png", subjectImagePath: "/subject.png", prompt: "保留图 1 的睁眼表情", negativePrompt: "不改变双手姿态", skillPath: "/imagegen/SKILL.md" };
+  const input = generationInput(args);
+  assert.deepEqual(input.filter((x) => x.type === "localImage").map((x) => x.path), [args.subjectImagePath, args.imagePath]);
+  assert.deepEqual(input.at(-1), { type: "skill", name: "imagegen", path: args.skillPath });
+  assert.ok(input[0].text.includes(JSON.stringify({ prompt: args.prompt, negativePrompt: args.negativePrompt })));
+  assert.equal(generationInput({ ...args, subjectImagePath: undefined }).filter((x) => x.type === "localImage").length, 1);
+  assert.throws(() => generationInput({ ...args, prompt: "Draw [SUBJECT]" }), /补充主体/);
+});
+
+for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates from saved inputs and preserves prompt and previous images`, async (t) => {
+  const paired = mode !== "recreate";
+  const finalResult = { ...result, promptZh: "中文生成提示词", promptEn: "English generation prompt", negativePrompt: "排除项" };
+  const calls = [];
+  const { request, dir, url } = await setup(t, async () => finalResult, async (args) => {
+    calls.push(args);
+    return { bytes: decodeImage(image).bytes, extension: "png", revisedPrompt: "actual image prompt" };
+  });
+  const created = await (await request("/jobs", submit({ mode, ...(paired ? { reenact: { subjectImage: image, basePrompt: "保留主体" } } : {}) }))).json();
+  await waitFor(request, created.id, "completed");
+  const path = `/jobs/${created.id}/generations`;
+  assert.equal((await request(path, { method: "POST", body: JSON.stringify({ language: "other" }) })).status, 400);
+  const generate = (language) => request(path, { method: "POST", body: JSON.stringify({ language, imagePath: "/ignored-user-path" }) });
+  assert.equal((await generate("en")).status, 202);
+  const first = await waitGeneration(request, created.id, "completed");
+  assert.equal(calls[0].prompt, finalResult.promptEn);
+  assert.equal(calls[0].negativePrompt, finalResult.negativePrompt);
+  assert.deepEqual(await readFile(calls[0].imagePath), decodeImage(image).bytes);
+  assert.equal(!!calls[0].subjectImagePath, paired);
+  if (paired) assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(image).bytes);
+  const generated = first.generations[0];
+  const imagePath = `${path}/${generated.id}/image`;
+  assert.equal((await fetch(url + imagePath)).status, 401);
+  assert.equal((await request(imagePath, { headers: { Origin: "https://example.com" } })).status, 403);
+  assert.equal((await (await request(imagePath)).json()).image, image);
+  assert.equal((await generate("zh")).status, 202);
+  const second = await waitGeneration(request, created.id, "completed");
+  assert.equal(calls[1].prompt, finalResult.promptZh);
+  assert.deepEqual(second.result, finalResult);
+  assert.equal(second.generations.length, 2);
+  assert.deepEqual(second.generations[0], first.generations[0]);
+  assert.equal((await (await request(imagePath)).json()).image, image);
+  assert.equal(JSON.parse(await readFile(join(dir, `${created.id}.json`))).generations.length, 2);
+  await rm(join(dir, `${generated.id}-generated.png`));
+  assert.equal((await request(imagePath)).status, 404);
+  await rm(join(dir, `${created.id}${paired ? "-subject" : ""}.png`));
+  assert.equal((await generate("zh")).status, 404);
+  assert.equal(calls.length, 2);
+});
+
+test("generation rejects generic prompts, prevents duplicates and preserves cancelled jobs", async (t) => {
+  let finish;
+  const { request } = await setup(t, async () => ({ ...result, promptZh: "实际主体" }), () => new Promise((resolve) => { finish = resolve; }));
+  const generic = await (await request("/jobs", submit())).json();
+  await waitFor(request, generic.id, "completed");
+  assert.equal((await request(`/jobs/${generic.id}/generations`, { method: "POST", body: '{"language":"zh"}' })).status, 400);
+  const created = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  await waitFor(request, created.id, "completed");
+  const path = `/jobs/${created.id}/generations`;
+  const body = { method: "POST", body: '{"language":"zh"}' };
+  const responses = await Promise.all([request(path, body), request(path, body)]);
+  assert.deepEqual(responses.map((x) => x.status).sort(), [202, 409]);
+  assert.equal((await request("/jobs", submit())).status, 409);
+  const job = await (await request(`/jobs/${created.id}`)).json();
+  const generated = job.generations[0];
+  assert.equal((await request(`${path}/${generated.id}/image`)).status, 409);
+  const cancelled = await (await request(`${path}/${generated.id}/cancel`, { method: "POST" })).json();
+  assert.equal(cancelled.generations[0].status, "cancelled");
+  finish({ bytes: decodeImage(image).bytes, extension: "png" });
+  const after = await waitGeneration(request, created.id, "cancelled");
+  assert.equal(after.status, "completed");
+  assert.equal(after.generations[0].extension, undefined);
+});
+
+test("generation failures preserve analysis and never invent an image", async (t) => {
+  const { request } = await setup(t, async () => ({ ...result, promptZh: "确定的主体" }), async () => { throw new Error("当前 Codex 不支持内置生图"); });
+  const created = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  await waitFor(request, created.id, "completed");
+  await request(`/jobs/${created.id}/generations`, { method: "POST", body: '{"language":"zh"}' });
+  const failed = await waitGeneration(request, created.id, "failed");
+  assert.equal(failed.status, "completed");
+  assert.match(failed.generations[0].error, /不支持内置生图/);
+  assert.equal(failed.generations[0].extension, undefined);
+});
 const submit = (extra) => ({
   method: "POST",
   body: JSON.stringify({ image, mode: "style", ...extra }),
@@ -325,6 +420,10 @@ test("restart preserves completed output and marks interrupted jobs as failed", 
       status: "completed",
       createdAt: "2026-01-02",
       result,
+      generations: [
+        { id: "old", status: "completed", extension: "png" },
+        { id: "interrupted", status: "running" },
+      ],
     }),
   );
   await writeFile(join(dir, `${doneId}.png`), decodeImage(image).bytes);
@@ -342,6 +441,8 @@ test("restart preserves completed output and marks interrupted jobs as failed", 
     })
   ).json();
   assert.deepEqual(jobs.find((x) => x.id === doneId).result, result);
+  assert.equal(jobs.find((x) => x.id === doneId).generations[0].status, "completed");
+  assert.equal(jobs.find((x) => x.id === doneId).generations[1].status, "failed");
   assert.equal(jobs.find((x) => x.id === id).status, "failed");
   assert.match(jobs.find((x) => x.id === id).error, /重启/);
   const reference = await (await fetch(`http://127.0.0.1:${server.address().port}/jobs/${doneId}/reference`, {

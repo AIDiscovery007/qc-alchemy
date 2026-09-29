@@ -175,6 +175,20 @@ export default defineBackground(() => {
         return bridge(`/jobs/${message.id}/cancel`, token, {});
       case "alchemy:reference":
         return reference(message.id, token);
+      case "alchemy:generate":
+      case "alchemy:generation-cancel":
+      case "alchemy:generation-image": {
+        if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效任务");
+        const path = `/jobs/${message.id}/generations`;
+        if (message.type === "alchemy:generate") {
+          if (!["zh", "en"].includes(message.language)) throw new Error("无效提示词语言");
+          return bridge(path, token, { language: message.language });
+        }
+        if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
+        return message.type === "alchemy:generation-image"
+          ? bridge(`${path}/${message.generationId}/image`, token)
+          : bridge(`${path}/${message.generationId}/cancel`, token, {});
+      }
       case "alchemy:start":
         return start(message.id, message.mode, message.referenceJobId, message.reenact);
     }
@@ -184,7 +198,7 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:start"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

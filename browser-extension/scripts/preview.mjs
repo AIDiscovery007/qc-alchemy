@@ -48,13 +48,30 @@ createServer(async (req, res) => {
         const job = ${JSON.stringify(job)};
         if (state === 'running') { job.status='running';job.stage='Codex 正在观察图片…';delete job.result; }
         if (state === 'failed') { job.status='failed';job.error='Codex 连接失败，请检查登录状态后重试';delete job.result; }
+        if (state.startsWith('generation')) {
+          job.reenact={basePrompt:'保留图 1 主体，迁移图 2 风格'};
+          job.result.promptZh=job.result.promptZh.replace('[SUBJECT]','图 1 的主体');
+          job.result.promptEn=job.result.promptEn.replace('[SUBJECT]','the subject in image 1');
+          if(state==='generation-completed')job.generations=[{id:'preview-generation',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
+        }
         const data = { preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'}, selection:state==='empty'?undefined:{id:'preview',jobId:state.endsWith('-new')?undefined:'preview',image:${JSON.stringify(image)},capture:'original',sourceUrl:job.sourceUrl} };
         const listeners = new Set();
-        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.7'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.8'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:state')return {ok:true,value:{preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection}};
           if(message.type==='alchemy:query')return {ok:true,value:message.path==='/health'?{ready:true,skill:'alchemy · 预览'}:message.path==='/jobs'?[job]:job};
           if(message.type==='alchemy:mode'){data.preferences.mode=message.mode;return {ok:true};}
           if(message.type==='alchemy:reference')return {ok:true,value:{...data.selection,id:job.id,jobId:job.id}};
+          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:${JSON.stringify(image)}}};
+          if(message.type==='alchemy:generate') {
+            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png'};
+            job.generations||=[];job.generations.push(generation);
+            setTimeout(()=>{if(generation.status==='running'){generation.status='completed';generation.stage='图片已生成';}},5000);
+            return {ok:true,value:structuredClone(job)};
+          }
+          if(message.type==='alchemy:generation-cancel') {
+            const generation=job.generations.find(item=>item.id===message.generationId);
+            generation.status='cancelled';generation.stage='已取消';return {ok:true,value:structuredClone(job)};
+          }
           if(message.type==='alchemy:select'){
             if(state==='invalidated')throw new Error('Extension context invalidated.');
             listeners.forEach(fn=>fn({type:'alchemy:show'},{},()=>{}));return {ok:true};

@@ -4,12 +4,28 @@ import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
+import { runGeneration, imagegenSkillPath } from "./generation.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_IMAGE = 8 * 1024 * 1024;
 const MAX_BODY = 24 * 1024 * 1024;
 const bad = (message, status = 400) =>
   Object.assign(new Error(message), { status });
+
+async function readBody(req) {
+  if (!req.headers["content-type"]?.startsWith("application/json")) throw bad("Content-Type must be application/json", 415);
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) throw bad("请求过大", 413);
+    chunks.push(chunk);
+  }
+  let body;
+  try { body = JSON.parse(Buffer.concat(chunks).toString()); } catch { throw bad("无效 JSON"); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw bad("无效请求");
+  return body;
+}
 
 export function decodeImage(dataUrl) {
   if (typeof dataUrl !== "string" || dataUrl.length > MAX_BODY)
@@ -40,6 +56,8 @@ export async function createBridge({
       join(root, "../.agents/skills/alchemy/SKILL.md"),
   ),
   agent = runAgent,
+  generator = runGeneration,
+  generationSkillPath = imagegenSkillPath(),
 } = {}) {
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const tokenPath = join(dataDir, "token");
@@ -57,7 +75,7 @@ export async function createBridge({
     writeFile(join(dataDir, `${job.id}.json`), JSON.stringify(job), {
       mode: 0o600,
     });
-  const storedImage = async (id, subject = false) => {
+  const storedImage = async (id, subject = false, asPath = false) => {
     for (const extension of ["png", "jpeg", "webp"]) {
       let bytes;
       try {
@@ -68,7 +86,7 @@ export async function createBridge({
       }
       const image = `data:image/${extension};base64,${bytes.toString("base64")}`;
       decodeImage(image);
-      return image;
+      return asPath ? join(dataDir, `${id}${subject ? "-subject" : ""}.${extension}`) : image;
     }
     throw bad(subject ? "这条记录的主体图已不存在，请重新上传主体图。" : "这条历史记录的原图已不存在，请回到网页重新选择图片。", 404);
   };
@@ -80,6 +98,12 @@ export async function createBridge({
         job.status = "failed";
         job.error = "本机服务已重启，请重新逆向";
         await save(job);
+      }
+      for (const generation of job.generations || []) {
+        if (generation.status === "running") {
+          Object.assign(generation, { status: "failed", stage: "生图中断", error: "本机服务已重启，请重新生成图片" });
+          await save(job);
+        }
       }
       jobs.set(job.id, job);
     } catch {
@@ -133,7 +157,7 @@ export async function createBridge({
             ?.trim();
         } catch {}
         json(200, {
-          version: "0.1.7",
+          version: "0.1.8",
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size,
@@ -147,6 +171,69 @@ export async function createBridge({
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
             .slice(0, 30),
         );
+        return;
+      }
+      const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|cancel))?$/.exec(path);
+      if (generationMatch) {
+        const job = jobs.get(generationMatch[1]);
+        if (!job) throw bad("任务不存在", 404);
+        const generation = job.generations?.find((item) => item.id === generationMatch[2]);
+        if (generationMatch[2] && !generation) throw bad("生图记录不存在", 404);
+        if (req.method === "GET" && generationMatch[3] === "image") {
+          if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
+          let bytes;
+          try { bytes = await readFile(join(dataDir, `${generation.id}-generated.${generation.extension}`)); }
+          catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
+          json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}` });
+          return;
+        }
+        if (req.method === "POST" && generationMatch[3] === "cancel") {
+          if (generation.status === "running") {
+            Object.assign(generation, { status: "cancelled", stage: "已取消" });
+            controllers.get(generation.id)?.abort();
+            await save(job);
+          }
+          json(200, job);
+          return;
+        }
+        if (req.method !== "POST" || generationMatch[2]) throw bad("Not found", 404);
+        if (job.status !== "completed" || !job.result) throw bad("请先完成提示词逆向", 409);
+        if (job.mode === "style" && !job.reenact) throw bad("通用风格需要先补充主体图并重新逆向，才能生成图片");
+        if (controllers.size) throw bad("已有 Codex 任务正在执行，请等待完成或取消", 409);
+        const body = await readBody(req);
+        if (!["zh", "en"].includes(body.language)) throw bad("无效提示词语言");
+        const prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
+        if (!prompt?.trim() || /\[SUBJECT\]/i.test(prompt)) throw bad("提示词仍缺少主体，请补充后重新逆向");
+        const imagePath = await storedImage(job.id, false, true);
+        const subjectImagePath = job.reenact ? await storedImage(job.id, true, true) : undefined;
+        try { await readFile(generationSkillPath); } catch { throw bad("找不到 imagegen 技能，请设置 IMAGEGEN_SKILL_PATH", 503); }
+        if (controllers.size) throw bad("已有 Codex 任务正在执行", 409);
+        const id = randomUUID();
+        const controller = new AbortController();
+        controllers.set(id, controller);
+        const next = { id, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt: job.result.negativePrompt };
+        job.generations ||= [];
+        job.generations.push(next);
+        try { await save(job); } catch (error) { controllers.delete(id); job.generations.pop(); throw error; }
+        json(202, job);
+        void (async () => {
+          try {
+            const output = await generator({ imagePath, subjectImagePath, prompt, negativePrompt: next.negativePrompt,
+              skillPath: generationSkillPath, cwd: root, signal: controller.signal,
+              onProgress: (update) => { if (next.status === "running") Object.assign(next, update); },
+            });
+            if (next.status === "running") {
+              if (!["png", "jpeg", "webp"].includes(output.extension)) throw new Error("生图返回了不支持的文件格式");
+              await writeFile(join(dataDir, `${id}-generated.${output.extension}`), output.bytes, { mode: 0o600 });
+              if (next.status === "running") Object.assign(next, { status: "completed", stage: "图片已生成", extension: output.extension, revisedPrompt: output.revisedPrompt });
+            }
+          } catch (error) {
+            if (next.status === "running") Object.assign(next, { status: "failed", stage: "生图失败", error: error.message });
+          } finally {
+            await save(job).catch((error) => console.error("保存生图任务失败:", error.message));
+            controllers.delete(id);
+          }
+        })();
         return;
       }
       const idMatch = /^\/jobs\/([\da-f-]{36})(\/(?:cancel|reference))?$/.exec(path);
@@ -186,24 +273,8 @@ export async function createBridge({
       if (req.method !== "POST" || path !== "/jobs")
         throw bad("Not found", 404);
       if (controllers.size)
-        throw bad("已有图片正在逆向，请等待完成或取消当前任务", 409);
-      if (!req.headers["content-type"]?.startsWith("application/json"))
-        throw bad("Content-Type must be application/json", 415);
-      let size = 0;
-      const chunks = [];
-      for await (const chunk of req) {
-        size += chunk.length;
-        if (size > MAX_BODY) throw bad("请求过大", 413);
-        chunks.push(chunk);
-      }
-      let body;
-      try {
-        body = JSON.parse(Buffer.concat(chunks).toString());
-      } catch {
-        throw bad("无效 JSON");
-      }
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        throw bad("无效请求");
+        throw bad("已有 Codex 任务正在执行，请等待完成或取消当前任务", 409);
+      const body = await readBody(req);
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
       const { bytes, extension } = decodeImage(body.image);
       let subject, reenact;

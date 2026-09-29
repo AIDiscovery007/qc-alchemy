@@ -25,7 +25,8 @@ body {
 }
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 button {
@@ -38,6 +39,8 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
 .file-picker:focus-within {
   outline: 2px solid #76a246;
   outline-offset: 3px;
@@ -56,6 +59,17 @@ a {
   display: flex;
   flex-direction: column;
 }
+.generation-card {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid #dce2d1;
+  border-radius: 14px;
+  background: #edf1e6;
+}
+.generation-card h2 { margin: 0; font-size: 16px; }
+.generated-image { display: block; width: 100%; height: auto; margin-top: 14px; border-radius: 8px; }
+.generation-picker { display: grid; gap: 6px; margin-top: 14px; font-size: 12px; }
+.generation-picker select { width: 100%; padding: 8px; border: 1px solid #cbd3bf; border-radius: 8px; color: inherit; background: #f7f7f2; }
 header {
   display: flex;
   align-items: center;

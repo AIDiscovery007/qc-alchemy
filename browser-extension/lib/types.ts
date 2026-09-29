@@ -36,6 +36,20 @@ export type Job = {
   error?: string;
   threadId?: string;
   reenact?: Omit<SubjectInput, "subjectImage">;
+  generations?: Generation[];
+};
+export type Generation = {
+  id: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  stage: string;
+  createdAt: string;
+  language: "zh" | "en";
+  prompt: string;
+  negativePrompt: string;
+  threadId?: string;
+  extension?: "png" | "jpeg" | "webp";
+  revisedPrompt?: string;
+  error?: string;
 };
 export type ImageTarget = {
   src: string;

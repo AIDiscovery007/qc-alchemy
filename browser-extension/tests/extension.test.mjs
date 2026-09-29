@@ -5,6 +5,32 @@ import { runInNewContext } from "node:vm";
 
 const build = new URL("../.output/chrome-mv3/", import.meta.url);
 
+test("generation messages keep credentials in background and constrain job endpoints", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ status: "running" }) };
+  });
+  const sender = { id: "test", frameId: 0, url: "https://www.pinterest.com/", tab: { id: 4 } };
+  const send = (message) => new Promise((resolve) => handlers.message(message, sender, resolve));
+  const id = "00000000-0000-0000-0000-000000000001";
+  const generationId = "00000000-0000-0000-0000-000000000002";
+  assert.equal((await send({ type: "alchemy:generate", id, language: "en" })).ok, true);
+  assert.deepEqual(JSON.parse(calls[0].options.body), { language: "en" });
+  assert.equal(calls[0].options.headers.Authorization, "Bearer test");
+  assert.ok(calls[0].url.endsWith(`/jobs/${id}/generations`));
+  assert.equal((await send({ type: "alchemy:generation-image", id, generationId })).ok, true);
+  assert.ok(calls[1].url.endsWith(`/${generationId}/image`));
+  assert.equal((await send({ type: "alchemy:generation-cancel", id, generationId })).ok, true);
+  assert.ok(calls[2].url.endsWith(`/${generationId}/cancel`));
+  for (const message of [
+    { type: "alchemy:generate", id: "../token", language: "en" },
+    { type: "alchemy:generate", id, language: "bad" },
+    { type: "alchemy:generation-image", id, generationId: "../../token" },
+  ]) assert.ok((await send(message)).error);
+  assert.equal(calls.length, 3);
+});
+
 test("built extension uses a popup without declaring unsupported native side panels", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("manifest.json", build), "utf8"),
