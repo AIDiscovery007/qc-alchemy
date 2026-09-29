@@ -23,6 +23,8 @@ metadata/
 output/
 tmp/
 coverage/
+# Local design references for future UI work.
+/design-extract-output/
 .env
 .env.*
 !.env.example

@@ -4,6 +4,8 @@ import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from
 import ProjectItem from "./ProjectItem";
 import SubjectForm from "./SubjectForm";
 import GenerationPanel from "./GenerationPanel";
+import Icon from "./Icon";
+import SelectField from "./SelectField";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -13,7 +15,7 @@ const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" 
   : job.generations?.some((item) => item.status === "completed") ? "提示词 + 图片" : "提示词已就绪";
 const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演" })[mode];
 
-export default function App() {
+export default function App({ embedded = false }: { embedded?: boolean }) {
   const [preferences, setPreferences] = useState(defaults);
   const [tokenDraft, setTokenDraft] = useState("");
   const [selection, setSelection] = useState<Selection>();
@@ -35,6 +37,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [lang, setLang] = useState<"zh" | "en">("zh");
   const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const activeProject = project?.id === selection?.projectId ? project : undefined;
   const modeJobs = (mode: Mode) => activeProject?.jobs.filter((item) => item.mode === mode) || [];
   const modeJob = (mode: Mode) => {
@@ -51,6 +54,11 @@ export default function App() {
   const referenceError = job && referenceErrors[job.id];
   const restoring = !!job?.reenact && !references[job.id] && !referenceError;
   const blocked = !connected || busy || savingMode || serviceBusy || !!running || !!generating || loadingProject || restoring;
+
+  useEffect(() => {
+    setCopied(false);
+    return () => clearTimeout(copyTimer.current);
+  }, [job?.id, lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +222,8 @@ export default function App() {
         lang === "zh" ? job!.result!.promptZh : job!.result!.promptEn,
       );
       setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
       setError("复制失败，请选中提示词手动复制");
     }
@@ -236,37 +245,38 @@ export default function App() {
 
   return (
     <div className="app">
-      <header>
+      {!embedded && <header>
         <div className="brand">
           <img className="brand-mark" src={logo} alt="" />
-          <div>
-            <strong>Alchemy</strong>
-            <span className="eyebrow">IMAGE TO PROMPT</span>
-          </div>
+          <strong>QC Alchemy</strong>
         </div>
+      </header>}
+      <div className="connection">
+        <span className={`dot ${connected ? "online" : ""}`} />
+        <span title={connectionText}>
+          {connected ? "Codex 已连接" : "Codex 未连接"}
+        </span>
+        <button className="text-button" disabled={busy} onClick={showHistory} aria-expanded={historyOpen}>
+          <Icon name={historyOpen ? "back" : "history"} />
+          {historyOpen ? "返回项目" : "项目记录"}
+        </button>
         <button
           className="icon-button"
           title="连接设置"
           aria-label="连接设置"
+          aria-expanded={settings}
           onClick={() => {
             setSettings(!settings);
             setError("");
           }}
         >
-          ⚙
+          <Icon name="settings" />
         </button>
-      </header>
-      <div className="connection">
-        <span className={`dot ${connected ? "online" : ""}`} />
-        <span title={connectionText}>
-          {connected ? connectionText : "本机 Codex 未连接"}
-        </span>
-        <button onClick={() => setSettings(!settings)}>设置 ↗</button>
       </div>
 
       {settings && (
         <section className="settings card">
-          <h2>连接你的本机 Codex</h2>
+          <h2>连接 Codex</h2>
           <p>在扩展项目目录启动服务，复制终端显示的配对码。</p>
           <code className="command">npm run bridge</code>
           <label htmlFor="pair-token">本机配对码</label>
@@ -288,9 +298,6 @@ export default function App() {
           >
             {busy ? "正在连接…" : "连接 Codex"}
           </button>
-          <p className="fine">
-            无需模型 API Key。分析沿用本机 Codex 的登录和模型配置。
-          </p>
         </section>
       )}
       {error && (
@@ -303,16 +310,9 @@ export default function App() {
       )}
 
       <main>
-        <div className="section-heading">
-          <span className="eyebrow">你的灵感，变成语言</span>
-          <button className="text-button" disabled={busy} onClick={showHistory}>
-            {historyOpen ? "返回项目" : "项目记录"}
-          </button>
-        </div>
         {historyOpen ? (
           <section className="history">
-            <h1>参考模板项目</h1>
-            <p className="fine">一张模板，一个项目。三条路径各自保存输入、提示词与生成图片。</p>
+            <h1>项目记录</h1>
             {!projects.length && <p className="muted">还没有项目。从网页选择一张参考图开始。</p>}
             {projects.map((item) => <ProjectItem key={item.id} project={item} disabled={busy} onOpen={() => openProject(item)} />)}
           </section>
@@ -320,42 +320,19 @@ export default function App() {
           <>
             {!selection && (
               <section className="empty">
-                <div className="visual">
-                  <div className="visual-card one" />
-                  <div className="visual-card two" />
-                  <img src={logo} alt="" />
-                </div>
-                <h1>
-                  让喜欢的画面
-                  <br />
-                  成为下一次创作的起点。
-                </h1>
-                <p>
-                  打开 Pinterest 或任意网页，
-                  <br />
-                  将鼠标移到图片上，点击「逆向风格」。
-                </p>
-                <div className="steps">
-                  <span>01 选择图片</span>
-                  <i>→</i>
-                  <span>02 提炼风格</span>
-                  <i>→</i>
-                  <span>03 复制提示词</span>
-                </div>
-                <p className="fine">
-                  也可以右键图片，选择「用 Alchemy 逆向图片风格」。
-                </p>
+                <span className="empty-mark"><Icon name="image" /></span>
+                <h1>选择一张参考图</h1>
+                <p>将鼠标移到网页图片上，点击「逆向风格」。</p>
               </section>
             )}
 
-            {activeProject && <div className="project-heading"><span className="eyebrow">模板项目</span><h1>{activeProject.title}</h1><p className="fine">共 {activeProject.jobs.length} 次逆向 · 各路径独立保存</p></div>}
+            {activeProject && <div className="project-heading"><h1>{activeProject.title}</h1></div>}
             {restoring && <p className="fine" role="status">正在恢复这条路径的主体图…</p>}
             {referenceError && <div className="error" role="alert">{referenceError}
               <button className="text-button" disabled={!connected} onClick={() => setReferenceErrors((items) => {
                 const next = { ...items }; delete next[job!.id]; return next;
               })}>重新读取主体图</button>
             </div>}
-            <p className="mode-label">项目路径</p>
             <div className="mode-switch" role="group" aria-label="项目逆向路径">
               <button
                 className={preferences.mode === "style" ? "active" : ""}
@@ -363,7 +340,7 @@ export default function App() {
                 disabled={savingMode || busy}
                 onClick={() => saveMode("style")}
               >
-                提取风格<span>保留主体，换风格</span><small>{laneStatus(modeJob("style"))}</small>
+                提取风格<span>保留主体，换风格</span>{activeProject && <small>{laneStatus(modeJob("style"))}</small>}
               </button>
               <button
                 className={preferences.mode === "recreate" ? "active" : ""}
@@ -371,40 +348,30 @@ export default function App() {
                 disabled={savingMode || busy}
                 onClick={() => saveMode("recreate")}
               >
-                完整复刻<span>保留内容与构图</span><small>{laneStatus(modeJob("recreate"))}</small>
+                完整复刻<span>保留内容与构图</span>{activeProject && <small>{laneStatus(modeJob("recreate"))}</small>}
               </button>
               <button className={preferences.mode === "reenact" ? "active" : ""}
                 aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
                 onClick={() => saveMode("reenact")}>
-                主体重演<span>换主体，演原图</span><small>{laneStatus(modeJob("reenact"))}</small>
+                主体重演<span>换主体，演原图</span>{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
             </div>
-            <p className="mode-hint" role="status">
-              {running ? `正在执行「${modeName(preferences.mode)}」。可切换查看其他路径。`
-                : preferences.mode === "reenact" ? "以图 1 为主体、图 2 为风格与重演模板。任务指令可编辑，仅用于这条路径。"
-                : preferences.mode === "style" ? "上传图 1，保留它的主体、内容与构图，仅迁移图 2 的风格。也可只提取通用风格。"
-                : "以项目参考模板生成保留内容与构图的复刻提示词。"}
-            </p>
-            {serviceBusy && !running && !generating && <p className="fine" role="status">本机 Codex 正在执行另一条任务；仍可查看各路径已有结果。</p>}
+            {serviceBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
+              <p className="fine" role="status">Codex 正在处理其他任务，请稍候。</p>}
             {loadingProject && selection?.image && <p className="fine" role="status">正在读取模板项目…</p>}
             {selection?.image && preferences.mode === "recreate" && (
               <figure className="image-card">
                 <img src={selection.image} alt="本次选择的参考图片" />
                 <figcaption>
-                  <span>REFERENCE / 项目参考模板</span>
-                  <span>
-                    {selection.capture === "screenshot"
-                      ? "屏幕截取"
-                      : "原图读取"}
-                  </span>
+                  <span>参考模板</span>
+                  {selection.capture === "screenshot" && <span>屏幕截取</span>}
                 </figcaption>
               </figure>
             )}
-            {modeJobs(preferences.mode).length > 1 && <label className="generation-picker">本路径逆向版本
-              <select value={job?.id} disabled={busy} onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
-                {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>第 {items.length - i} 次 · {new Date(item.createdAt).toLocaleString("zh-CN")} · {laneStatus(item)}</option>)}
-              </select>
-            </label>}
+            {modeJobs(preferences.mode).length > 1 && <SelectField label="提示词版本" value={job?.id} disabled={busy}
+              onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
+              {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>第 {items.length - i} 次 · {new Date(item.createdAt).toLocaleString("zh-CN")} · {laneStatus(item)}</option>)}
+            </SelectField>}
             {(selection || result) && (
               <>
                 {(reading || running) && (
@@ -412,11 +379,6 @@ export default function App() {
                     <span className="spinner" />
                     <div>
                       <strong>{reading ? selection?.stage : job?.stage}</strong>
-                      <p>
-                        {reading
-                          ? "正在准备图片"
-                          : "由本机 Codex 执行 Alchemy 技能"}
-                      </p>
                     </div>
                     {running && (
                       <button className="text-button" onClick={cancel}>
@@ -446,7 +408,7 @@ export default function App() {
                         ? "正在恢复原图…"
                         : running
                           ? `正在${modeName(preferences.mode)}…`
-                          : `用此图生成${modeName(preferences.mode)}提示词 ↗`}
+                          : "生成复刻提示词"}
                   </button>
                 )}
               </>
@@ -461,44 +423,34 @@ export default function App() {
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
-            {!selection && preferences.mode !== "recreate" && <p className="fine">先从网页选一张参考图，或打开一个模板项目。</p>}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              <div><span className="eyebrow">01 / 提示词</span><h2>{running ? "正在逆向提示词" : "提示词待生成"}</h2><p className="fine">{running ? "完成后会保存在当前路径。" : `「${modeName(preferences.mode)}」尚无可用提示词，请在上方开始逆向。`}</p></div>
-              <div className="generation-card"><span className="eyebrow">02 / 图片</span><h2>图片待生成</h2><p className="fine">先生成当前路径的提示词，再用 Codex 生成图片。</p><button className="primary" disabled>先生成提示词</button></div>
+              <h2>{running ? "提示词生成中…" : "提示词待生成"}</h2>
+              <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary" disabled>先生成提示词</button></div>
             </section>}
 
             {result && activeJob && (
-              <section className="result">
-                <div className="result-heading">
-                  <span className="eyebrow">
-                    当前结果：{modeName(activeJob.mode)}
-                  </span>
-                  <span className="success">✓ 已完成</span>
-                </div>
-                <h1>{result.title}</h1>
-                <ul className="observations">
-                  {result.observations.map((text, i) => (
-                    <li key={i}>{text}</li>
-                  ))}
-                </ul>
+              <section className="result" aria-label={`${modeName(activeJob.mode)}提示词`}>
+                <h2>{result.title === activeProject?.title ? "提示词" : result.title}</h2>
                 <div className="prompt-card">
                   <div className="prompt-toolbar">
-                    <div className="language">
+                    <div className="language" role="group" aria-label="提示词语言">
                       <button
                         className={lang === "zh" ? "selected" : ""}
+                        aria-pressed={lang === "zh"}
                         onClick={() => setLang("zh")}
                       >
                         中文
                       </button>
                       <button
                         className={lang === "en" ? "selected" : ""}
+                        aria-pressed={lang === "en"}
                         onClick={() => setLang("en")}
                       >
                         English
                       </button>
                     </div>
-                    <button className="copy-button" onClick={copy}>
-                      {copied ? "✓ 已复制" : "复制提示词"}
+                    <button className="copy-button" data-copied={copied} onClick={copy} aria-live="polite">
+                      <Icon name={copied ? "check" : "copy"} />{copied ? "已复制" : "复制提示词"}
                     </button>
                   </div>
                   <p className="prompt">
@@ -508,7 +460,12 @@ export default function App() {
                 {activeJob.mode === "style" && !activeJob.reenact && (
                   <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
                 )}
-                {activeJob.reenact && <p className="fine">出图时按顺序附上图 1（主体图）、图 2（参考图），再使用此提示词。</p>}
+                {!!result.observations.length && <details>
+                  <summary>视觉观察</summary>
+                  <ul className="observations">
+                    {result.observations.map((text, i) => <li key={i}>{text}</li>)}
+                  </ul>
+                </details>}
                 {result.negativePrompt && (
                   <details>
                     <summary>排除项</summary>
@@ -524,17 +481,13 @@ export default function App() {
                 <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || busy || serviceBusy || !!running}
                   onUpdate={updateJob} />
                 <button className="secondary" onClick={exportResult}>
-                  导出 Markdown ↓
+                  <Icon name="download" />导出 Markdown
                 </button>
               </section>
             )}
           </>
         )}
       </main>
-      <footer>
-        <span><img src={logo} alt="" /> QC ALCHEMY</span>
-        <span>只在你点击后发送所选图片</span>
-      </footer>
     </div>
   );
 }

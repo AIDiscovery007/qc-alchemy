@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { request } from "../../lib/client";
 import type { ProjectSummary, Selection } from "../../lib/types";
+import Icon from "./Icon";
 
 export default function ProjectItem({ project, disabled, onOpen }: {
   project: ProjectSummary; disabled: boolean; onOpen(): void;
@@ -28,6 +29,6 @@ export default function ProjectItem({ project, disabled, onOpen }: {
         const lane = project.modes[mode];
         return `${name} ${!lane ? '待生成' : lane.status === 'running' ? '逆向中' : lane.status !== 'completed' ? '待重试' : lane.hasImage ? '图已生成' : '词已生成'}`;
       }).join(' · ')}</small>
-    </span><span>↗</span>
+    </span><Icon name="arrow" />
   </button>;
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { request } from "../../lib/client";
 import type { Job } from "../../lib/types";
+import Icon from "./Icon";
+import SelectField from "./SelectField";
 
 export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
   job: Job; lang: "zh" | "en"; disabled: boolean; onUpdate(job: Job): void;
@@ -51,28 +53,24 @@ export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
   };
 
   return <section className="generation-card" aria-label="图片生成">
-    <h2>让提示词成为画面</h2>
-    {!generations.length && <p className="generation-empty">图片待生成</p>}
-    <p className="fine">{generic || incomplete ? "先上传主体图并生成专属提示词，再一键生成图片。"
-      : `${job.reenact ? "发送这条结果对应的图 1、图 2" : "发送这条结果的参考原图"}与当前${lang === "zh" ? "中文" : "英文"}提示词，排除项一并生效。`}</p>
-    <button className="primary" disabled={disabled || busy || !!running || generic || incomplete} aria-busy={busy || !!running} onClick={() => act()}>
-      {running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张 ↗" : "用 Codex 生成图片 ↗"}
+    <h2><Icon name="image" />{generations.length ? "生成图片" : "图片待生成"}</h2>
+    {(generic || incomplete) && <p className="fine">请先上传主体图，生成专属提示词。</p>}
+    <button className="primary" disabled={disabled || busy || !!running || generic || incomplete} aria-busy={busy || !!running}
+      title={`使用这条结果的图片与${lang === "zh" ? "中文" : "英文"}提示词生成，包含排除项。使用 Codex 生图额度。`} onClick={() => act()}>
+      {running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "用 Codex 生成图片"}
     </button>
-    {!generic && <p className="fine">由本机 Codex 调用 imagegen，使用 Codex 生图额度。</p>}
-    {running && <div className="progress" role="status"><span className="spinner" /><div><strong>{running.stage}</strong><p>图片生成可能需要几分钟</p></div>
+    {running && <div className="progress" role="status"><span className="spinner" /><strong>{running.stage}</strong>
       <button className="text-button" disabled={busy} onClick={() => act(true)}>取消</button></div>}
     {error && <div className="error" role="alert">{error}</div>}
-    {generations.length > 1 && <label className="generation-picker">生成记录
-      <select value={generation?.id} onChange={(e) => setSelected(e.target.value)}>
-        {[...generations].reverse().map((item, i) => <option key={item.id} value={item.id}>第 {generations.length - i} 次 · {item.language === "zh" ? "中文" : "英文"} · {item.stage}</option>)}
-      </select>
-    </label>}
+    {generations.length > 1 && <SelectField label="生成记录" value={generation?.id} onChange={(e) => setSelected(e.target.value)}>
+      {[...generations].reverse().map((item, i) => <option key={item.id} value={item.id}>第 {generations.length - i} 次 · {item.language === "zh" ? "中文" : "英文"} · {item.stage}</option>)}
+    </SelectField>}
     {generation?.status === "failed" && <div className="error" role="alert">{generation.error || "生图失败，请重试"}</div>}
-    {generation?.status === "cancelled" && <p className="fine">已取消，本次逆向提示词仍然保留。</p>}
+    {generation?.status === "cancelled" && <p className="fine">图片生成已取消。</p>}
     {generation?.status === "completed" && <>
       {imageError ? <div className="error" role="alert">{imageError}</div> : image ? <>
         <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
-        <button className="secondary" onClick={download}>下载图片 ↓</button>
+        <button className="secondary" onClick={download}><Icon name="download" />下载图片</button>
       </> : <p className="fine" role="status">正在读取生成图片…</p>}
     </>}
   </section>;

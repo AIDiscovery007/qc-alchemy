@@ -41,6 +41,12 @@ createServer(async (req, res) => {
     }
     const path = new URL(req.url, "http://127.0.0.1").pathname;
     res.setHeader("Cache-Control", "no-store");
+    if (path === "/panel-preview") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      // Keep installed top-frame extensions from covering the build under test.
+      res.end('<html><head><meta charset="UTF-8"><title>Alchemy · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview?state=projects" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
+      return;
+    }
     if (path === "/preview.js") {
       res.setHeader("Content-Type", "text/javascript; charset=utf-8");
       res.end(`
