@@ -11,6 +11,23 @@
 - **主体重演**：以你的主体重演参考图，任务指令可编辑。
 - **继续生图**：把原图和生成的提示词交给 Codex 的 imagegen，结果保存在本机。
 
+## 界面与效果
+
+<img src="browser-extension/docs/gallery/alchemy-ui.jpg" width="960" alt="QC Alchemy 0.1.16 主体重演界面：三条逆向路径、主体图、参考模板与任务指令" />
+
+0.1.16 构建界面与已保存的「短发回眸暖金水彩肖像」结果；截图使用本地展示数据，未重新调用模型。
+
+<table>
+  <tr>
+    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/urban-poster/README.md"><img src="browser-extension/docs/gallery/urban-poster/result.png" width="220" alt="巨型字形都市海报" /></a><br /><a href="browser-extension/docs/gallery/urban-poster/README.md">都市海报 · 主体重演</a></td>
+    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/watercolor-portrait/README.md"><img src="browser-extension/docs/gallery/watercolor-portrait/result.png" width="220" alt="短发回眸水彩肖像" /></a><br /><a href="browser-extension/docs/gallery/watercolor-portrait/README.md">水彩肖像 · 主体重演</a></td>
+    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/watercolor-mug/README.md"><img src="browser-extension/docs/gallery/watercolor-mug/result.png" width="220" alt="暖金蓝灰水彩陶瓷杯" /></a><br /><a href="browser-extension/docs/gallery/watercolor-mug/README.md">陶瓷杯 · 提取风格</a></td>
+    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/red-mecha/README.md"><img src="browser-extension/docs/gallery/red-mecha/result.png" width="220" alt="红白机甲人物重演" /></a><br /><a href="browser-extension/docs/gallery/red-mecha/README.md">红白机甲 · 主体重演</a></td>
+  </tr>
+</table>
+
+**[查看完整画廊 →](browser-extension/docs/gallery/README.md)** 每例均附主体原图、参考模板和可复制的 Prompt。前三例在插件中发起生图，红白机甲案例在独立 Codex 会话中生成。
+
 ## 让 Codex 帮你安装
 
 在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
@@ -61,7 +78,7 @@ npm run pair
 
 ## 数据与能力边界
 
-图片、提示词、生成结果、配对码及本机配置留在 `browser-extension/.local/`，不提交 Git。服务仅监听 `127.0.0.1:43187`，需要配对码。调用本机 Codex 不等于离线推理，图片会按你的 Codex 配置交给模型处理。首次安装不会自动提交图片或消耗生图额度。
+图片、提示词、生成结果、配对码及本机配置留在 `browser-extension/.local/`，不提交 Git；`docs/gallery/` 单独收录本页选定的公开演示案例。服务仅监听 `127.0.0.1:43187`，需要配对码。调用本机 Codex 不等于离线推理，图片会按你的 Codex 配置交给模型处理。首次安装不会自动提交图片或消耗生图额度。
 
 悬浮按钮按网页控件位置动态避让；复杂 canvas、跨域 iframe 或被遮挡的图片不保证支持。没有安全空位时可用图片右键入口。逆向结果是近似复刻或风格迁移方案，不保证还原原始 Prompt 或逐像素一致。
 
