@@ -640,6 +640,22 @@ details p {
   color: #98a08b;
   font-size: 9px;
 }
+.project-thumbnail {
+  width: 54px;
+  height: 68px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #eef0e7;
+}
+.project-thumbnail.placeholder { display: grid; place-items: center; }
+.project-description { flex: 1; min-width: 0; }
+.project-heading { margin: 18px 0; }
+.project-heading h1 { font-size: 18px; margin: 6px 0; }
+.mode-switch small { display: block; margin-top: 7px; font-size: 9px; font-weight: 400; }
+.lane-empty { margin-top: 24px; border-top: 1px solid #e1e5d8; padding-top: 20px; }
+.lane-empty h2 { font-size: 15px; margin: 8px 0; }
+.generation-empty { font-size: 13px; color: #687959; }
 footer {
   border-top: 1px solid #e5e8dd;
   padding: 15px 22px;

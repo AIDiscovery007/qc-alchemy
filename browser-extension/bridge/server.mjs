@@ -5,12 +5,25 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
 import { runGeneration, imagegenSkillPath } from "./generation.mjs";
+import { createProjectStore, projectIdFor } from "./projects.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_IMAGE = 8 * 1024 * 1024;
 const MAX_BODY = 24 * 1024 * 1024;
 const bad = (message, status = 400) =>
   Object.assign(new Error(message), { status });
+
+function sourceUrlFor(value) {
+  try {
+    const url = new URL(value);
+    if (["http:", "https:"].includes(url.protocol)) {
+      url.search = "";
+      url.hash = "";
+      return url.href;
+    }
+  } catch {}
+  return "";
+}
 
 async function readBody(req) {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw bad("Content-Type must be application/json", 415);
@@ -71,10 +84,13 @@ export async function createBridge({
   }
   const jobs = new Map();
   const controllers = new Map();
-  const save = (job) =>
-    writeFile(join(dataDir, `${job.id}.json`), JSON.stringify(job), {
+  let projects;
+  const save = async (job) => {
+    await writeFile(join(dataDir, `${job.id}.json`), JSON.stringify(job), {
       mode: 0o600,
     });
+    await projects?.touch(job.projectId);
+  };
   const storedImage = async (id, subject = false, asPath = false) => {
     for (const extension of ["png", "jpeg", "webp"]) {
       let bytes;
@@ -94,6 +110,7 @@ export async function createBridge({
     if (!/^[\da-f-]{36}\.json$/.test(file)) continue;
     try {
       const job = JSON.parse(await readFile(join(dataDir, file), "utf8"));
+      if (`${job.id}.json` !== file || typeof job.createdAt !== "string") continue;
       if (job.status === "running") {
         job.status = "failed";
         job.error = "本机服务已重启，请重新逆向";
@@ -110,6 +127,7 @@ export async function createBridge({
       /* A damaged history record must not prevent startup. */
     }
   }
+  projects = await createProjectStore({ dataDir, jobs, readReference: async (id) => decodeImage(await storedImage(id)) });
   const server = createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -157,11 +175,34 @@ export async function createBridge({
             ?.trim();
         } catch {}
         json(200, {
-          version: "0.1.8",
+          version: "0.1.9",
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size,
         });
+        return;
+      }
+      if (req.method === "GET" && path === "/projects") {
+        json(200, projects.list());
+        return;
+      }
+      if (req.method === "POST" && path === "/projects") {
+        const body = await readBody(req);
+        const decoded = decodeImage(body.image);
+        const project = await projects.register(decoded, { sourceUrl: sourceUrlFor(body.sourceUrl), capture: body.capture });
+        json(200, projects.get(project.id));
+        return;
+      }
+      const projectMatch = /^\/projects\/([a-f0-9]{64})(\/reference)?$/.exec(path);
+      if (req.method === "GET" && projectMatch) {
+        const project = projects.get(projectMatch[1]);
+        if (!project) throw bad("项目不存在", 404);
+        if (projectMatch[2]) {
+          const reference = await projects.reference(project.id);
+          if (!reference) throw bad("这个项目的参考模板已不存在，请回到网页重新选择图片。", 404);
+          decodeImage(reference.image);
+          json(200, reference);
+        } else json(200, project);
         return;
       }
       if (req.method === "GET" && path === "/jobs") {
@@ -252,7 +293,7 @@ export async function createBridge({
               subjectError = error.message;
             }
           }
-          json(200, { id: job.id, jobId: job.id, image, sourceUrl: job.sourceUrl, capture: job.capture, reenact, subjectError });
+          json(200, { id: job.id, jobId: job.id, projectId: job.projectId, image, sourceUrl: job.sourceUrl, capture: job.capture, reenact, subjectError });
           return;
         }
         if (req.method === "POST" && idMatch[2] === "/cancel") {
@@ -277,6 +318,8 @@ export async function createBridge({
       const body = await readBody(req);
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
       const { bytes, extension } = decodeImage(body.image);
+      const projectId = projectIdFor(bytes);
+      if (body.projectId !== undefined && body.projectId !== projectId) throw bad("参考图与项目不一致，请重新选择项目");
       let subject, reenact;
       if (body.mode === "reenact" || (body.mode === "style" && body.reenact !== undefined)) {
         if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim())
@@ -300,6 +343,8 @@ export async function createBridge({
       } catch {
         throw bad("找不到 Alchemy 技能，请设置 ALCHEMY_SKILL_PATH", 503);
       }
+      const sourceUrl = sourceUrlFor(body.sourceUrl);
+      await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
       // Recheck after body I/O so simultaneous requests cannot both start.
       if (controllers.size) throw bad("已有图片正在逆向", 409);
       const id = randomUUID();
@@ -307,17 +352,9 @@ export async function createBridge({
       controllers.set(id, controller);
       const imagePath = join(dataDir, `${id}.${extension}`);
       const subjectImagePath = subject ? join(dataDir, `${id}-subject.${subject.extension}`) : undefined;
-      let sourceUrl = "";
-      try {
-        const url = new URL(body.sourceUrl);
-        if (["http:", "https:"].includes(url.protocol)) {
-          url.search = "";
-          url.hash = "";
-          sourceUrl = url.href;
-        }
-      } catch {}
       const job = {
         id,
+        projectId,
         mode: body.mode,
         status: "running",
         stage: "正在连接本机 Codex…",
@@ -364,10 +401,10 @@ export async function createBridge({
               stage: "逆向失败",
             });
         } finally {
-          controllers.delete(id);
           await save(job).catch((error) =>
             console.error("保存任务失败:", error.message),
           );
+          controllers.delete(id);
         }
       })();
     } catch (error) {

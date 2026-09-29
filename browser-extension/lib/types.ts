@@ -7,6 +7,7 @@ export type SubjectInput = {
 export type Preferences = { token: string; mode: Mode };
 export type Selection = {
   id: string;
+  projectId?: string;
   sourceUrl: string;
   image?: string;
   capture?: "original" | "screenshot";
@@ -26,6 +27,7 @@ export type Result = {
 };
 export type Job = {
   id: string;
+  projectId?: string;
   mode: Mode;
   status: "running" | "completed" | "failed" | "cancelled";
   stage: string;
@@ -38,6 +40,17 @@ export type Job = {
   reenact?: Omit<SubjectInput, "subjectImage">;
   generations?: Generation[];
 };
+export type ProjectSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceUrl: string;
+  capture: "original" | "screenshot";
+  jobCount: number;
+  modes: Partial<Record<Mode, { status: string; hasImage: boolean }>>;
+};
+export type Project = ProjectSummary & { jobs: Job[] };
 export type Generation = {
   id: string;
   status: "running" | "completed" | "failed" | "cancelled";

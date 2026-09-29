@@ -52,6 +52,7 @@ export default function GenerationPanel({ job, lang, disabled, onUpdate }: {
 
   return <section className="generation-card" aria-label="图片生成">
     <h2>让提示词成为画面</h2>
+    {!generations.length && <p className="generation-empty">图片待生成</p>}
     <p className="fine">{generic || incomplete ? "先上传主体图并生成专属提示词，再一键生成图片。"
       : `${job.reenact ? "发送这条结果对应的图 1、图 2" : "发送这条结果的参考原图"}与当前${lang === "zh" ? "中文" : "英文"}提示词，排除项一并生效。`}</p>
     <button className="primary" disabled={disabled || busy || !!running || generic || incomplete} aria-busy={busy || !!running} onClick={() => act()}>

@@ -6,6 +6,7 @@ import type {
   Job,
   Mode,
   Preferences,
+  Project,
   SubjectInput,
   Selection,
 } from "../lib/types";
@@ -80,17 +81,14 @@ export default defineBackground(() => {
       );
       if (!preferences?.token) {
         selection.stage = "图片已就绪，请先连接本机 Codex";
-      } else if (preferences.mode !== "recreate") {
-        selection.stage = "参考图已就绪，请补充主体图；任务指令已默认填好";
       } else {
-        const job = await bridge<Job>("/jobs", preferences.token, {
+        const project = await bridge<Project>("/projects", preferences.token, {
           image: selection.image,
-          mode: preferences.mode || "style",
           sourceUrl: selection.sourceUrl,
           capture: selection.capture,
         });
-        selection.jobId = job.id;
-        selection.stage = job.stage;
+        selection.projectId = project.id;
+        selection.stage = "参考模板已就绪，请选择路径生成提示词";
       }
     } catch (error) {
       selection.error = error instanceof Error ? error.message : String(error);
@@ -111,7 +109,11 @@ export default defineBackground(() => {
       throw error;
     }
   };
-  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: SubjectInput) => {
+  const projectReference = (id: string, token: string) => {
+    if (typeof id !== "string" || !/^[\da-f]{64}$/.test(id)) throw new Error("无效项目");
+    return bridge<Selection>(`/projects/${id}/reference`, token);
+  };
+  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: SubjectInput, projectId?: string) => {
     if (selecting) throw new Error("正在处理图片，请稍候");
     selecting = true;
     try {
@@ -122,19 +124,20 @@ export default defineBackground(() => {
       if (!["style", "recreate", "reenact"].includes(mode)) throw new Error("无效模式");
       if ((mode === "reenact" || (mode === "style" && reenact !== undefined)) && (typeof reenact?.subjectImage !== "string" || !reenact.subjectImage || typeof reenact.basePrompt !== "string" || !reenact.basePrompt.trim()))
         throw new Error("请上传主体图并填写任务指令");
-      const selection = referenceJobId
+      const selection = projectId ? await projectReference(projectId, stored.preferences?.token || "") : referenceJobId
         ? { ...await reference(referenceJobId, stored.preferences?.token || ""), id: crypto.randomUUID() }
         : stored.selection;
-      if (!selection?.image || (!referenceJobId && selection.id !== id))
+      if (!selection?.image || (!projectId && !referenceJobId && selection.id !== id))
         throw new Error("所选图片已变化，请重试");
       const job = await bridge<Job>("/jobs", stored.preferences?.token || "", {
         image: selection.image,
         mode,
         sourceUrl: selection.sourceUrl,
         capture: selection.capture,
+        projectId: selection.projectId,
         reenact: mode !== "recreate" ? reenact : undefined,
       });
-      const next = { ...selection, jobId: job.id, stage: job.stage, error: undefined,
+      const next = { ...selection, projectId: job.projectId || selection.projectId, jobId: job.id, stage: job.stage, error: undefined,
         reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined };
       await browser.storage.local.set({ selection: next });
       return { selection: next, job };
@@ -167,7 +170,7 @@ export default defineBackground(() => {
         await browser.storage.local.set({ preferences: { ...preferences, token, mode: message.mode } });
         return;
       case "alchemy:query":
-        if (typeof message.path !== "string" || !/^\/(health|jobs(?:\/[\w-]+)?)$/.test(message.path))
+        if (typeof message.path !== "string" || !/^\/(health|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
         return bridge(message.path, token);
       case "alchemy:cancel":
@@ -175,6 +178,26 @@ export default defineBackground(() => {
         return bridge(`/jobs/${message.id}/cancel`, token, {});
       case "alchemy:reference":
         return reference(message.id, token);
+      case "alchemy:project-reference":
+        return projectReference(message.id, token);
+      case "alchemy:open-project": {
+        if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id)) throw new Error("无效项目");
+        const project = await bridge<Project>(`/projects/${message.id}`, token);
+        let next: Selection;
+        try { next = await projectReference(message.id, token); }
+        catch (error) { next = { id: project.id, projectId: project.id, sourceUrl: project.sourceUrl, capture: project.capture, error: (error as Error).message }; }
+        await browser.storage.local.set({ selection: next });
+        return next;
+      }
+      case "alchemy:ensure-project": {
+        if (!selection?.image || selection.id !== message.id) throw new Error("所选图片已变化，请重试");
+        const project = await bridge<Project>("/projects", token, { image: selection.image, sourceUrl: selection.sourceUrl, capture: selection.capture });
+        const latest = await browser.storage.local.get("selection") as { selection?: Selection };
+        if (latest.selection?.id !== selection.id) throw new Error("所选图片已变化，请重试");
+        const next = { ...selection, projectId: project.id };
+        await browser.storage.local.set({ selection: next });
+        return next;
+      }
       case "alchemy:generate":
       case "alchemy:generation-cancel":
       case "alchemy:generation-image": {
@@ -190,7 +213,7 @@ export default defineBackground(() => {
           : bridge(`${path}/${message.generationId}/cancel`, token, {});
       }
       case "alchemy:start":
-        return start(message.id, message.mode, message.referenceJobId, message.reenact);
+        return start(message.id, message.mode, message.referenceJobId, message.reenact, message.projectId);
     }
   };
   browser.runtime.onMessage.addListener((message, sender, reply) => {
@@ -198,7 +221,7 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

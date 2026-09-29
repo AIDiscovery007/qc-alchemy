@@ -44,6 +44,44 @@ test("built extension uses a popup without declaring unsupported native side pan
   );
 });
 
+test("project messages restore a template and start only the explicitly chosen lane", async () => {
+  const id = "a".repeat(64);
+  const calls = [];
+  const reference = { id, projectId: id, image: "saved-template", sourceUrl: "https://example.com/template", capture: "original" };
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    const value = url.endsWith("/reference") ? reference : url.endsWith("/jobs") ? { id: "new-job", projectId: id, mode: "recreate", stage: "started" } : { id, jobs: [] };
+    return { ok: true, json: async () => value };
+  });
+  const storage = { preferences: { token: "secret", mode: "style" }, selection: { id: "old", image: "old-template" } };
+  chrome.storage.local.get = async () => storage;
+  chrome.storage.local.set = async (value) => Object.assign(storage, value);
+  const sender = { id: "test", frameId: 0, url: "https://www.pinterest.com/", tab: { id: 4 } };
+  const send = (message) => new Promise(resolve => handlers.message(message, sender, resolve));
+  assert.equal((await send({ type: "alchemy:query", path: "/projects" })).ok, true);
+  assert.equal((await send({ type: "alchemy:open-project", id })).value.image, "saved-template");
+  assert.equal(storage.selection.projectId, id);
+  assert.equal(storage.selection.jobId, undefined);
+  assert.ok(calls.every(call => !call.options.body), "opening a project does not start a model task");
+  await send({ type: "alchemy:mode", mode: "reenact" });
+  assert.equal(storage.selection.reenact, undefined, "mode selection must not copy another lane's subject");
+  await send({ type: "alchemy:start", projectId: id, mode: "recreate", image: "untrusted-image" });
+  const body = JSON.parse(calls.at(-1).options.body);
+  assert.equal(body.image, "saved-template");
+  assert.equal(body.projectId, id);
+  assert.equal(body.mode, "recreate");
+  assert.equal(storage.selection.jobId, "new-job");
+  const before = calls.length;
+  for (const message of [
+    { type: "alchemy:open-project", id: "../../token" },
+    { type: "alchemy:project-reference", id: "a" },
+    { type: "alchemy:query", path: `/projects/${id}/reference` },
+    { type: "alchemy:query", path: "/projects/../token" },
+    { type: "alchemy:start", projectId: "../../token", mode: "recreate" },
+  ]) assert.match((await send(message)).error, /无效/);
+  assert.equal(calls.length, before);
+});
+
 async function background(fetch = async () => ({ ok: true, json: async () => ({ status: "running" }) }), globals = {}) {
   const handlers = {};
   const messages = [];
@@ -212,10 +250,11 @@ test("page panel can read results without receiving the pairing token", async ()
   assert.equal(handlers.message({ type: "alchemy:state" }, { ...sender, frameId: 1 }, () => assert.fail("iframe reply")), undefined);
 });
 
-for (const mode of ["style", "reenact"]) test(`hover in ${mode} mode captures the template without starting an incomplete job`, async () => {
+for (const mode of ["style", "reenact", "recreate"]) test(`hover in ${mode} mode captures the template without starting an incomplete job`, async () => {
   const calls = [];
   const { handlers, chrome } = await background(async (url) => {
     calls.push(url);
+    if (url.endsWith("/projects")) return { ok: true, json: async () => ({ id: "a".repeat(64), jobs: [] }) };
     return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
   }, {
     Blob, Uint8Array, btoa,
@@ -234,6 +273,7 @@ for (const mode of ["style", "reenact"]) test(`hover in ${mode} mode captures th
   assert.equal(storage.selection.error, undefined);
   assert.match(storage.selection.image, /^data:image\/png;base64,/);
   assert.equal(storage.selection.jobId, undefined);
-  assert.match(storage.selection.stage, /补充主体图/);
-  assert.deepEqual(calls, ["https://example.com/template.png"]);
+  assert.match(storage.selection.stage, /参考模板/);
+  assert.equal(storage.selection.projectId, "a".repeat(64));
+  assert.deepEqual(calls, ["https://example.com/template.png", "http://127.0.0.1:43187/projects"]);
 });

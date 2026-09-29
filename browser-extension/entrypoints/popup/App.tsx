@@ -1,85 +1,98 @@
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
-import type { Job, Mode, SubjectInput, Selection } from "../../lib/types";
+import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from "../../lib/types";
+import ProjectItem from "./ProjectItem";
 import SubjectForm from "./SubjectForm";
 import GenerationPanel from "./GenerationPanel";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
+const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" ? "逆向中"
+  : job.generations?.some((item) => item.status === "running") ? "生图中"
+  : job.status !== "completed" ? "待重试"
+  : job.generations?.some((item) => item.status === "completed") ? "提示词 + 图片" : "提示词已就绪";
 const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演" })[mode];
 
 export default function App() {
   const [preferences, setPreferences] = useState(defaults);
   const [tokenDraft, setTokenDraft] = useState("");
-  const [currentSelection, setCurrentSelection] = useState<Selection>();
-  const [historicalSelection, setHistoricalSelection] = useState<Selection>();
-  const selection = historicalSelection || currentSelection;
-  const [referenceError, setReferenceError] = useState("");
+  const [selection, setSelection] = useState<Selection>();
+  const [project, setProject] = useState<Project>();
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [versions, setVersions] = useState<Record<string, string>>({});
+  const [references, setReferences] = useState<Record<string, Selection>>({});
+  const [referenceErrors, setReferenceErrors] = useState<Record<string, string>>({});
   const [savingMode, setSavingMode] = useState(false);
   const modeRevision = useRef(0);
-  const [job, setJob] = useState<Job>();
-  const [history, setHistory] = useState<Job[]>([]);
+  const projectRevision = useRef(0);
+  const selectionRevision = useRef(0);
   const [settings, setSettings] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [connectionText, setConnectionText] = useState("尚未连接");
+  const [serviceBusy, setServiceBusy] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [lang, setLang] = useState<"zh" | "en">("zh");
   const [copied, setCopied] = useState(false);
+  const activeProject = project?.id === selection?.projectId ? project : undefined;
+  const modeJobs = (mode: Mode) => activeProject?.jobs.filter((item) => item.mode === mode) || [];
+  const modeJob = (mode: Mode) => {
+    const jobs = modeJobs(mode);
+    return jobs.find((item) => item.id === versions[`${activeProject?.id}:${mode}`]) || jobs[0];
+  };
+  const job = modeJob(preferences.mode);
+  const activeJob = job;
+  const running = job?.status === "running";
+  const generating = activeProject?.jobs.some((item) => item.generations?.some((generation) => generation.status === "running"));
+  const loadingProject = !!selection && !activeProject;
+  const result = job?.result;
+  const reading = selection && !selection.image && !selection.error;
+  const referenceError = job && referenceErrors[job.id];
+  const restoring = !!job?.reenact && !references[job.id] && !referenceError;
+  const blocked = !connected || busy || savingMode || serviceBusy || !!running || !!generating || loadingProject || restoring;
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let previous: Selection | undefined;
-    let fingerprint = "";
     let initialized = false;
     const refresh = async () => {
       try {
         const revision = modeRevision.current;
+        const snapshotRevision = selectionRevision.current;
         const value = await readState(previous?.image ? previous.id : undefined, previous?.jobId);
         if (cancelled) return;
-        setPreferences((previous) => ({
-          ...value.preferences,
+        setPreferences((previous) => ({ ...value.preferences,
           mode: revision === modeRevision.current && revision % 2 === 0 ? value.preferences.mode : previous.mode,
         }));
         if (!initialized) setSettings(!value.preferences.paired);
         initialized = true;
-        const { image, reenact, ...metadata } = value.selection || {};
-        const next = JSON.stringify(metadata);
-        if (next !== fingerprint) {
-          const selection = value.selection && {
-            ...value.selection,
-            image: image || (previous?.id === value.selection.id ? previous.image : undefined),
-            reenact: reenact || (previous?.id === value.selection.id && previous.jobId === value.selection.jobId ? previous.reenact : undefined),
+        if (value.selection && snapshotRevision === selectionRevision.current) {
+          const next = { ...value.selection,
+            image: value.selection.image || (previous?.id === value.selection.id ? previous.image : undefined),
           };
-          previous = selection;
-          fingerprint = next;
-          setCurrentSelection(selection);
-          setHistoricalSelection(undefined);
-          setJob(undefined);
-          setError("");
-          setHistoryOpen(false);
+          if (previous?.id !== next.id) { setHistoryOpen(false); setError(""); }
+          previous = next;
+          setSelection(next);
         }
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      }
+      } catch (e) { if (!cancelled) setError((e as Error).message); }
       if (!cancelled) timer = setTimeout(refresh, 1500);
     };
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
+  // Older extension selections join the same durable template project on first open.
   useEffect(() => {
-    if (!historicalSelection?.jobId) return;
+    if (!preferences.paired || !selection?.image || selection.projectId) return;
     let cancelled = false;
-    setReferenceError("");
-    void request<Selection>({ type: "alchemy:reference", id: historicalSelection.jobId }).then(
-      (reference) => { if (!cancelled) setHistoricalSelection(reference); },
-      (error) => { if (!cancelled) setReferenceError(error.message); },
+    void request<Selection>({ type: "alchemy:ensure-project", id: selection.id }).then(
+      (next) => { if (!cancelled) { selectionRevision.current++; setSelection(next); } },
+      (e) => { if (!cancelled) setError(e.message); },
     );
     return () => { cancelled = true; };
-  }, [historicalSelection?.jobId]);
+  }, [preferences.paired, selection?.id, !!selection?.image, selection?.projectId]);
 
   useEffect(() => {
     if (!preferences.paired) return;
@@ -87,34 +100,46 @@ export default function App() {
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
       try {
-        const health = await query<{ ready: boolean; skill: string }>("/health");
+        const revision = projectRevision.current;
+        const health = await query<{ ready: boolean; skill: string; active: number }>("/health");
         if (cancelled) return;
         setConnected(health.ready);
-        setConnectionText(
-          health.ready ? `已连接 · ${health.skill}` : "未找到 Alchemy 技能",
-        );
-        if (selection?.jobId) {
-          const value = await query<Job>(`/jobs/${selection.jobId}`);
-          if (!cancelled) setJob(value);
+        setServiceBusy(health.active > 0);
+        setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到 Alchemy 技能");
+        if (selection?.projectId) {
+          const value = await query<Project>(`/projects/${selection.projectId}`);
+          if (!cancelled && revision === projectRevision.current) setProject(value);
         }
       } catch (e) {
-        if (!cancelled) {
-          setConnected(false);
-          setConnectionText((e as Error).message);
-        }
+        if (!cancelled) { setConnected(false); setConnectionText((e as Error).message); }
       }
       if (!cancelled) timer = setTimeout(refresh, 2000);
     };
     void refresh();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [preferences.paired, selection?.jobId]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [preferences.paired, selection?.projectId]);
 
+  useEffect(() => {
+    if (!job?.reenact || references[job.id] || referenceErrors[job.id]) return;
+    let cancelled = false;
+    void request<Selection>({ type: "alchemy:reference", id: job.id }).then(
+      (value) => { if (!cancelled) setReferences((items) => ({ ...items, [job.id]: value })); },
+      (e) => { if (!cancelled) setReferenceErrors((items) => ({ ...items, [job.id]: e.message })); },
+    );
+    return () => { cancelled = true; };
+  }, [job?.id, !!job?.reenact, referenceError]);
+
+  const updateJob = (updated: Job) => {
+    projectRevision.current++;
+    setProject((current) => current && current.id === updated.projectId
+      ? { ...current, jobs: [updated, ...current.jobs.filter((item) => item.id !== updated.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
+      : current);
+  };
   const saveMode = async (mode: Mode) => {
     if (savingMode || busy) return;
     const previous = preferences.mode;
+    setCopied(false);
+    setError("");
     modeRevision.current++;
     setSavingMode(true);
     setPreferences((value) => ({ ...value, mode }));
@@ -145,56 +170,43 @@ export default function App() {
     }
   };
   const start = async (mode: Mode = preferences.mode, reenact?: SubjectInput) => {
-    if (!selection?.image || busy || savingMode) return;
+    if (!selection?.image || !activeProject || blocked) return;
     setBusy(true);
     setError("");
     try {
       const value = await request<{ selection: Selection; job: Job }>({
-        type: "alchemy:start",
-        id: selection.id,
-        referenceJobId: historicalSelection?.jobId,
-        mode,
-        reenact,
+        type: "alchemy:start", id: selection.id, projectId: activeProject.id, mode, reenact,
       });
-      setCurrentSelection(value.selection);
-      setHistoricalSelection(undefined);
-      setJob(value.job);
+      selectionRevision.current++;
+      setSelection(value.selection);
+      updateJob(value.job);
+      setVersions((items) => ({ ...items, [`${activeProject.id}:${mode}`]: value.job.id }));
       setCopied(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const returnCurrent = () => {
-    setHistoricalSelection(undefined);
-    setReferenceError("");
-    setJob(undefined);
-    setHistoryOpen(false);
-    setError("");
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
   };
   const showHistory = async () => {
-    if (historyOpen) {
-      returnCurrent();
-      return;
-    }
+    if (historyOpen) { setHistoryOpen(false); return; }
+    setBusy(true);
+    try { setProjects(await query<ProjectSummary[]>("/projects")); setHistoryOpen(true); setError(""); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const openProject = async (item: ProjectSummary) => {
+    setBusy(true);
+    setError("");
     try {
-      setHistory(await query<Job[]>("/jobs"));
-      setHistoryOpen(true);
-      setError("");
-    } catch (e) {
-      setError((e as Error).message);
-    }
+      const next = await request<Selection>({ type: "alchemy:open-project", id: item.id });
+      selectionRevision.current++;
+      setSelection(next);
+      setHistoryOpen(false);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
   };
   const cancel = async () => {
     if (!job) return;
-    try {
-      setJob(
-        await request<Job>({ type: "alchemy:cancel", id: job.id }),
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    try { updateJob(await request<Job>({ type: "alchemy:cancel", id: job.id })); }
+    catch (e) { setError((e as Error).message); }
   };
   const copy = async () => {
     try {
@@ -221,14 +233,6 @@ export default function App() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const activeJob = job?.id === selection?.jobId ? job : undefined;
-  const running = activeJob?.status === "running";
-  const generating = activeJob?.generations?.some((item) => item.status === "running");
-  const restoring = historicalSelection && !historicalSelection.image && !referenceError;
-  const loadingJob = !!selection?.jobId && !activeJob;
-  const reading =
-    selection && !selection.image && !selection.error && !selection.jobId;
-  const result = activeJob?.result;
 
   return (
     <div className="app">
@@ -301,50 +305,16 @@ export default function App() {
       <main>
         <div className="section-heading">
           <span className="eyebrow">你的灵感，变成语言</span>
-          {!!historicalSelection && !historyOpen && (
-            <button className="text-button" onClick={returnCurrent}>返回当前图片</button>
-          )}
-          <button className="text-button" onClick={showHistory}>
-            {historyOpen ? "返回当前图片" : "历史记录"}
+          <button className="text-button" disabled={busy} onClick={showHistory}>
+            {historyOpen ? "返回项目" : "项目记录"}
           </button>
         </div>
         {historyOpen ? (
           <section className="history">
-            <h1>最近的逆向</h1>
-            {!history.length && <p className="muted">还没有逆向记录。</p>}
-            {history.map((item) => (
-              <button
-                className="history-item"
-                key={item.id}
-                onClick={() => {
-                  setJob(item);
-                  setReferenceError("");
-                  setError("");
-                  setHistoricalSelection({
-                    id: item.id,
-                    jobId: item.id,
-                    sourceUrl: item.sourceUrl,
-                    capture: item.capture,
-                  });
-                  setHistoryOpen(false);
-                }}
-              >
-                <span>
-                  <strong>{item.result?.title || "图片风格逆向"}</strong>
-                  <small>
-                    {new Date(item.createdAt).toLocaleString("zh-CN")} ·{" "}
-                    {modeName(item.mode)}
-                  </small>
-                </span>
-                <span>
-                  {item.status === "completed"
-                    ? "↗"
-                    : item.status === "running"
-                      ? "处理中"
-                      : "未完成"}
-                </span>
-              </button>
-            ))}
+            <h1>参考模板项目</h1>
+            <p className="fine">一张模板，一个项目。三条路径各自保存输入、提示词与生成图片。</p>
+            {!projects.length && <p className="muted">还没有项目。从网页选择一张参考图开始。</p>}
+            {projects.map((item) => <ProjectItem key={item.id} project={item} disabled={busy} onOpen={() => openProject(item)} />)}
           </section>
         ) : (
           <>
@@ -378,11 +348,50 @@ export default function App() {
               </section>
             )}
 
+            {activeProject && <div className="project-heading"><span className="eyebrow">模板项目</span><h1>{activeProject.title}</h1><p className="fine">共 {activeProject.jobs.length} 次逆向 · 各路径独立保存</p></div>}
+            {restoring && <p className="fine" role="status">正在恢复这条路径的主体图…</p>}
+            {referenceError && <div className="error" role="alert">{referenceError}
+              <button className="text-button" disabled={!connected} onClick={() => setReferenceErrors((items) => {
+                const next = { ...items }; delete next[job!.id]; return next;
+              })}>重新读取主体图</button>
+            </div>}
+            <p className="mode-label">项目路径</p>
+            <div className="mode-switch" role="group" aria-label="项目逆向路径">
+              <button
+                className={preferences.mode === "style" ? "active" : ""}
+                aria-pressed={preferences.mode === "style"}
+                disabled={savingMode || busy}
+                onClick={() => saveMode("style")}
+              >
+                提取风格<span>保留主体，换风格</span><small>{laneStatus(modeJob("style"))}</small>
+              </button>
+              <button
+                className={preferences.mode === "recreate" ? "active" : ""}
+                aria-pressed={preferences.mode === "recreate"}
+                disabled={savingMode || busy}
+                onClick={() => saveMode("recreate")}
+              >
+                完整复刻<span>保留内容与构图</span><small>{laneStatus(modeJob("recreate"))}</small>
+              </button>
+              <button className={preferences.mode === "reenact" ? "active" : ""}
+                aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
+                onClick={() => saveMode("reenact")}>
+                主体重演<span>换主体，演原图</span><small>{laneStatus(modeJob("reenact"))}</small>
+              </button>
+            </div>
+            <p className="mode-hint" role="status">
+              {running ? `正在执行「${modeName(preferences.mode)}」。可切换查看其他路径。`
+                : preferences.mode === "reenact" ? "以图 1 为主体、图 2 为风格与重演模板。任务指令可编辑，仅用于这条路径。"
+                : preferences.mode === "style" ? "上传图 1，保留它的主体、内容与构图，仅迁移图 2 的风格。也可只提取通用风格。"
+                : "以项目参考模板生成保留内容与构图的复刻提示词。"}
+            </p>
+            {serviceBusy && !running && !generating && <p className="fine" role="status">本机 Codex 正在执行另一条任务；仍可查看各路径已有结果。</p>}
+            {loadingProject && selection?.image && <p className="fine" role="status">正在读取模板项目…</p>}
             {selection?.image && preferences.mode === "recreate" && (
               <figure className="image-card">
                 <img src={selection.image} alt="本次选择的参考图片" />
                 <figcaption>
-                  <span>{historicalSelection ? "历史参考图" : "REFERENCE / 参考图"}</span>
+                  <span>REFERENCE / 项目参考模板</span>
                   <span>
                     {selection.capture === "screenshot"
                       ? "屏幕截取"
@@ -391,43 +400,11 @@ export default function App() {
                 </figcaption>
               </figure>
             )}
-            {restoring && <p className="fine" role="status">正在恢复这条记录的原图…</p>}
-            {referenceError && <div className="error" role="alert">{referenceError}</div>}
-            <p className="mode-label">下一次逆向</p>
-            <div className="mode-switch" role="group" aria-label="下一次逆向模式">
-              <button
-                className={preferences.mode === "style" ? "active" : ""}
-                aria-pressed={preferences.mode === "style"}
-                disabled={savingMode || busy}
-                onClick={() => saveMode("style")}
-              >
-                提取风格<span>保留主体，换风格</span>
-              </button>
-              <button
-                className={preferences.mode === "recreate" ? "active" : ""}
-                aria-pressed={preferences.mode === "recreate"}
-                disabled={savingMode || busy}
-                onClick={() => saveMode("recreate")}
-              >
-                完整复刻<span>保留内容与构图</span>
-              </button>
-              <button className={preferences.mode === "reenact" ? "active" : ""}
-                aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
-                onClick={() => saveMode("reenact")}>
-                主体重演<span>换主体，演原图</span>
-              </button>
-            </div>
-            <p className="mode-hint" role="status">
-              {running
-                ? `正在执行「${modeName(activeJob.mode)}」。完成或取消后，可用同一张图再次逆向。`
-                : preferences.mode === "reenact"
-                  ? "默认以图 1 为主体、图 2 为风格与重演模板。可编辑任务指令，自定义保留与迁移的内容。原结果保留在历史记录中。"
-                  : preferences.mode === "style"
-                  ? "上传图 1，保留它的主体、内容与构图，只迁移图 2 的视觉风格。也可仅提取通用风格，留待以后替换主体。"
-                  : result
-                  ? `当前结果为「${modeName(activeJob.mode)}」。点击下方按钮，用同一张图生成「${modeName(preferences.mode)}」提示词，原结果保留在历史记录中。`
-                  : "选好模式后点击下方按钮开始；后续点击网页悬浮按钮也会沿用此模式。"}
-            </p>
+            {modeJobs(preferences.mode).length > 1 && <label className="generation-picker">本路径逆向版本
+              <select value={job?.id} disabled={busy} onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
+                {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>第 {items.length - i} 次 · {new Date(item.createdAt).toLocaleString("zh-CN")} · {laneStatus(item)}</option>)}
+              </select>
+            </label>}
             {(selection || result) && (
               <>
                 {(reading || running) && (
@@ -459,7 +436,7 @@ export default function App() {
                 {selection && preferences.mode === "recreate" && (
                   <button
                     className="primary"
-                    disabled={!connected || busy || savingMode || running || generating || loadingJob || !selection.image}
+                    disabled={blocked || !selection.image}
                     onClick={() => start()}
                     aria-busy={busy || running}
                   >
@@ -468,21 +445,29 @@ export default function App() {
                       : restoring
                         ? "正在恢复原图…"
                         : running
-                          ? `正在${modeName(activeJob.mode)}…`
+                          ? `正在${modeName(preferences.mode)}…`
                           : `用此图生成${modeName(preferences.mode)}提示词 ↗`}
                   </button>
                 )}
               </>
             )}
 
-            {selection && (["style", "reenact"] as const).map((mode) => <SubjectForm key={`${selection.id}-${mode}`} mode={mode} selection={selection} job={activeJob}
-              active={preferences.mode === mode}
-              disabled={!connected || busy || savingMode || running || generating || loadingJob || !selection.image}
-              submitting={busy} onSubmit={(input) => start(mode, input)}
-              onExtract={mode === "style" ? () => start("style") : undefined} />)}
-            {!selection && preferences.mode !== "recreate" && <p className="fine">先从网页选一张参考图，或打开一条已有逆向记录。</p>}
+            {selection && (["style", "reenact"] as const).map((mode) => {
+              const savedJob = modeJob(mode);
+              const savedReference = savedJob && references[savedJob.id];
+              return <SubjectForm key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
+                selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
+                active={preferences.mode === mode} disabled={blocked || !selection.image}
+                submitting={busy} onSubmit={(input) => start(mode, input)}
+                onExtract={mode === "style" ? () => start("style") : undefined} />;
+            })}
+            {!selection && preferences.mode !== "recreate" && <p className="fine">先从网页选一张参考图，或打开一个模板项目。</p>}
+            {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
+              <div><span className="eyebrow">01 / 提示词</span><h2>{running ? "正在逆向提示词" : "提示词待生成"}</h2><p className="fine">{running ? "完成后会保存在当前路径。" : `「${modeName(preferences.mode)}」尚无可用提示词，请在上方开始逆向。`}</p></div>
+              <div className="generation-card"><span className="eyebrow">02 / 图片</span><h2>图片待生成</h2><p className="fine">先生成当前路径的提示词，再用 Codex 生成图片。</p><button className="primary" disabled>先生成提示词</button></div>
+            </section>}
 
-            {result && (
+            {result && activeJob && (
               <section className="result">
                 <div className="result-heading">
                   <span className="eyebrow">
@@ -536,8 +521,8 @@ export default function App() {
                     <p>{result.uncertainties.join("\n")}</p>
                   </details>
                 )}
-                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || busy || !!running}
-                  onUpdate={(updated) => setJob((current) => current?.id === updated.id ? updated : current)} />
+                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || busy || serviceBusy || !!running}
+                  onUpdate={updateJob} />
                 <button className="secondary" onClick={exportResult}>
                   导出 Markdown ↓
                 </button>

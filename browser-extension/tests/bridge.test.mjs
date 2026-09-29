@@ -148,7 +148,7 @@ const submit = (extra) => ({
 async function waitFor(request, id, status) {
   for (let i = 0; i < 80; i++) {
     const job = await (await request(`/jobs/${id}`)).json();
-    if (job.status === status) return job;
+    if (job.status === status && !(await (await request("/health")).json()).active) return job;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail(`Task did not reach ${status}`);

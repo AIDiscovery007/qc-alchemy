@@ -30,9 +30,9 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   const originalPrompt = saved?.basePrompt ?? defaultPrompt;
 
   useEffect(() => {
-    if (!subjectEdited.current && selection.reenact?.subjectImage)
+    if (job?.mode === mode && !subjectEdited.current && selection.reenact?.subjectImage)
       setSubjectImage(selection.reenact.subjectImage);
-  }, [selection.reenact?.subjectImage]);
+  }, [selection.reenact?.subjectImage, job?.mode, mode]);
   useEffect(() => {
     if (!promptEdited.current) setBasePrompt(originalPrompt);
   }, [originalPrompt]);

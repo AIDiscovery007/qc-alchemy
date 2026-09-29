@@ -205,7 +205,7 @@ export async function runCodex({ input, schema, cwd, signal, onProgress, instruc
   try {
     if (signal.aborted) throw new Error("任务已取消");
     await request("initialize", {
-      clientInfo: { name: "qc_alchemy", title: "QC Alchemy", version: "0.1.8" },
+      clientInfo: { name: "qc_alchemy", title: "QC Alchemy", version: "0.1.9" },
     });
     send({ method: "initialized", params: {} });
     if (generation) {

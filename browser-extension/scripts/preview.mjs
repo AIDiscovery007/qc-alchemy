@@ -54,23 +54,55 @@ createServer(async (req, res) => {
           job.result.promptEn=job.result.promptEn.replace('[SUBJECT]','the subject in image 1');
           if(state==='generation-completed')job.generations=[{id:'preview-generation',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
         }
-        const data = { preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'}, selection:state==='empty'?undefined:{id:'preview',jobId:state.endsWith('-new')?undefined:'preview',image:${JSON.stringify(image)},capture:'original',sourceUrl:job.sourceUrl} };
+        const template = ${JSON.stringify(image)};
+        const projectId='a'.repeat(64), secondId='b'.repeat(64);
+        job.projectId=projectId;
+        const reenact={...structuredClone(job),id:'reenact-preview',mode:'reenact',reenact:{basePrompt:'只用于主体重演的指令'},generations:[],result:{...job.result,title:'主体重演独立提示词',promptZh:'以主体重演路径的图 1 为主体，按照图 2 重演动作与构图。',promptEn:'Reenact the template with the subject in image 1.'}};
+        if(state==='projects') {
+          job.reenact={basePrompt:'只用于提取风格的指令'};
+          job.result.promptZh='以提取风格路径的图 1 为主体，仅迁移图 2 的视觉风格。';
+          job.generations=[{id:'preview-generation',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
+        }
+        const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
+        const projects=[{id:projectId,title:'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
+          {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
+        const summary=(project)=>({...project,jobCount:project.jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=project.jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))});
+        const selection=(project)=>({id:project.id,projectId:project.id,image:template,capture:'original',sourceUrl:project.sourceUrl});
+        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'?undefined:selection(projects[0])};
+        const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
         const listeners = new Set();
-        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.8'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
-          if(message.type==='alchemy:state')return {ok:true,value:{preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection}};
-          if(message.type==='alchemy:query')return {ok:true,value:message.path==='/health'?{ready:true,skill:'alchemy · 预览'}:message.path==='/jobs'?[job]:job};
+        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.9'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+          if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection})};
+          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',active:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:mode'){data.preferences.mode=message.mode;return {ok:true};}
-          if(message.type==='alchemy:reference')return {ok:true,value:{...data.selection,id:job.id,jobId:job.id}};
-          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:${JSON.stringify(image)}}};
+          if(message.type==='alchemy:project-reference'||message.type==='alchemy:open-project') {
+            const next=selection(projects.find(p=>p.id===message.id));
+            if(message.type==='alchemy:open-project')data.selection=next;
+            return {ok:true,value:next};
+          }
+          if(message.type==='alchemy:reference') {
+            const saved=findJob(message.id);
+            return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?{...saved.reenact,subjectImage:template}:undefined}};
+          }
+          if(message.type==='alchemy:start') {
+            const project=projects.find(p=>p.id===message.projectId);
+            const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',reenact:message.reenact?{basePrompt:message.reenact.basePrompt}:undefined};
+            project.jobs.unshift(next);data.selection=selection(project);
+            setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词'};}},1500);
+            return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
+          }
+          if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
+          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template}};
           if(message.type==='alchemy:generate') {
+            const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png'};
-            job.generations||=[];job.generations.push(generation);
+            saved.generations||=[];saved.generations.push(generation);
             setTimeout(()=>{if(generation.status==='running'){generation.status='completed';generation.stage='图片已生成';}},5000);
-            return {ok:true,value:structuredClone(job)};
+            return {ok:true,value:structuredClone(saved)};
           }
           if(message.type==='alchemy:generation-cancel') {
-            const generation=job.generations.find(item=>item.id===message.generationId);
-            generation.status='cancelled';generation.stage='已取消';return {ok:true,value:structuredClone(job)};
+            const saved=findJob(message.id), generation=saved.generations.find(item=>item.id===message.generationId);
+            generation.status='cancelled';generation.stage='已取消';return {ok:true,value:structuredClone(saved)};
           }
           if(message.type==='alchemy:select'){
             if(state==='invalidated')throw new Error('Extension context invalidated.');
