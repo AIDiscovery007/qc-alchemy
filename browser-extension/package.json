@@ -2,7 +2,7 @@
   "name": "qc-reframe-extension",
   "description": "Turn selected images into prompts with your local Codex agent.",
   "private": true,
-  "version": "0.1.19",
+  "version": "0.1.20",
   "type": "module",
   "engines": {
     "node": ">=22.15.0"
@@ -27,8 +27,10 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "img-fx": "0.5.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

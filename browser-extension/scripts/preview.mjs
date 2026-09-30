@@ -83,6 +83,20 @@ createServer(async (req, res) => {
       res.setHeader("Content-Type", "text/javascript; charset=utf-8");
       res.end(`
         const state = new URLSearchParams(location.search).get('state') || 'result';
+        const previewOptions = new URLSearchParams(location.search);
+        const motion = previewOptions.get('motion');
+        if (motion === 'full' || motion === 'reduce') {
+          const nativeMatchMedia = window.matchMedia.bind(window);
+          window.matchMedia = query => {
+            const media = nativeMatchMedia(query);
+            if(query === '(prefers-reduced-motion: reduce)')Object.defineProperty(media,'matches',{value:motion==='reduce'});
+            return media;
+          };
+        }
+        if(previewOptions.get('fx')==='unavailable') {
+          const nativeGetContext=HTMLCanvasElement.prototype.getContext;
+          HTMLCanvasElement.prototype.getContext=function(type,...args){return type.startsWith('webgl')?null:nativeGetContext.call(this,type,...args)};
+        }
         const job = ${JSON.stringify(job)};
         if (state === 'running') { job.status='running';job.stage='Codex 正在观察图片…';delete job.result; }
         if (state === 'failed') { job.status='failed';job.error='Codex 连接失败，请检查登录状态后重试';delete job.result; }
@@ -164,7 +178,10 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
           if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template}};
-          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||(state==='gallery'?gallery.result:template),path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
+          if(message.type==='alchemy:generation-image') {
+            if(previewOptions.get('fx')==='image-error')throw new Error('预览：图片读取失败');
+            return {ok:true,value:{image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
+          }
           if(message.type==='alchemy:save-prompt') {
             const job=findJob(message.id);
             job.result={...job.result,promptZh:message.promptZh,promptEn:message.promptEn,negativePrompt:message.negativePrompt};
@@ -174,7 +191,11 @@ createServer(async (req, res) => {
             const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage};
             saved.generations||=[];saved.generations.push(generation);
-            setTimeout(()=>{if(generation.status==='running'){generation.status='completed';generation.stage='图片已生成';}},5000);
+            setTimeout(()=>{if(generation.status==='running'){
+              generation.status=previewOptions.get('fx')==='failed'?'failed':'completed';
+              generation.stage=generation.status==='failed'?'预览：生图失败':'图片已生成';
+              if(generation.status==='failed')generation.error=generation.stage;
+            }},Math.min(60000,Math.max(1000,Number(previewOptions.get('generationDelay'))||5000)));
             return {ok:true,value:structuredClone(saved)};
           }
           if(message.type==='alchemy:generation-cancel') {

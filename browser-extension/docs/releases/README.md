@@ -6,6 +6,7 @@
 
 | 版本 | 更新内容 | 详情 |
 | --- | --- | --- |
+| 0.1.20 | 宽版创作工作台与设置中心；本机 Codex CLI 检测和升级；历史原图对照；像素生图动效 | [版本说明](v0.1.20.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20) |
 | 0.1.19 | 任务并行；完整复刻纯文生图；双图路径使用最新上传主体；逆向提示词可编辑；图片共享存储与去重；运行数据分类收纳 | [版本说明](v0.1.19.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.19) |
 | 0.1.18 | 更名为 QC-Reframe，全局替换 R 标志 | [版本说明](v0.1.18.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18) |
 | 0.1.17 | 插件独立选择并验证本机账号模型，附功能截图与 CLI 更新提醒 | [版本说明](v0.1.17.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.17) |

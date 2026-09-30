@@ -1,15 +1,18 @@
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ComponentType } from "react";
 import { request } from "../../lib/client";
 import type { Generation, Job } from "../../lib/types";
 import Icon from "./Icon";
 import { logo } from "../../lib/brand";
 import SelectField from "./SelectField";
 
+export const GenerationEffectContext = createContext<ComponentType<{ running: boolean; image: string; failed: boolean }> | null>(null);
+
 export default function GenerationPanel({ job, lang, disabled, subjectImage, onUpdate, workspace = false, actionsTarget, versionNumber = 1 }: {
   workspace?: boolean; actionsTarget?: HTMLElement | null; versionNumber?: number;
   job: Job; lang: "zh" | "en"; disabled: boolean; subjectImage?: string; onUpdate(job: Job, subjectImage?: string): void;
 }) {
+  const GenerationEffect = useContext(GenerationEffectContext);
   const [compare, setCompare] = useState(false);
   const [original, setOriginal] = useState<{ key: string; image: string }>();
   const [comparisonError, setComparisonError] = useState("");
@@ -102,19 +105,20 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
 
   if (workspace) return <section className="generated-pane" aria-label="图片生成">
     <div className="result-toolbar"><h2>生成结果 <small>{generations.filter(item => item.status === "completed").length} 张 · 当前提示词版本</small></h2>
-      <button className="quiet-button" disabled={!image} aria-pressed={compare} onClick={() => setCompare(!compare)}><ResultIcon name="compare" />{compare ? "退出对照" : "对照原图"}</button></div>
+      <div className="result-toolbar-actions"><button className="quiet-button" disabled={!image} aria-pressed={compare} onClick={() => setCompare(!compare)}><ResultIcon name="compare" />{compare ? "退出对照" : "对照原图"}</button>
+        {running && <button className="quiet-button" disabled={busy} onClick={() => act(true)} aria-label="取消生图" title="取消生图"><span aria-hidden="true">×</span></button>}</div></div>
     {action}
     {warning && <p className="result-notice">{warning}</p>}
-    {running && <div className="task-banner" role="status"><span><i className="spinner" /> {running.stage || "正在生成 · 可切换项目"}</span><button className="text-link" disabled={busy} onClick={() => act(true)}>取消</button></div>}
     {error && <div className="error result-notice" role="alert">{error}</div>}
     <div className="preview-canvas">{image ? compare ? <div className="compare-images">
       <figure>{original?.key === assetKey ? <img src={original.image} alt="本次生成的原始输入" /> : <p role="status">{comparisonError || "正在读取原图…"}</p>}<figcaption>{job.mode === "recreate" ? "逆向参考图（未发送生图）" : "本次主体图"}</figcaption></figure>
       <figure><img src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
     </div> : <><button onClick={() => generation && setModal({ kind: "zoom", generation, image })} aria-label="放大生成结果"><img src={image} alt={`${job.result!.title} · 生成结果`} /></button><span className="canvas-tag">生成结果</span></> : <div className="empty-canvas">
-      {generation?.status === "running" || (generation?.status === "completed" && !imageError) ? <i className="spinner" /> : <Icon name="image" />}
-      <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : imageError ? "图片暂不可用" : generation ? "正在准备新的画面" : "留一点空间，给想象。"}</h3>
-      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : generation?.status === "cancelled" ? "可以重新生成，或查看其他生成记录。" : generation?.status === "running" ? "完成后，图片会出现在这里。" : generation ? "正在读取生成图片…" : "准备图片，逆向提示词，再让新的画面在这里发生。")}</p>
-    </div>}</div>
+      {!(generation?.status === "running" || (generation?.status === "completed" && !imageError)) && <><Icon name="image" />
+      <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : imageError ? "图片暂不可用" : "留一点空间，给想象。"}</h3>
+      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : generation?.status === "cancelled" ? "可以重新生成，或查看其他生成记录。" : "准备图片，逆向提示词，再让新的画面在这里发生。")}</p></>}
+    </div>}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
+      failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} / ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong><span>{generation?.model || job.model || ""}</span></div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
@@ -178,6 +182,6 @@ function GenerationThumbnail({ jobId, generation, index, active, image, onSelect
   }, [jobId, generation.id, generation.status, thumbnail, active, image]);
   const status = { running: "生成中", completed: !image && !thumbnail && failed ? "图片不可用" : "已完成", failed: "失败", cancelled: "已取消" }[generation.status];
   return <button ref={button} className={`result-thumb${active ? " active" : ""}`} onClick={onSelect} aria-pressed={active} aria-label={`查看第 ${index + 1} 条生成记录，${status}`} title={generation.error || generation.stage}>
-    {image || thumbnail ? <img src={image || thumbnail} alt="" /> : generation.status === "running" ? <i className="spinner" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
+    {image || thumbnail ? <img src={image || thumbnail} alt="" /> : generation.status === "running" ? <span className="static-effect thumbnail-loading" aria-hidden="true" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
   </button>;
 }

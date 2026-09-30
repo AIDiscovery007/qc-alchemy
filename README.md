@@ -4,7 +4,7 @@
 
 **选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
 
-当前版本 **0.1.19**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
+当前版本 **0.1.20**。一个与本机 Codex 协作的 Chrome MV3 扩展，保留轻量插件界面，同时提供宽版工作台、主体上传、项目与版本管理、本机 CLI 检测和升级。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
 
 - **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
 - **完整复刻**：分析参考图的内容、构图和视觉表现。
@@ -33,10 +33,10 @@
 在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
 
 ```text
-请帮我安装并启动 QC-Reframe 0.1.19：
+请帮我安装并启动 QC-Reframe 0.1.20：
 https://github.com/AIDiscovery007/qc-reframe
 
-请获取仓库的 v0.1.19 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
+请获取仓库的 v0.1.20 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
 先确认插件实际使用的本机 Codex CLI 已更新到最新版本，再完成环境检查、初始化、构建、本机服务启动和配对准备，
 优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
 需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
@@ -54,14 +54,14 @@ Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登
 **请单独将本机 Codex CLI 更新到最新版本。** 更新桌面 App 不代表 CLI 已更新；旧 CLI 可能缺少新模型。更新后重启本机服务、刷新模型列表，可用性以账号权限和实际验证为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli)
 
 ```bash
-git clone --branch v0.1.19 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
+git clone --branch v0.1.20 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
 cd qc-reframe/browser-extension
 npm run setup
 npm start
 npm run pair
 ```
 
-`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.19)。在 QC-Reframe 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
+`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20)。在 QC-Reframe 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
 
 **首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
 
@@ -94,4 +94,4 @@ npm run pair
 - [使用方法与开发说明](browser-extension/README.md)
 - [贡献与维护指南](Contribution.md)
 - [更新日志](browser-extension/docs/releases/README.md)
-- [下载 0.1.19](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.19)
+- [下载 0.1.20](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20)

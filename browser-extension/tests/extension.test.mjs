@@ -1,9 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 
 const build = new URL("../.output/chrome-mv3/", import.meta.url);
+
+test("WebGL generation engine is split out of injected content and initial UI bundles", async () => {
+  const content = await readFile(new URL("content-scripts/content.js", build), "utf8");
+  assert.ok(!content.includes("THREE.WebGLRenderer"), "every visited page must not load Three.js");
+  const files = await readdir(new URL("chunks/", build));
+  const chunks = await Promise.all(files.filter(name => name.endsWith('.js')).map(async name => ({ name, text: await readFile(new URL(`chunks/${name}`, build), 'utf8') })));
+  const engines = chunks.filter(chunk => chunk.text.includes('THREE.WebGLRenderer'));
+  assert.equal(engines.length, 1);
+  const entry = chunks.find(chunk => chunk.name.startsWith('workspace-'));
+  const dynamicImports = [...entry.text.matchAll(/import\((["'`])([^"'`]+)\1\)/g)].map(match => match[2]);
+  assert.ok(dynamicImports.includes(`./${engines[0].name}`), 'only the workspace lazily loads the engine');
+  for (const page of ['popup.html', 'workspace.html']) {
+    assert.ok(!(await readFile(new URL(page, build), 'utf8')).includes(engines[0].name), 'engine must not be eagerly preloaded');
+  }
+});
 
 test("model messages stay authenticated in background and only reach allowed endpoints", async () => {
   const calls = [];
