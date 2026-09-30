@@ -15,6 +15,7 @@ const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" 
   : job.status !== "completed" ? "待重试"
   : job.generations?.some((item) => item.status === "completed") ? "提示词 + 图片" : "提示词已就绪";
 const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演" })[mode];
+type PromptDraft = Pick<NonNullable<Job["result"]>, "promptZh" | "promptEn" | "negativePrompt">;
 
 export default function App({ embedded = false }: { embedded?: boolean }) {
   const [preferences, setPreferences] = useState(defaults);
@@ -24,6 +25,9 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [versions, setVersions] = useState<Record<string, string>>({});
   const [references, setReferences] = useState<Record<string, Selection>>({});
+  const [subjectDrafts, setSubjectDrafts] = useState<Record<string, string>>({});
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, PromptDraft>>({});
+  const [savingPrompt, setSavingPrompt] = useState("");
   const [referenceErrors, setReferenceErrors] = useState<Record<string, string>>({});
   const [savingMode, setSavingMode] = useState(false);
   const modeRevision = useRef(0);
@@ -35,6 +39,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const [connected, setConnected] = useState(false);
   const [connectionText, setConnectionText] = useState("尚未连接");
   const [serviceBusy, setServiceBusy] = useState(false);
+  const [modelBusy, setModelBusy] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,21 +52,27 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     const jobs = modeJobs(mode);
     return jobs.find((item) => item.id === versions[`${activeProject?.id}:${mode}`]) || jobs[0];
   };
+  const subjectKey = (mode: Mode) => `${selection?.projectId || selection?.id}:${mode}`;
+  const subjectImage = (mode: Mode) => {
+    const savedJob = modeJob(mode);
+    const saved = savedJob && references[savedJob.id];
+    return subjectDrafts[subjectKey(mode)] ?? saved?.generationSubjectImage ?? saved?.reenact?.subjectImage ?? "";
+  };
   const job = modeJob(preferences.mode);
   const activeJob = job;
   const running = job?.status === "running";
-  const generating = activeProject?.jobs.some((item) => item.generations?.some((generation) => generation.status === "running"));
   const loadingProject = !!selection && !activeProject;
   const result = job?.result;
+  const promptDraft = job && promptDrafts[job.id];
   const reading = selection && !selection.image && !selection.error;
   const referenceError = job && referenceErrors[job.id];
   const restoring = !!job?.reenact && !references[job.id] && !referenceError;
-  const blocked = !connected || !selectedModel || busy || savingMode || serviceBusy || !!running || !!generating || loadingProject || restoring;
+  const blocked = !connected || !selectedModel || busy || savingMode || modelBusy || !!running || loadingProject || restoring;
 
   useEffect(() => {
     setCopied(false);
     return () => clearTimeout(copyTimer.current);
-  }, [job?.id, lang]);
+  }, [job?.id, lang, promptDraft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,10 +128,11 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     const refresh = async () => {
       const revision = projectRevision.current;
       try {
-        const health = await query<{ ready: boolean; skill: string; active: number; model?: string }>("/health");
+        const health = await query<{ ready: boolean; skill: string; active: number; modelBusy?: boolean; model?: string }>("/health");
         if (cancelled) return;
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
+        setModelBusy(!!health.modelBusy);
         setSelectedModel(health.model || null);
         setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到图片逆向技能");
         if (historyOpen && !deletingProjects.current) {
@@ -199,7 +211,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         type: "alchemy:start", id: selection.id, projectId: activeProject.id, mode, reenact,
       });
       selectionRevision.current++;
-      setSelection(value.selection);
+      setSelection((current) => current?.id === selection.id ? value.selection : current);
       updateJob(value.job);
       setVersions((items) => ({ ...items, [`${activeProject.id}:${mode}`]: value.job.id }));
       setCopied(false);
@@ -236,6 +248,8 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       setProjects((items) => items.filter((item) => !deletedIds.includes(item.id)));
       if (selection?.projectId && deletedIds.includes(selection.projectId)) { setSelection(undefined); setProject(undefined); }
       setVersions((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
+      setPromptDrafts((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
+      setSubjectDrafts((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
       setReferences((items) => Object.fromEntries(Object.entries(items).filter(([id, value]) => !removedJobs.includes(id) && !deletedIds.includes(value.projectId || ""))));
       setReferenceErrors((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
     } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
@@ -248,7 +262,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(
-        lang === "zh" ? job!.result!.promptZh : job!.result!.promptEn,
+        lang === "zh" ? (promptDraft || result)!.promptZh : (promptDraft || result)!.promptEn,
       );
       setCopied(true);
       clearTimeout(copyTimer.current);
@@ -256,6 +270,21 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     } catch {
       setError("复制失败，请选中提示词手动复制");
     }
+  };
+  const discardPrompt = (id: string) => setPromptDrafts((items) => {
+    const next = { ...items };
+    delete next[id];
+    return next;
+  });
+  const savePrompt = async () => {
+    if (!job || !promptDraft || savingPrompt) return;
+    setSavingPrompt(job.id);
+    setError("");
+    try {
+      updateJob(await request<Job>({ type: "alchemy:save-prompt", id: job.id, ...promptDraft }));
+      discardPrompt(job.id);
+    } catch (e) { setError((e as Error).message); }
+    finally { setSavingPrompt(""); }
   };
   const exportResult = () => {
     if (!job?.result) return;
@@ -386,8 +415,9 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                 主体重演<span>换主体，演原图</span>{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
             </div>
-            {serviceBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
-              <p className="fine" role="status">Codex 正在处理其他任务，请稍候。</p>}
+            {modelBusy && <p className="fine" role="status">正在验证模型，请完成后再提交。</p>}
+            {serviceBusy && !modelBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
+              <p className="fine" role="status">其他任务正在后台运行，可继续提交。</p>}
             {loadingProject && selection?.image && <p className="fine" role="status">正在读取模板项目…</p>}
             {selection?.image && preferences.mode === "recreate" && (
               <figure className="image-card">
@@ -449,6 +479,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
               const savedReference = savedJob && references[savedJob.id];
               return <SubjectForm key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
                 selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
+                subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
@@ -483,9 +514,29 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                       <Icon name={copied ? "check" : "copy"} />{copied ? "已复制" : "复制提示词"}
                     </button>
                   </div>
-                  <p className="prompt">
+                  {promptDraft ? <div className="prompt-editor">
+                    <label>{lang === "zh" ? "中文提示词" : "English prompt"}
+                      <textarea rows={10} maxLength={20000} disabled={!!savingPrompt}
+                        value={lang === "zh" ? promptDraft.promptZh : promptDraft.promptEn}
+                        onChange={(e) => setPromptDrafts((items) => ({ ...items, [activeJob.id]: { ...promptDraft, [lang === "zh" ? "promptZh" : "promptEn"]: e.target.value } }))} />
+                    </label>
+                    <label>排除项（可留空）
+                      <textarea rows={3} maxLength={20000} disabled={!!savingPrompt} value={promptDraft.negativePrompt}
+                        onChange={(e) => setPromptDrafts((items) => ({ ...items, [activeJob.id]: { ...promptDraft, negativePrompt: e.target.value } }))} />
+                    </label>
+                    <p className="fine">中英文分别编辑，不会自动翻译。保存后用于后续生图与导出。</p>
+                    {(!promptDraft.promptZh.trim() || !promptDraft.promptEn.trim()) && <p className="fine">中英文提示词都不能为空。</p>}
+                    <div className="prompt-actions">
+                      <button className="secondary" disabled={!connected || !!savingPrompt || !promptDraft.promptZh.trim() || !promptDraft.promptEn.trim()} onClick={savePrompt}>
+                        {savingPrompt === activeJob.id ? "正在保存…" : "保存修改"}
+                      </button>
+                      <button className="text-button" disabled={!!savingPrompt} onClick={() => discardPrompt(activeJob.id)}>取消编辑</button>
+                    </div>
+                  </div> : <><p className="prompt">
                     {lang === "zh" ? result.promptZh : result.promptEn}
-                  </p>
+                  </p><div className="prompt-actions">
+                    <button className="text-button" onClick={() => setPromptDrafts((items) => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}>编辑提示词</button>
+                  </div></>}
                 </div>
                 {activeJob.mode === "style" && !activeJob.reenact && (
                   <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
@@ -496,7 +547,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                     {result.observations.map((text, i) => <li key={i}>{text}</li>)}
                   </ul>
                 </details>}
-                {result.negativePrompt && (
+                {!promptDraft && result.negativePrompt && (
                   <details>
                     <summary>排除项</summary>
                     <p>{result.negativePrompt}</p>
@@ -508,9 +559,17 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                     <p>{result.uncertainties.join("\n")}</p>
                   </details>
                 )}
-                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || !selectedModel || busy || serviceBusy || !!running}
-                  onUpdate={updateJob} />
-                <button className="secondary" onClick={exportResult}>
+                {promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
+                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || !selectedModel || busy || modelBusy || !!running || !!promptDraft}
+                  subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
+                  onUpdate={(updated, image) => {
+                    updateJob(updated);
+                    if (image) setReferences((items) => {
+                      const saved = items[updated.id];
+                      return saved ? { ...items, [updated.id]: { ...saved, generationSubjectImage: image } } : items;
+                    });
+                  }} />
+                <button className="secondary" disabled={!!promptDraft} onClick={exportResult}>
                   <Icon name="download" />导出 Markdown
                 </button>
               </section>

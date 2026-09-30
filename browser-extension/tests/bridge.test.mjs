@@ -64,7 +64,10 @@ test("imagegen receives exact prompt, exclusions, explicit skill and ordered rea
   assert.deepEqual(input.filter((x) => x.type === "localImage").map((x) => x.path), [args.subjectImagePath, args.imagePath]);
   assert.deepEqual(input.at(-1), { type: "skill", name: "imagegen", path: args.skillPath });
   assert.ok(input[0].text.includes(JSON.stringify({ prompt: args.prompt, negativePrompt: args.negativePrompt })));
-  assert.equal(generationInput({ ...args, subjectImagePath: undefined }).filter((x) => x.type === "localImage").length, 1);
+  const textOnly = generationInput({ ...args, prompt: "一只猫，柔和的色块", imagePath: undefined, subjectImagePath: undefined });
+  assert.deepEqual(textOnly.map((item) => item.type), ["text", "skill"]);
+  assert.match(textOnly[0].text, /纯文生图/);
+  assert.ok(textOnly[0].text.includes(JSON.stringify({ prompt: "一只猫，柔和的色块", negativePrompt: args.negativePrompt })));
   assert.throws(() => generationInput({ ...args, prompt: "Draw [SUBJECT]" }), /补充主体/);
 });
 
@@ -85,7 +88,8 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   const first = await waitGeneration(request, created.id, "completed");
   assert.equal(calls[0].prompt, finalResult.promptEn);
   assert.equal(calls[0].negativePrompt, finalResult.negativePrompt);
-  assert.deepEqual(await readFile(calls[0].imagePath), decodeImage(image).bytes);
+  if (paired) assert.deepEqual(await readFile(calls[0].imagePath), decodeImage(image).bytes);
+  else assert.equal(calls[0].imagePath, undefined, "recreate must send text only");
   assert.equal(!!calls[0].subjectImagePath, paired);
   if (paired) assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(image).bytes);
   const generated = first.generations[0];
@@ -110,8 +114,14 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   await rm(join(dir, `${generated.id}-generated.png`));
   assert.equal((await request(imagePath)).status, 404);
   await rm(join(dir, `${created.id}${paired ? "-subject" : ""}.png`));
-  assert.equal((await generate("zh")).status, 404);
-  assert.equal(calls.length, 2);
+  assert.equal((await generate("zh")).status, paired ? 404 : 202);
+  if (!paired) {
+    await waitGeneration(request, created.id, "completed");
+    assert.equal(calls[2].imagePath, undefined, "text-to-image works without the saved reference");
+    assert.equal(calls[2].subjectImagePath, undefined);
+    assert.deepEqual(generationInput(calls[2]).map((item) => item.type), ["text", "skill"]);
+  }
+  assert.equal(calls.length, paired ? 2 : 3);
 });
 
 test("generation rejects generic prompts, prevents duplicates and preserves cancelled jobs", async (t) => {
@@ -126,7 +136,7 @@ test("generation rejects generic prompts, prevents duplicates and preserves canc
   const body = { method: "POST", body: '{"language":"zh"}' };
   const responses = await Promise.all([request(path, body), request(path, body)]);
   assert.deepEqual(responses.map((x) => x.status).sort(), [202, 409]);
-  assert.equal((await request("/jobs", submit())).status, 409);
+  assert.equal((await request("/jobs", submit())).status, 202, "analysis can run during generation");
   const job = await (await request(`/jobs/${created.id}`)).json();
   const generated = job.generations[0];
   assert.equal((await request(`${path}/${generated.id}/image`)).status, 409);
@@ -242,23 +252,79 @@ test("sends actual image bytes to agent, persists result, strips URL query", asy
   assert.fail("Result was not persisted");
 });
 
-test("limits concurrent jobs and cancels a running agent", async (t) => {
-  const { request } = await setup(
-    t,
-    ({ signal }) =>
-      new Promise((_, reject) =>
-        signal.addEventListener("abort", () => reject(new Error("cancelled")), {
-          once: true,
-        }),
-      ),
-  );
-  const job = await (await request("/jobs", submit())).json();
-  assert.equal((await request("/jobs", submit())).status, 409);
-  const cancelled = await (
-    await request(`/jobs/${job.id}/cancel`, { method: "POST" })
-  ).json();
+test("parallel analyses keep progress, cancellation, failures and persisted results independent", async (t) => {
+  const calls = new Map();
+  const { request, dir } = await setup(t, (args) => new Promise((resolve, reject) => {
+    calls.set(args.imagePath, { ...args, resolve, reject });
+    args.signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+  }));
+  const responses = await Promise.all([
+    request("/jobs", submit()),
+    request("/jobs", submit({ mode: "recreate" })),
+    request("/jobs", submit({ image: "data:image/jpeg;base64,/9j/2Q==" })),
+  ]);
+  assert.ok(responses.every((response) => response.status === 202));
+  const jobs = await Promise.all(responses.map((response) => response.json()));
+  const inputs = jobs.map((job) => calls.get(join(dir, `${job.id}.${job.id === jobs[2].id ? "jpeg" : "png"}`)));
+  assert.equal((await (await request("/health")).json()).active, 3);
+  inputs.forEach((input, index) => input.onProgress({ stage: `progress-${index}`, threadId: `thread-${index}` }));
+  for (const [index, job] of jobs.entries()) {
+    assert.equal((await (await request(`/jobs/${job.id}`)).json()).stage, `progress-${index}`);
+    assert.equal(inputs[index].modelSettings.model, "test-model");
+  }
+  assert.equal((await request("/models/verify", { method: "POST", body: '{"model":"other"}' })).status, 409);
+  assert.equal((await request("/projects/delete", { method: "POST", body: JSON.stringify({ ids: [jobs[0].projectId] }) })).status, 409);
+  const cancelled = await (await request(`/jobs/${jobs[0].id}/cancel`, { method: "POST" })).json();
   assert.equal(cancelled.status, "cancelled");
-  await waitFor(request, job.id, "cancelled");
+  assert.equal(inputs[0].signal.aborted, true);
+  assert.equal(inputs[1].signal.aborted, false);
+  assert.equal(inputs[2].signal.aborted, false);
+  inputs[2].reject(new Error("one task failed"));
+  inputs[1].resolve({ ...result, title: "independent result" });
+  for (const [index, status] of ["cancelled", "completed", "failed"].entries()) {
+    const job = await waitFor(request, jobs[index].id, status);
+    assert.deepEqual(JSON.parse(await readFile(join(dir, `${job.id}.json`))), job);
+  }
+  assert.equal((await (await request(`/jobs/${jobs[1].id}`)).json()).result.title, "independent result");
+  assert.equal((await (await request(`/jobs/${jobs[2].id}`)).json()).error, "one task failed");
+});
+
+test("generations from different prompt versions overlap analysis and cancel independently", async (t) => {
+  const generations = new Map();
+  let finishAnalysis;
+  let holdAnalysis = false;
+  const { request, dir } = await setup(t,
+    () => holdAnalysis ? new Promise((resolve) => { finishAnalysis = resolve; }) : Promise.resolve({ ...result, promptZh: "实际主体", promptEn: "Actual subject" }),
+    (args) => new Promise((resolve) => { generations.set(args.prompt, { ...args, resolve }); }),
+  );
+  const first = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  const second = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  await waitFor(request, second.id, "completed");
+  holdAnalysis = true;
+  const analysis = await (await request("/jobs", submit())).json();
+  const responses = await Promise.all([first, second].map((job, index) => request(`/jobs/${job.id}/generations`, { method: "POST", body: JSON.stringify({ language: index ? "zh" : "en" }) })));
+  assert.ok(responses.every((response) => response.status === 202));
+  const jobs = await Promise.all(responses.map((response) => response.json()));
+  assert.equal((await (await request("/health")).json()).active, 3);
+  const cancelPath = `/jobs/${first.id}/generations/${jobs[0].generations[0].id}/cancel`;
+  await request(cancelPath, { method: "POST" });
+  const firstCall = generations.get("Actual subject");
+  const secondCall = generations.get("实际主体");
+  assert.equal(firstCall.signal.aborted, true);
+  assert.equal(secondCall.signal.aborted, false);
+  assert.equal((await (await request(`/jobs/${analysis.id}`)).json()).status, "running");
+  secondCall.onProgress({ stage: "second generation" });
+  assert.equal((await (await request(`/jobs/${second.id}`)).json()).generations[0].stage, "second generation");
+  firstCall.resolve(decodeImage(image));
+  secondCall.resolve(decodeImage(image));
+  finishAnalysis(result);
+  const cancelled = await waitGeneration(request, first.id, "cancelled");
+  const completed = await waitGeneration(request, second.id, "completed");
+  await waitFor(request, analysis.id, "completed");
+  assert.equal(cancelled.generations[0].extension, undefined);
+  for (const job of [cancelled, completed]) assert.deepEqual(JSON.parse(await readFile(join(dir, `${job.id}.json`))), job);
+  const asset = await (await request(`/jobs/${second.id}/generations/${completed.generations[0].id}/image`)).json();
+  assert.equal(asset.image, image);
 });
 
 test("history restores the exact image for a new mode and preserves both results", async (t) => {

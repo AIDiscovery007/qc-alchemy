@@ -119,7 +119,7 @@ createServer(async (req, res) => {
             },1800);
             return {ok:true,value:structuredClone(models)};
           }
-          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',model:models.selected,active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
+          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
             if(projects.some(p=>message.ids.includes(p.id)&&summary(p).busy))return {error:'所选项目仍在逆向或生图'};
@@ -136,7 +136,7 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:reference') {
             const saved=findJob(message.id);
-            return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?{...saved.reenact,subjectImage:template}:undefined}};
+            return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?{...saved.reenact,subjectImage:template}:undefined,generationSubjectImage:saved.generations?.at(-1)?.subjectImage}};
           }
           if(message.type==='alchemy:start') {
             const project=projects.find(p=>p.id===message.projectId);
@@ -146,10 +146,15 @@ createServer(async (req, res) => {
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
           if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
-          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
+          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
+          if(message.type==='alchemy:save-prompt') {
+            const job=findJob(message.id);
+            job.result={...job.result,promptZh:message.promptZh,promptEn:message.promptEn,negativePrompt:message.negativePrompt};
+            return {ok:true,value:job};
+          }
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
-            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png'};
+            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',subjectImage:message.subjectImage};
             saved.generations||=[];saved.generations.push(generation);
             setTimeout(()=>{if(generation.status==='running'){generation.status='completed';generation.stage='图片已生成';}},5000);
             return {ok:true,value:structuredClone(saved)};

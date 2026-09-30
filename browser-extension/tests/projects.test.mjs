@@ -98,6 +98,47 @@ const otherImage = "data:image/jpeg;base64,/9j/2Q==";
 const result = { title: "模板项目", observations: ["观察"], promptZh: "中文提示词", promptEn: "English prompt", negativePrompt: "排除项", uncertainties: [] };
 const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 
+for (const mode of ["style", "reenact"]) test(`${mode} generates with the latest uploaded subject, preserves earlier inputs, and restores after restart`, async (t) => {
+  let analyses = 0;
+  const calls = [];
+  const { request, dir, restart } = await setup(t, {
+    agent: async () => { analyses++; return result; },
+    generator: async (args) => { calls.push(args); return decodeImage(image); },
+  });
+  const created = await (await request("/jobs", post({ image, mode, reenact: { subjectImage: image, basePrompt: "保留主体" } }))).json();
+  const job = await settled(request, created.id);
+  const path = `/jobs/${job.id}/generations`;
+  for (const subjectImage of [null, "", "bad-image", "data:image/png;base64,aGVsbG8=", `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.alloc(2 * 1024 * 1024)]).toString("base64")}`]) {
+    assert.equal((await request(path, post({ language: "zh", subjectImage }))).status, 400);
+  }
+  assert.equal(calls.length, 0);
+  assert.equal((await request(path, post({ language: "zh", subjectImage: otherImage }))).status, 202);
+  const first = await settled(request, job.id);
+  assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(otherImage).bytes);
+  assert.deepEqual(await readFile(join(dir, `${job.id}-subject.png`)), decodeImage(image).bytes, "reverse input remains unchanged");
+  assert.equal(calls[0].prompt, result.promptZh);
+  assert.equal(calls[0].negativePrompt, result.negativePrompt);
+  assert.equal(first.generations[0].subjectExtension, "jpeg");
+  await restart();
+  const restored = await (await request(`/jobs/${job.id}/reference`)).json();
+  assert.equal(restored.generationSubjectImage, otherImage);
+  assert.equal(restored.reenact.subjectImage, image);
+  // A fresh upload must also work when the original reverse subject is gone.
+  await rm(join(dir, `${job.id}-subject.png`));
+  assert.equal((await request(path, post({ language: "en", subjectImage: image }))).status, 202);
+  const second = await settled(request, job.id);
+  assert.deepEqual(await readFile(calls[1].subjectImagePath), decodeImage(image).bytes);
+  assert.notEqual(calls[0].subjectImagePath, calls[1].subjectImagePath);
+  assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(otherImage).bytes, "new uploads never overwrite earlier generation snapshots");
+  assert.deepEqual(second.generations[0], first.generations[0]);
+  assert.deepEqual(second.result, result);
+  assert.equal(analyses, 1, "changing the generation subject does not rerun analysis");
+  await restart();
+  assert.equal((await (await request(`/jobs/${job.id}/reference`)).json()).generationSubjectImage, image);
+  assert.equal((await request("/projects/delete", post({ ids: [job.projectId] }))).status, 200);
+  for (const call of calls) await assert.rejects(readFile(call.subjectImagePath), { code: "ENOENT" });
+});
+
 async function setup(t, options = {}, prepare) {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-projects-"));
   const skillPath = join(dir, "SKILL.md");
@@ -268,4 +309,43 @@ test("startup migrates every legacy job including more than 30 projects and miss
   assert.equal((await (await request("/projects")).json()).length, 35);
   assert.equal((await (await request(`/jobs/${originals[35].id}`)).json()).projectId, missingProjectId);
   assert.equal((await (await request(`/projects/${group.id}`)).json()).jobCount, 2);
+  assert.equal((await request("/projects/delete", post({ ids: [group.id] }))).status, 200, "legacy generation IDs remain deletable");
+  await assert.rejects(readFile(join(dir, "old-generation-generated.png")), { code: "ENOENT" });
+});
+
+for (const mode of ["recreate", "style", "reenact"]) test(`${mode} saves edited prompts, isolates versions, and preserves submitted generation inputs`, async (t) => {
+  const calls = [];
+  let finish;
+  const { request, restart } = await setup(t, {
+    generator: (args) => { calls.push(args); return new Promise((resolve) => { finish = () => resolve(decodeImage(image)); }); },
+  });
+  const input = { image, mode, ...(mode !== "recreate" ? { reenact: { subjectImage: otherImage, basePrompt: "原始任务指令" } } : {}) };
+  const job = await settled(request, (await (await request("/jobs", post(input))).json()).id);
+  const other = await settled(request, (await (await request("/jobs", post(input))).json()).id);
+  const path = `/jobs/${job.id}/prompt`;
+  const edits = { promptZh: "自定义中文\n保留换行", promptEn: "Custom English prompt", negativePrompt: "自定义排除项" };
+  assert.equal((await request(path, { ...post(edits), headers: { Authorization: "" } })).status, 401);
+  for (const invalid of [null, 7, "", "   ", "x".repeat(20001)])
+    assert.equal((await request(path, post({ ...edits, promptZh: invalid }))).status, 400);
+  assert.equal((await request(path, post({ ...edits, negativePrompt: null }))).status, 400);
+  assert.deepEqual((await (await request(`/jobs/${job.id}`)).json()).result, result);
+  assert.equal((await request(path, post({ ...edits, title: "ignored", observations: [] }))).status, 200);
+  assert.equal((await request(`/jobs/${job.id}/generations`, post({ language: "zh" }))).status, 202);
+  assert.equal(calls[0].prompt, edits.promptZh);
+  assert.equal(calls[0].negativePrompt, edits.negativePrompt);
+  const later = { ...edits, promptZh: "下一张图的提示词", negativePrompt: "" };
+  assert.equal((await request(path, post(later))).status, 200);
+  finish();
+  const saved = await settled(request, job.id);
+  assert.deepEqual(saved.result, { ...result, ...later });
+  assert.equal(saved.generations[0].prompt, edits.promptZh);
+  assert.equal(saved.generations[0].negativePrompt, edits.negativePrompt);
+  assert.deepEqual((await (await request(`/jobs/${other.id}`)).json()).result, result);
+  await restart();
+  assert.deepEqual((await (await request(`/jobs/${job.id}`)).json()).result, { ...result, ...later });
+  assert.equal((await request(`/jobs/${job.id}/generations`, post({ language: "en" }))).status, 202);
+  assert.equal(calls[1].prompt, later.promptEn);
+  assert.equal(calls[1].negativePrompt, "");
+  finish();
+  await settled(request, job.id);
 });

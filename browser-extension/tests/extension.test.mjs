@@ -66,16 +66,21 @@ test("generation messages keep credentials in background and constrain job endpo
   assert.deepEqual(JSON.parse(calls[0].options.body), { language: "en" });
   assert.equal(calls[0].options.headers.Authorization, "Bearer test");
   assert.ok(calls[0].url.endsWith(`/jobs/${id}/generations`));
+  const subjectImage = "data:image/png;base64,iVBORw==";
+  assert.equal((await send({ type: "alchemy:generate", id, language: "zh", subjectImage })).ok, true);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { language: "zh", subjectImage });
   assert.equal((await send({ type: "alchemy:generation-image", id, generationId })).ok, true);
-  assert.ok(calls[1].url.endsWith(`/${generationId}/image`));
+  assert.ok(calls[2].url.endsWith(`/${generationId}/image`));
   assert.equal((await send({ type: "alchemy:generation-cancel", id, generationId })).ok, true);
-  assert.ok(calls[2].url.endsWith(`/${generationId}/cancel`));
+  assert.ok(calls[3].url.endsWith(`/${generationId}/cancel`));
   for (const message of [
     { type: "alchemy:generate", id: "../token", language: "en" },
     { type: "alchemy:generate", id, language: "bad" },
+    ...[null, "", 42, "file:///tmp/subject.png", "data:image/svg+xml;base64,PHN2Zz4=", `data:image/png;base64,${"A".repeat(3 * 1024 * 1024)}`]
+      .map((subjectImage) => ({ type: "alchemy:generate", id, language: "zh", subjectImage })),
     { type: "alchemy:generation-image", id, generationId: "../../token" },
   ]) assert.ok((await send(message)).error);
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
 });
 
 test("built extension uses a popup without declaring unsupported native side panels", async () => {
@@ -118,6 +123,10 @@ test("project messages restore a template and start only the explicitly chosen l
   assert.equal(body.projectId, id);
   assert.equal(body.mode, "recreate");
   assert.equal(storage.selection.jobId, "new-job");
+  storage.selection = { id: "other-selection", projectId: "b".repeat(64), image: "other-template" };
+  const independent = await send({ type: "alchemy:start", projectId: id, mode: "recreate" });
+  assert.equal(independent.value.job.projectId, id);
+  assert.equal(storage.selection.id, "other-selection", "submitting another project's job must not replace the selected project");
   const before = calls.length;
   for (const message of [
     { type: "alchemy:open-project", id: "../../token" },
@@ -208,8 +217,10 @@ test("background starts and opens results when sidePanel API is absent", async (
       ),
     );
   assert.equal((await send()).ok, true);
-  assert.equal(messages[0].type, "alchemy:show");
-  assert.equal(handlers.selection.jobId, "active");
+  assert.equal(messages[0].type, "alchemy:hide");
+  assert.equal(messages.at(-1).type, "alchemy:show");
+  assert.equal(handlers.selection.jobId, undefined);
+  assert.match(handlers.selection.error, /原图无法读取/);
   chrome.tabs.sendMessage = async () => {
     throw new Error("No content script");
   };
@@ -297,7 +308,7 @@ test("page panel can read results without receiving the pairing token", async ()
   assert.equal(handlers.message({ type: "alchemy:state" }, { ...sender, frameId: 1 }, () => assert.fail("iframe reply")), undefined);
 });
 
-for (const mode of ["style", "reenact", "recreate"]) test(`hover in ${mode} mode captures the template without starting an incomplete job`, async () => {
+for (const mode of ["style", "reenact", "recreate"]) test(`hover in ${mode} mode selects another template while the previous task is active`, async () => {
   const calls = [];
   const { handlers, chrome } = await background(async (url) => {
     calls.push(url);
@@ -311,7 +322,7 @@ for (const mode of ["style", "reenact", "recreate"]) test(`hover in ${mode} mode
       async convertToBlob() { return new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }); }
     },
   });
-  const storage = { preferences: { token: "test", mode } };
+  const storage = { preferences: { token: "test", mode }, selection: { id: "previous", jobId: "active", projectId: "b".repeat(64) } };
   chrome.storage.local.get = async () => storage;
   chrome.storage.local.set = async (value) => Object.assign(storage, value);
   const sender = { id: "test", frameId: 0, tab: { id: 4, windowId: 1, url: "https://example.com" } };
@@ -323,4 +334,25 @@ for (const mode of ["style", "reenact", "recreate"]) test(`hover in ${mode} mode
   assert.match(storage.selection.stage, /参考模板/);
   assert.equal(storage.selection.projectId, "a".repeat(64));
   assert.deepEqual(calls, ["https://example.com/template.png", "http://127.0.0.1:43187/projects"]);
+});
+
+
+test("prompt edits are validated, authenticated and limited to prompt fields", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ status: "completed" }) };
+  });
+  const sender = { id: "test", frameId: 0, url: "https://pinterest.com/", tab: { id: 4 } };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const id = "00000000-0000-0000-0000-000000000001";
+  const edits = { promptZh: "修改后的中文", promptEn: "Edited prompt", negativePrompt: "" };
+  assert.equal((await send({ type: "alchemy:save-prompt", id, ...edits, title: "ignored" })).ok, true);
+  assert.ok(calls[0].url.endsWith(`/jobs/${id}/prompt`));
+  assert.equal(calls[0].options.headers.Authorization, "Bearer test");
+  assert.deepEqual(JSON.parse(calls[0].options.body), edits);
+  for (const invalid of [{ id: "../token" }, { promptZh: " " }, { promptEn: null }, { negativePrompt: 42 }, { promptEn: "x".repeat(20001) }])
+    assert.ok((await send({ type: "alchemy:save-prompt", id, ...edits, ...invalid })).error);
+  assert.equal(calls.length, 1);
+  assert.equal(handlers.message({ type: "alchemy:save-prompt", id, ...edits }, { ...sender, id: "other" }, () => assert.fail("untrusted reply")), undefined);
 });

@@ -7,32 +7,28 @@ const defaultPrompts = {
   reenact: "以图 1 为主体，以图 2 为风格参考模板，生成基于图 1 的风格转换与主体重演提示词。",
 };
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, onSubmit, onExtract }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract }: {
   mode: "style" | "reenact";
   selection: Selection;
   job?: Job;
   active: boolean;
   disabled: boolean;
   submitting: boolean;
+  subjectImage: string;
+  onSubjectChange: (image: string) => void;
   onSubmit: (input: SubjectInput) => void;
   onExtract?: () => void;
 }) {
   const style = mode === "style";
   const defaultPrompt = defaultPrompts[mode];
-  const [subjectImage, setSubjectImage] = useState("");
   const [basePrompt, setBasePrompt] = useState(defaultPrompt);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
-  const subjectEdited = useRef(false);
   const promptEdited = useRef(false);
   const uploadRevision = useRef(0);
   const saved = job?.mode === mode ? selection.reenact || job.reenact : undefined;
   const originalPrompt = saved?.basePrompt ?? defaultPrompt;
 
-  useEffect(() => {
-    if (job?.mode === mode && !subjectEdited.current && selection.reenact?.subjectImage)
-      setSubjectImage(selection.reenact.subjectImage);
-  }, [selection.reenact?.subjectImage, job?.mode, mode]);
   useEffect(() => {
     if (!promptEdited.current) setBasePrompt(originalPrompt);
   }, [originalPrompt]);
@@ -41,8 +37,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   const upload = async (file?: File) => {
     if (!file) return;
     const revision = ++uploadRevision.current;
-    subjectEdited.current = true;
-    setSubjectImage("");
+    onSubjectChange("");
     setUploading(true);
     setError("");
     try {
@@ -50,7 +45,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
         throw new Error("请上传 PNG、JPEG 或 WebP 主体图");
       if (file.size > 20 * 1024 * 1024) throw new Error("原图最多 20 MB，请缩小后上传");
       const image = await normalizeImage(file, 2 * 1024 * 1024);
-      if (revision === uploadRevision.current) setSubjectImage(image);
+      if (revision === uploadRevision.current) onSubjectChange(image);
     } catch (e) {
       if (revision === uploadRevision.current)
         setError((e as Error).message || "无法读取主体图，请换一张图片");

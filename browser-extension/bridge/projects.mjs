@@ -21,11 +21,15 @@ export async function recoverProjectDeletion(dataDir) {
 export async function createProjectStore({ dataDir, jobs, readReference }) {
   const records = new Map();
   const pending = new Map();
-  const save = async (project) => {
-    const path = join(dataDir, `project-${project.id}.json`);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(project), { mode: 0o600 });
-    await rename(temporary, path);
+  let saveTail = Promise.resolve();
+  const save = (project) => {
+    saveTail = saveTail.catch(() => {}).then(async () => {
+      const path = join(dataDir, `project-${project.id}.json`);
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      await writeFile(temporary, JSON.stringify(project), { mode: 0o600 });
+      await rename(temporary, path);
+    });
+    return saveTail;
   };
   for (const file of await readdir(dataDir)) {
     const match = /^project-([a-f0-9]{64})\.json$/.exec(file);
@@ -94,6 +98,7 @@ export async function createProjectStore({ dataDir, jobs, readReference }) {
         files.push(`${job.id}.json`, ...images(job.id), ...images(`${job.id}-subject`));
         for (const generation of job.generations || []) {
           if (/^[\w-]+$/.test(generation.id)) files.push(...images(`${generation.id}-generated`));
+          if (/^[a-f0-9-]{36}$/.test(generation.id)) files.push(...images(`${generation.id}-subject`));
         }
       }
       const journal = join(dataDir, ".project-deletion.json");

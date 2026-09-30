@@ -142,7 +142,7 @@ export async function runCodex({ input, schema, cwd, signal, onProgress = () => 
       if (started.model !== modelSettings.model || started.modelProvider !== modelSettings.provider)
         throw new Error("Codex 未采用所选模型或提供方，请刷新模型列表后重试。");
       threadId = started.thread.id;
-      onProgress({ threadId, model: started.model, stage: generation ? "Codex 正在准备参考图…" : "Codex 正在观察图片…" });
+      onProgress({ threadId, model: started.model, stage: generation ? "Codex 正在准备生图…" : "Codex 正在观察图片…" });
       await request("turn/start", {
         threadId, input, model: modelSettings.model, effort: modelSettings.reasoningEffort,
         ...(schema ? { outputSchema: schema } : {}),

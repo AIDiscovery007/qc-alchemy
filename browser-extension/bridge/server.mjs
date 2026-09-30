@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, rename, rm } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
@@ -91,11 +91,16 @@ export async function createBridge({
   const jobs = new Map();
   const controllers = new Map();
   let projects;
-  const save = async (job) => {
-    await writeFile(join(dataDir, `${job.id}.json`), JSON.stringify(job), {
-      mode: 0o600,
+  let saveTail = Promise.resolve();
+  const save = (job) => {
+    // Serialize metadata writes, not inference; cancellation and completion can overlap.
+    saveTail = saveTail.catch(() => {}).then(async () => {
+      const path = join(dataDir, `${job.id}.json`);
+      await writeFile(`${path}.tmp`, JSON.stringify(job), { mode: 0o600 });
+      await rename(`${path}.tmp`, path);
+      await projects?.touch(job.projectId);
     });
-    await projects?.touch(job.projectId);
+    return saveTail;
   };
   const storedImage = async (id, subject = false, asPath = false) => {
     for (const extension of ["png", "jpeg", "webp"]) {
@@ -199,6 +204,7 @@ export async function createBridge({
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size + Number(models.busy),
+          modelBusy: models.busy,
           model: models.selectedModel,
         });
         return;
@@ -267,6 +273,23 @@ export async function createBridge({
         );
         return;
       }
+      const promptMatch = /^\/jobs\/([\da-f-]{36})\/prompt$/.exec(path);
+      if (req.method === "POST" && promptMatch) {
+        const body = await readBody(req);
+        const job = jobs.get(promptMatch[1]);
+        if (!job) throw bad("任务不存在", 404);
+        if (job.status !== "completed" || !job.result) throw bad("请先完成提示词逆向", 409);
+        const edits = {};
+        for (const key of ["promptZh", "promptEn", "negativePrompt"]) {
+          if (typeof body[key] !== "string" || body[key].length > 20000 || (key !== "negativePrompt" && !body[key].trim()))
+            throw bad("中英文提示词不能为空，每项最多 20000 字符");
+          edits[key] = body[key];
+        }
+        job.result = { ...job.result, ...edits };
+        await save(job);
+        json(200, job);
+        return;
+      }
       const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|cancel))?$/.exec(path);
       if (generationMatch) {
         const job = jobs.get(generationMatch[1]);
@@ -294,23 +317,37 @@ export async function createBridge({
         if (req.method !== "POST" || generationMatch[2]) throw bad("Not found", 404);
         if (job.status !== "completed" || !job.result) throw bad("请先完成提示词逆向", 409);
         if (job.mode === "style" && !job.reenact) throw bad("通用风格需要先补充主体图并重新逆向，才能生成图片");
-        if (controllers.size || models.busy) throw bad("已有 Codex 任务正在执行，请等待完成或取消", 409);
+        if (models.busy) throw bad("正在验证模型，请稍候", 409);
+        if (job.generations?.some((item) => item.status === "running" || controllers.has(item.id)))
+          throw bad("这条提示词仍在生图，请等待完成或取消", 409);
         const body = await readBody(req);
         if (!["zh", "en"].includes(body.language)) throw bad("无效提示词语言");
+        if (job.mode === "recreate" && body.subjectImage !== undefined) throw bad("完整复刻使用纯文生图，不接受主体图");
+        const { negativePrompt } = job.result;
         const prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
         if (!prompt?.trim() || /\[SUBJECT\]/i.test(prompt)) throw bad("提示词仍缺少主体，请补充后重新逆向");
-        const imagePath = await storedImage(job.id, false, true);
-        const subjectImagePath = job.reenact ? await storedImage(job.id, true, true) : undefined;
+        const imagePath = job.mode === "recreate" ? undefined : await storedImage(job.id, false, true);
+        const subject = job.mode !== "recreate" && job.reenact
+          ? decodeImage(body.subjectImage !== undefined ? body.subjectImage : await storedImage(job.id, true)) : undefined;
+        if (subject?.bytes.length > 2 * 1024 * 1024) throw bad("主体图最多 2 MB，请压缩后重试");
         try { await readFile(generationSkillPath); } catch { throw bad("找不到 imagegen 技能，请设置 IMAGEGEN_SKILL_PATH", 503); }
         const modelSettings = models.selection();
-        if (controllers.size) throw bad("已有 Codex 任务正在执行", 409);
         const id = randomUUID();
+        const subjectImagePath = subject ? join(dataDir, `${id}-subject.${subject.extension}`) : undefined;
         const controller = new AbortController();
         controllers.set(id, controller);
-        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt: job.result.negativePrompt };
+        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(subject ? { subjectExtension: subject.extension } : {}) };
         job.generations ||= [];
         job.generations.push(next);
-        try { await save(job); } catch (error) { controllers.delete(id); job.generations.pop(); throw error; }
+        try {
+          if (subject) await writeFile(subjectImagePath, subject.bytes, { mode: 0o600 });
+          await save(job);
+        } catch (error) {
+          controllers.delete(id);
+          job.generations.pop();
+          if (subjectImagePath) await rm(subjectImagePath, { force: true }).catch(() => {});
+          throw error;
+        }
         json(202, job);
         void (async () => {
           try {
@@ -339,7 +376,7 @@ export async function createBridge({
         if (!job) throw bad("任务不存在", 404);
         if (req.method === "GET" && idMatch[2] === "/reference") {
           const image = await storedImage(job.id);
-          let reenact, subjectError;
+          let reenact, subjectError, generationSubjectImage;
           if (job.reenact) {
             reenact = { ...job.reenact, subjectImage: "" };
             try {
@@ -349,7 +386,16 @@ export async function createBridge({
               subjectError = error.message;
             }
           }
-          json(200, { id: job.id, jobId: job.id, projectId: job.projectId, image, sourceUrl: job.sourceUrl, capture: job.capture, reenact, subjectError });
+          const latestSubject = job.generations?.findLast((item) => /^[\da-f-]{36}$/.test(item.id) && ["png", "jpeg", "webp"].includes(item.subjectExtension));
+          if (latestSubject) {
+            try { generationSubjectImage = await storedImage(latestSubject.id, true); }
+            catch (error) {
+              if (error.status !== 404) throw error;
+              generationSubjectImage = "";
+              subjectError = error.message;
+            }
+          }
+          json(200, { id: job.id, jobId: job.id, projectId: job.projectId, image, sourceUrl: job.sourceUrl, capture: job.capture, reenact, subjectError, generationSubjectImage });
           return;
         }
         if (req.method === "POST" && idMatch[2] === "/cancel") {
@@ -369,8 +415,7 @@ export async function createBridge({
       }
       if (req.method !== "POST" || path !== "/jobs")
         throw bad("Not found", 404);
-      if (controllers.size || models.busy)
-        throw bad("已有 Codex 任务正在执行，请等待完成或取消当前任务", 409);
+      if (models.busy) throw bad("正在验证模型，请稍候", 409);
       const body = await readBody(req);
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
       const { bytes, extension } = decodeImage(body.image);
@@ -402,8 +447,6 @@ export async function createBridge({
       const modelSettings = models.selection();
       const sourceUrl = sourceUrlFor(body.sourceUrl);
       await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
-      // Recheck after body I/O so simultaneous requests cannot both start.
-      if (controllers.size) throw bad("已有图片正在逆向", 409);
       const id = randomUUID();
       const controller = new AbortController();
       controllers.set(id, controller);

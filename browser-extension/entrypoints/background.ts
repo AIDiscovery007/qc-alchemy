@@ -47,30 +47,7 @@ export default defineBackground(() => {
       stage: "正在读取所选图片…",
     };
     try {
-      const stored = (await browser.storage.local.get([
-        "preferences",
-        "selection",
-      ])) as { preferences?: Preferences; selection?: Selection };
-      const preferences = stored.preferences;
-      if (stored.selection?.jobId && preferences?.token) {
-        let previous;
-        try {
-          previous = await bridge<Job>(
-            `/jobs/${stored.selection.jobId}`,
-            preferences.token,
-          );
-        } catch (error) {
-          selection = { ...stored.selection, error: (error as Error).message };
-          return;
-        }
-        if (previous.status === "running") {
-          selection = {
-            ...stored.selection,
-            error: "上一张图片仍在逆向，请先等待完成或取消。",
-          };
-          return;
-        }
-      }
+      const { preferences } = await browser.storage.local.get("preferences") as { preferences?: Preferences };
       await browser.storage.local.set({ selection });
       await browser.tabs
         .sendMessage(tab.id, { type: "alchemy:hide" })
@@ -93,8 +70,8 @@ export default defineBackground(() => {
     } catch (error) {
       selection.error = error instanceof Error ? error.message : String(error);
     } finally {
-      selecting = false;
-      await browser.storage.local.set({ selection });
+      try { await browser.storage.local.set({ selection }); }
+      finally { selecting = false; }
       // Open after capture so the floating UI cannot cover the selected image.
       await openResult(tab.id);
     }
@@ -139,7 +116,8 @@ export default defineBackground(() => {
       });
       const next = { ...selection, projectId: job.projectId || selection.projectId, jobId: job.id, stage: job.stage, error: undefined,
         reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined };
-      await browser.storage.local.set({ selection: next });
+      if (!projectId || stored.selection?.projectId === projectId)
+        await browser.storage.local.set({ selection: next });
       return { selection: next, job };
     } finally {
       selecting = false;
@@ -224,6 +202,16 @@ export default defineBackground(() => {
           return next;
         } finally { selecting = false; }
       }
+      case "alchemy:save-prompt": {
+        if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效任务");
+        const edits: Record<string, string> = {};
+        for (const key of ["promptZh", "promptEn", "negativePrompt"]) {
+          if (typeof message[key] !== "string" || message[key].length > 20000 || (key !== "negativePrompt" && !message[key].trim()))
+            throw new Error("中英文提示词不能为空，每项最多 20000 字符");
+          edits[key] = message[key];
+        }
+        return bridge(`/jobs/${message.id}/prompt`, token, edits);
+      }
       case "alchemy:generate":
       case "alchemy:generation-cancel":
       case "alchemy:generation-image": {
@@ -231,7 +219,9 @@ export default defineBackground(() => {
         const path = `/jobs/${message.id}/generations`;
         if (message.type === "alchemy:generate") {
           if (!["zh", "en"].includes(message.language)) throw new Error("无效提示词语言");
-          return bridge(path, token, { language: message.language });
+          if (message.subjectImage !== undefined && (typeof message.subjectImage !== "string" || message.subjectImage.length > 3 * 1024 * 1024 || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.subjectImage)))
+            throw new Error("请上传有效的主体图");
+          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage });
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
         return message.type === "alchemy:generation-image"
@@ -247,7 +237,7 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

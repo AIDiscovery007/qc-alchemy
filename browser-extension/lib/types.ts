@@ -16,6 +16,7 @@ export type Selection = {
   jobId?: string;
   reenact?: SubjectInput; // Shared two-image input; retain the saved field name.
   subjectError?: string;
+  generationSubjectImage?: string;
 };
 export type Result = {
   title: string;
@@ -64,6 +65,7 @@ export type Generation = {
   threadId?: string;
   model?: string;
   extension?: "png" | "jpeg" | "webp";
+  subjectExtension?: "png" | "jpeg" | "webp";
   revisedPrompt?: string;
   error?: string;
 };
