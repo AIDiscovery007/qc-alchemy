@@ -1,12 +1,14 @@
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile, readdir, rename, rm } from "node:fs/promises";
+import { readFile, writeFile, readdir, rename } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
 import { runGeneration, imagegenSkillPath } from "./generation.mjs";
 import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./projects.mjs";
 import { createModelStore } from "./models.mjs";
+import { createImageStore } from "./images.mjs";
+import { migrateStorage } from "./storage.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -76,10 +78,12 @@ export async function createBridge({
   allowShutdown = false,
   models,
 } = {}) {
-  await mkdir(dataDir, { recursive: true, mode: 0o700 });
-  models ||= await createModelStore({ dataDir, cwd: root });
-  await recoverProjectDeletion(dataDir);
-  const tokenPath = join(dataDir, "token");
+  const paths = await migrateStorage(dataDir);
+  models ||= await createModelStore({ dataDir: paths.config, cwd: root });
+  await recoverProjectDeletion(paths.records, dataDir);
+  const images = await createImageStore(dataDir, paths.records);
+  await images.migrate();
+  const tokenPath = paths.token;
   let token;
   try {
     token = (await readFile(tokenPath, "utf8")).trim();
@@ -95,32 +99,36 @@ export async function createBridge({
   const save = (job) => {
     // Serialize metadata writes, not inference; cancellation and completion can overlap.
     saveTail = saveTail.catch(() => {}).then(async () => {
-      const path = join(dataDir, `${job.id}.json`);
+      const path = join(paths.records, `${job.id}.json`);
       await writeFile(`${path}.tmp`, JSON.stringify(job), { mode: 0o600 });
       await rename(`${path}.tmp`, path);
       await projects?.touch(job.projectId);
     });
     return saveTail;
   };
-  const storedImage = async (id, subject = false, asPath = false) => {
-    for (const extension of ["png", "jpeg", "webp"]) {
-      let bytes;
+  const storedImage = async (record, subject = false, asPath = false) => {
+    const asset = record[subject ? "subjectAsset" : "imageAsset"];
+    if (asset !== undefined) {
       try {
-        bytes = await readFile(join(dataDir, `${id}${subject ? "-subject" : ""}.${extension}`));
-      } catch (error) {
-        if (error.code === "ENOENT") continue;
-        throw error;
+        const bytes = await images.read(asset);
+        const image = `data:image/${asset.split(".")[1]};base64,${bytes.toString("base64")}`;
+        decodeImage(image);
+        return asPath ? images.path(asset) : image;
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    } else {
+      const old = await images.legacy(`${record.id}${subject ? "-subject" : ""}`);
+      if (old) {
+        const image = `data:image/${old.extension};base64,${old.bytes.toString("base64")}`;
+        decodeImage(image);
+        return asPath ? old.file : image;
       }
-      const image = `data:image/${extension};base64,${bytes.toString("base64")}`;
-      decodeImage(image);
-      return asPath ? join(dataDir, `${id}${subject ? "-subject" : ""}.${extension}`) : image;
     }
     throw bad(subject ? "这条记录的主体图已不存在，请重新上传主体图。" : "这条历史记录的原图已不存在，请回到网页重新选择图片。", 404);
   };
-  for (const file of await readdir(dataDir)) {
+  for (const file of await readdir(paths.records)) {
     if (!/^[\da-f-]{36}\.json$/.test(file)) continue;
     try {
-      const job = JSON.parse(await readFile(join(dataDir, file), "utf8"));
+      const job = JSON.parse(await readFile(join(paths.records, file), "utf8"));
       if (`${job.id}.json` !== file || typeof job.createdAt !== "string") continue;
       if (job.status === "running") {
         job.status = "failed";
@@ -138,8 +146,26 @@ export async function createBridge({
       /* A damaged history record must not prevent startup. */
     }
   }
-  projects = await createProjectStore({ dataDir, jobs, readReference: async (id) => decodeImage(await storedImage(id)) });
+  projects = await createProjectStore({ dataDir: paths.records, legacyDir: dataDir, jobs, images, readReference: async (id) => decodeImage(await storedImage(jobs.get(id))) });
+  await images.collect();
   let mutationTail = Promise.resolve();
+  let collectionPending = false;
+  const acquireMutation = async () => {
+    const previous = mutationTail;
+    let release;
+    mutationTail = new Promise((resolve) => { release = resolve; });
+    await previous;
+    return release;
+  };
+  const collectIdleImages = async () => {
+    if (!collectionPending) return;
+    const release = await acquireMutation();
+    try {
+      if (!controllers.size) { await images.collect(); collectionPending = false; }
+    }
+    catch (error) { console.error("回收图片失败:", error.message); }
+    finally { release(); }
+  };
   let deletionFailed = false;
   let shuttingDown = false;
   const server = createServer(async (req, res) => {
@@ -184,9 +210,7 @@ export async function createBridge({
       const path = new URL(req.url, "http://127.0.0.1").pathname;
       // Keep deletion and task setup from writing the same project concurrently.
       if (req.method === "POST") {
-        const previous = mutationTail;
-        mutationTail = new Promise((resolve) => { releaseMutation = resolve; });
-        await previous;
+        releaseMutation = await acquireMutation();
         if (shuttingDown) throw bad("服务正在停止，请重新启动后再试。", 503);
         if (deletionFailed) throw bad("项目清理未完成，请重启本机服务后重试", 503);
       }
@@ -241,7 +265,12 @@ export async function createBridge({
         const history = unique.flatMap((id) => projects.get(id)?.jobs || []);
         if (history.some((job) => job.status === "running" || controllers.has(job.id) || job.generations?.some((item) => item.status === "running" || controllers.has(item.id))))
           throw bad("所选项目仍在逆向或生图，请完成或取消任务后再删除", 409);
-        try { json(200, { deletedIds: await projects.remove(unique) }); }
+        try {
+          const deletedIds = await projects.remove(unique);
+          if (!controllers.size) await images.collect();
+          else collectionPending = true;
+          json(200, { deletedIds });
+        }
         catch (error) { deletionFailed = true; throw error; }
         return;
       }
@@ -298,9 +327,10 @@ export async function createBridge({
         if (generationMatch[2] && !generation) throw bad("生图记录不存在", 404);
         if (req.method === "GET" && generationMatch[3] === "image") {
           if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
-          const imagePath = resolve(dataDir, `${generation.id}-generated.${generation.extension}`);
+          const imagePath = generation.imageAsset !== undefined ? images.path(generation.imageAsset)
+            : resolve(dataDir, `${generation.id}-generated.${generation.extension}`);
           let bytes;
-          try { bytes = await readFile(imagePath); }
+          try { bytes = generation.imageAsset !== undefined ? await images.read(generation.imageAsset) : await readFile(imagePath); }
           catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
           json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath });
           return;
@@ -326,26 +356,25 @@ export async function createBridge({
         const { negativePrompt } = job.result;
         const prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
         if (!prompt?.trim() || /\[SUBJECT\]/i.test(prompt)) throw bad("提示词仍缺少主体，请补充后重新逆向");
-        const imagePath = job.mode === "recreate" ? undefined : await storedImage(job.id, false, true);
+        const imagePath = job.mode === "recreate" ? undefined : await storedImage(job, false, true);
         const subject = job.mode !== "recreate" && job.reenact
-          ? decodeImage(body.subjectImage !== undefined ? body.subjectImage : await storedImage(job.id, true)) : undefined;
+          ? decodeImage(body.subjectImage !== undefined ? body.subjectImage : await storedImage(job, true)) : undefined;
         if (subject?.bytes.length > 2 * 1024 * 1024) throw bad("主体图最多 2 MB，请压缩后重试");
         try { await readFile(generationSkillPath); } catch { throw bad("找不到 imagegen 技能，请设置 IMAGEGEN_SKILL_PATH", 503); }
         const modelSettings = models.selection();
         const id = randomUUID();
-        const subjectImagePath = subject ? join(dataDir, `${id}-subject.${subject.extension}`) : undefined;
+        const subjectAsset = subject ? await images.put(subject) : undefined;
+        const subjectImagePath = subjectAsset ? images.path(subjectAsset) : undefined;
         const controller = new AbortController();
         controllers.set(id, controller);
-        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(subject ? { subjectExtension: subject.extension } : {}) };
+        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}) };
         job.generations ||= [];
         job.generations.push(next);
         try {
-          if (subject) await writeFile(subjectImagePath, subject.bytes, { mode: 0o600 });
           await save(job);
         } catch (error) {
           controllers.delete(id);
           job.generations.pop();
-          if (subjectImagePath) await rm(subjectImagePath, { force: true }).catch(() => {});
           throw error;
         }
         json(202, job);
@@ -357,8 +386,8 @@ export async function createBridge({
             });
             if (next.status === "running") {
               if (!["png", "jpeg", "webp"].includes(output.extension)) throw new Error("生图返回了不支持的文件格式");
-              await writeFile(join(dataDir, `${id}-generated.${output.extension}`), output.bytes, { mode: 0o600 });
-              if (next.status === "running") Object.assign(next, { status: "completed", stage: "图片已生成", extension: output.extension, revisedPrompt: output.revisedPrompt });
+              const imageAsset = await images.put(output);
+              if (next.status === "running") Object.assign(next, { status: "completed", stage: "图片已生成", extension: output.extension, imageAsset, revisedPrompt: output.revisedPrompt });
             }
           } catch (error) {
             if (next.status === "running") Object.assign(next, { status: "failed", stage: "生图失败", error: error.message });
@@ -366,6 +395,7 @@ export async function createBridge({
           } finally {
             await save(job).catch((error) => console.error("保存生图任务失败:", error.message));
             controllers.delete(id);
+            await collectIdleImages();
           }
         })();
         return;
@@ -375,12 +405,12 @@ export async function createBridge({
         const job = jobs.get(idMatch[1]);
         if (!job) throw bad("任务不存在", 404);
         if (req.method === "GET" && idMatch[2] === "/reference") {
-          const image = await storedImage(job.id);
+          const image = await storedImage(job);
           let reenact, subjectError, generationSubjectImage;
           if (job.reenact) {
             reenact = { ...job.reenact, subjectImage: "" };
             try {
-              reenact.subjectImage = await storedImage(job.id, true);
+              reenact.subjectImage = await storedImage(job, true);
             } catch (error) {
               if (error.status !== 404) throw error;
               subjectError = error.message;
@@ -388,7 +418,7 @@ export async function createBridge({
           }
           const latestSubject = job.generations?.findLast((item) => /^[\da-f-]{36}$/.test(item.id) && ["png", "jpeg", "webp"].includes(item.subjectExtension));
           if (latestSubject) {
-            try { generationSubjectImage = await storedImage(latestSubject.id, true); }
+            try { generationSubjectImage = await storedImage(latestSubject, true); }
             catch (error) {
               if (error.status !== 404) throw error;
               generationSubjectImage = "";
@@ -434,7 +464,7 @@ export async function createBridge({
         if (promptSourceJobId !== undefined) {
           const source = jobs.get(promptSourceJobId);
           if (!source?.result || source.status !== "completed") throw bad("参考 Prompt 的来源任务不存在或尚未完成");
-          if (!bytes.equals(decodeImage(await storedImage(source.id)).bytes))
+          if (!bytes.equals(decodeImage(await storedImage(source)).bytes))
             throw bad("参考图与 Prompt 的来源不一致，请重新选择历史记录");
         }
         reenact = { basePrompt: body.reenact.basePrompt.trim(), ...(promptSourceJobId ? { promptSourceJobId } : {}) };
@@ -446,15 +476,18 @@ export async function createBridge({
       }
       const modelSettings = models.selection();
       const sourceUrl = sourceUrlFor(body.sourceUrl);
-      await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
+      const project = await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
+      const subjectAsset = subject ? await images.put(subject) : undefined;
       const id = randomUUID();
       const controller = new AbortController();
       controllers.set(id, controller);
-      const imagePath = join(dataDir, `${id}.${extension}`);
-      const subjectImagePath = subject ? join(dataDir, `${id}-subject.${subject.extension}`) : undefined;
+      const imagePath = images.path(project.imageAsset);
+      const subjectImagePath = subjectAsset ? images.path(subjectAsset) : undefined;
       const job = {
         id,
         projectId,
+        imageAsset: project.imageAsset,
+        ...(subjectAsset ? { subjectAsset } : {}),
         mode: body.mode,
         model: modelSettings.model,
         status: "running",
@@ -465,8 +498,6 @@ export async function createBridge({
         ...(reenact ? { reenact } : {}),
       };
       try {
-        await writeFile(imagePath, bytes, { mode: 0o600 });
-        if (subject) await writeFile(subjectImagePath, subject.bytes, { mode: 0o600 });
         await save(job);
       } catch (error) {
         controllers.delete(id);
@@ -508,6 +539,7 @@ export async function createBridge({
             console.error("保存任务失败:", error.message),
           );
           controllers.delete(id);
+          await collectIdleImages();
         }
       })();
     } catch (error) {

@@ -98,7 +98,7 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   assert.equal((await request(imagePath, { headers: { Origin: "https://example.com" } })).status, 403);
   const firstAsset = await (await request(imagePath)).json();
   assert.equal(firstAsset.image, image);
-  assert.equal(firstAsset.path, join(dir, `${generated.id}-generated.png`));
+  assert.equal(firstAsset.path, join(dir, "images", generated.imageAsset));
   assert.deepEqual(await readFile(firstAsset.path), decodeImage(image).bytes);
   assert.equal((await generate("zh")).status, 202);
   const second = await waitGeneration(request, created.id, "completed");
@@ -108,12 +108,11 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   assert.deepEqual(second.generations[0], first.generations[0]);
   assert.deepEqual(await (await request(imagePath)).json(), firstAsset, "older versions retain their own image and path");
   const secondAsset = await (await request(`${path}/${second.generations[1].id}/image`)).json();
-  assert.notEqual(secondAsset.path, firstAsset.path);
+  assert.equal(secondAsset.path, firstAsset.path, "identical results share one file while retaining separate generation records");
   assert.deepEqual(await readFile(secondAsset.path), decodeImage(image).bytes);
-  assert.equal(JSON.parse(await readFile(join(dir, `${created.id}.json`))).generations.length, 2);
-  await rm(join(dir, `${generated.id}-generated.png`));
+  assert.equal(JSON.parse(await readFile(join(dir, "records", `${created.id}.json`))).generations.length, 2);
+  await rm(join(dir, "images", generated.imageAsset));
   assert.equal((await request(imagePath)).status, 404);
-  await rm(join(dir, `${created.id}${paired ? "-subject" : ""}.png`));
   assert.equal((await generate("zh")).status, paired ? 404 : 202);
   if (!paired) {
     await waitGeneration(request, created.id, "completed");
@@ -242,7 +241,7 @@ test("sends actual image bytes to agent, persists result, strips URL query", asy
   for (let i = 0; i < 80; i++) {
     try {
       if (
-        JSON.parse(await readFile(join(dir, `${created.id}.json`))).status ===
+        JSON.parse(await readFile(join(dir, "records", `${created.id}.json`))).status ===
         "completed"
       )
         return;
@@ -253,9 +252,9 @@ test("sends actual image bytes to agent, persists result, strips URL query", asy
 });
 
 test("parallel analyses keep progress, cancellation, failures and persisted results independent", async (t) => {
-  const calls = new Map();
+  const calls = [];
   const { request, dir } = await setup(t, (args) => new Promise((resolve, reject) => {
-    calls.set(args.imagePath, { ...args, resolve, reject });
+    calls.push({ ...args, resolve, reject });
     args.signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
   }));
   const responses = await Promise.all([
@@ -265,7 +264,7 @@ test("parallel analyses keep progress, cancellation, failures and persisted resu
   ]);
   assert.ok(responses.every((response) => response.status === 202));
   const jobs = await Promise.all(responses.map((response) => response.json()));
-  const inputs = jobs.map((job) => calls.get(join(dir, `${job.id}.${job.id === jobs[2].id ? "jpeg" : "png"}`)));
+  const inputs = jobs.map((job) => calls.find((call) => call.mode === job.mode && call.imagePath === join(dir, "images", job.imageAsset)));
   assert.equal((await (await request("/health")).json()).active, 3);
   inputs.forEach((input, index) => input.onProgress({ stage: `progress-${index}`, threadId: `thread-${index}` }));
   for (const [index, job] of jobs.entries()) {
@@ -283,7 +282,7 @@ test("parallel analyses keep progress, cancellation, failures and persisted resu
   inputs[1].resolve({ ...result, title: "independent result" });
   for (const [index, status] of ["cancelled", "completed", "failed"].entries()) {
     const job = await waitFor(request, jobs[index].id, status);
-    assert.deepEqual(JSON.parse(await readFile(join(dir, `${job.id}.json`))), job);
+    assert.deepEqual(JSON.parse(await readFile(join(dir, "records", `${job.id}.json`))), job);
   }
   assert.equal((await (await request(`/jobs/${jobs[1].id}`)).json()).result.title, "independent result");
   assert.equal((await (await request(`/jobs/${jobs[2].id}`)).json()).error, "one task failed");
@@ -322,7 +321,7 @@ test("generations from different prompt versions overlap analysis and cancel ind
   const completed = await waitGeneration(request, second.id, "completed");
   await waitFor(request, analysis.id, "completed");
   assert.equal(cancelled.generations[0].extension, undefined);
-  for (const job of [cancelled, completed]) assert.deepEqual(JSON.parse(await readFile(join(dir, `${job.id}.json`))), job);
+  for (const job of [cancelled, completed]) assert.deepEqual(JSON.parse(await readFile(join(dir, "records", `${job.id}.json`))), job);
   const asset = await (await request(`/jobs/${second.id}/generations/${completed.generations[0].id}/image`)).json();
   assert.equal(asset.image, image);
 });
@@ -350,7 +349,7 @@ test("history restores the exact image for a new mode and preserves both results
   assert.equal(history.length, 2);
   assert.equal(history.find(x => x.id === first.id).result.title, "style");
   assert.equal(history.find(x => x.id === second.id).result.title, "recreate");
-  await rm(join(dir, `${first.id}.png`));
+  await rm(join(dir, "images", first.imageAsset));
   const missing = await request(path);
   assert.equal(missing.status, 404);
   assert.match((await missing.json()).error, /原图已不存在/);
@@ -413,11 +412,11 @@ for (const mode of ["style", "reenact"]) test(`${mode} sends two distinct images
   assert.equal(history.length, 2);
   assert.deepEqual(history.find(x => x.id === source.id).result, result);
   assert.equal(history.find(x => x.id === job.id).reenact.subjectImage, undefined, "history metadata must not include full images");
-  assert.equal(JSON.parse(await readFile(join(dir, `${job.id}.json`))).reenact.basePrompt, reenact.basePrompt);
+  assert.equal(JSON.parse(await readFile(join(dir, "records", `${job.id}.json`))).reenact.basePrompt, reenact.basePrompt);
   const retry = await (await request("/jobs", submit({ ...restored, mode }))).json();
   await waitFor(request, retry.id, "completed");
   assert.deepEqual(inputs[2], inputs[1]);
-  await rm(join(dir, `${job.id}-subject.jpeg`));
+  await rm(join(dir, "images", job.subjectAsset));
   const missing = await (await request(`/jobs/${job.id}/reference`)).json();
   assert.equal(missing.image, image, "a missing subject must not hide the template or result");
   assert.match(missing.subjectError, /主体图已不存在/);

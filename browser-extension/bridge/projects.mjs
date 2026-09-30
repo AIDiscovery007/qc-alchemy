@@ -6,7 +6,7 @@ export const projectIdFor = (bytes) => createHash("sha256").update(bytes).digest
 const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
 
 // Finish interrupted deletions before legacy jobs can recreate their projects.
-export async function recoverProjectDeletion(dataDir) {
+export async function recoverProjectDeletion(dataDir, legacyDir = dataDir) {
   const path = join(dataDir, ".project-deletion.json");
   let files;
   try { files = JSON.parse(await readFile(path, "utf8")); }
@@ -14,11 +14,11 @@ export async function recoverProjectDeletion(dataDir) {
   if (!Array.isArray(files) || files.some((file) => typeof file !== "string" ||
     !/^(?:project-[a-f0-9]{64}|[a-f0-9-]{36}(?:-subject)?|[\w-]+-generated)[.](?:json|png|jpeg|webp)$/.test(file)))
     throw new Error("项目删除记录无效，已停止清理");
-  for (const file of files) await rm(join(dataDir, file), { force: true });
+  for (const file of files) await rm(join(file.endsWith(".json") ? dataDir : legacyDir, file), { force: true });
   await rm(path);
 }
 
-export async function createProjectStore({ dataDir, jobs, readReference }) {
+export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, readReference, images }) {
   const records = new Map();
   const pending = new Map();
   let saveTail = Promise.resolve();
@@ -49,7 +49,7 @@ export async function createProjectStore({ dataDir, jobs, readReference }) {
       const project = existing || { id, createdAt, updatedAt: createdAt, sourceUrl: meta.sourceUrl || "", capture: meta.capture === "screenshot" ? "screenshot" : "original" };
       if (createdAt < project.createdAt) project.createdAt = createdAt;
       project.extension = extension;
-      await writeFile(join(dataDir, `project-${id}.${extension}`), bytes, { mode: 0o600 });
+      project.imageAsset = await images.put({ bytes, extension });
       await save(project);
       records.set(id, project);
       return project;
@@ -104,7 +104,7 @@ export async function createProjectStore({ dataDir, jobs, readReference }) {
       const journal = join(dataDir, ".project-deletion.json");
       await writeFile(`${journal}.tmp`, JSON.stringify(files), { mode: 0o600 });
       await rename(`${journal}.tmp`, journal);
-      await recoverProjectDeletion(dataDir);
+      await recoverProjectDeletion(dataDir, legacyDir);
       for (const job of history) jobs.delete(job.id);
       for (const id of ids) records.delete(id);
       return ids;
@@ -120,7 +120,8 @@ export async function createProjectStore({ dataDir, jobs, readReference }) {
       const project = records.get(id);
       if (!project || !["png", "jpeg", "webp"].includes(project.extension)) return;
       try {
-        const bytes = await readFile(join(dataDir, `project-${id}.${project.extension}`));
+        const bytes = project.imageAsset ? await images.read(project.imageAsset)
+          : await readFile(join(legacyDir, `project-${id}.${project.extension}`));
         if (projectIdFor(bytes) !== id) return;
         return { id, projectId: id, image: `data:image/${project.extension};base64,${bytes.toString("base64")}`, sourceUrl: project.sourceUrl, capture: project.capture };
       } catch (error) { if (error.code !== "ENOENT") throw error; }

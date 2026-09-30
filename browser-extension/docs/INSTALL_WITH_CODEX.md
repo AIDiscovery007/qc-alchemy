@@ -35,7 +35,7 @@ npm start
 npm run status
 ```
 
-`setup` 会检查 CLI 登录、完整的 Alchemy skill、imagegen 文件，运行 `npm ci` 和生产构建，并将 CLI/skill 路径保存在 `.local/runtime.json`。仓库已包含 Alchemy 的运行指令及必需参考文档，不需要从作者电脑复制文件，也不必安装到全局 skills 目录。
+`setup` 会检查 CLI 登录、完整的 Alchemy skill、imagegen 文件，运行 `npm ci` 和生产构建，并将 CLI/skill 路径保存在 `.local/config/runtime.json`。仓库已包含 Alchemy 的运行指令及必需参考文档，不需要从作者电脑复制文件，也不必安装到全局 skills 目录。
 
 `start` 在后台运行 bridge，关闭启动终端后仍可使用；它会先验证带配对令牌的 `/health`。重复启动同一版本会复用服务。若端口被其他服务、旧版本或另一份安装占用，会停止启动流程并说明原因，不强行结束别人的进程。不要通过修改端口来绕过冲突，浏览器端默认连接 `43187`。
 
@@ -99,10 +99,12 @@ npm run pair
 - 在同一 `browser-extension` 目录运行 `npm start`；电脑重启后需要再次运行，不会配置开机自启。
 - `npm stop` 停止脚本启动的后台服务，保留配对码和全部项目；任务运行中会拒绝停止。先在插件完成或取消任务。
 - `npm run bridge` 前台启动，适合排错，用 Ctrl+C 停止。由原终端启动的服务也从原终端停止。
-- 后台日志：`.local/bridge.log`。配置：`.local/runtime.json`。这些文件及所有图片/Prompt 都已被 Git 忽略。
+- 后台日志：`.local/logs/bridge.log`。配置：`.local/config/runtime.json`。这些文件及所有图片/Prompt 都已被 Git 忽略。
 - `doctor` 失败：按输出处理 CLI、登录或 skill；可在明确替换路径后重新运行 `npm run setup`，不会清空项目。
 - 端口冲突：确认服务所属目录；旧版本先停止再启动。不要杀死不明进程或删除 token 来尝试修复。
-- 第一次启动被打断且留下 `.local/start.lock`：先确认没有启动命令还在执行，再移除该空目录，保留其他 `.local` 文件。
+- 第一次启动被打断且留下 `.local/runtime/start.lock`：先确认没有启动命令还在执行，再移除该空目录，保留其他 `.local` 文件。
 - 升级：完成任务 → 停止服务 → 获取目标版本 → `npm run setup` → `npm start` → 重新加载浏览器扩展 → 刷新原网页。
 - 网页仍显示旧 logo 或提示扩展失效：重新加载扩展后还需刷新网页。
 - 提示词能生成但图片不能生成：检查 imagegen skill、Codex 账户/模型的内置生图支持及额度，不切换成未经用户配置的模型 API。
+
+当前源码把普通运行数据统一归入 `.local/config/`、`records/`、`images/`、`logs/` 和 `runtime/`。旧发布版的配置和记录可能直接位于 `.local/` 根部；更新后的服务会在启动时自动归位，配对信息及共享图片路径保留。备份时先停止服务，再复制整个数据目录；无需逐个整理文件。旧版根部 `start.lock` 若仍存在，也需先确认原启动命令已结束。数据布局更新尚未发布到 0.1.18 下载包。

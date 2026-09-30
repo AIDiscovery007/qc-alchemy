@@ -6,7 +6,7 @@
 
 | 版本 | 更新内容 | 详情 |
 | --- | --- | --- |
-| 未发布 | 任务并行；完整复刻纯文生图；双图路径使用最新上传主体；逆向提示词可编辑 | [变更说明](unreleased.md) |
+| 未发布 | 任务并行；完整复刻纯文生图；双图路径使用最新上传主体；逆向提示词可编辑；图片共享存储与去重；运行数据分类收纳 | [变更说明](unreleased.md) |
 | 0.1.18 | 更名为 QC-Reframe，全局替换 R 标志 | [版本说明](v0.1.18.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18) |
 | 0.1.17 | 插件独立选择并验证本机账号模型，附功能截图与 CLI 更新提醒 | [版本说明](v0.1.17.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.17) |
 | 0.1.2–0.1.16 | 三条逆向路径、一键生图、项目记录、Raft 界面与动态避让等已有开发记录 | [早期迭代记录](early-versions.md) |

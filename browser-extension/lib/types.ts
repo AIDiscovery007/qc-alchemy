@@ -29,6 +29,8 @@ export type Result = {
 export type Job = {
   id: string;
   projectId?: string;
+  imageAsset?: string;
+  subjectAsset?: string;
   mode: Mode;
   status: "running" | "completed" | "failed" | "cancelled";
   stage: string;
@@ -56,6 +58,8 @@ export type ProjectSummary = {
 export type Project = ProjectSummary & { jobs: Job[] };
 export type Generation = {
   id: string;
+  imageAsset?: string;
+  subjectAsset?: string;
   status: "running" | "completed" | "failed" | "cancelled";
   stage: string;
   createdAt: string;

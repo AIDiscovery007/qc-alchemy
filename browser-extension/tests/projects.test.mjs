@@ -10,7 +10,7 @@ import { projectIdFor } from "../bridge/projects.mjs";
 test("deleting a project removes every lane and owned image, preserves others and stays deleted after restart", async (t) => {
   const { request, dir, restart } = await setup(t);
   const keep = await (await request("/projects", post({ image: otherImage }))).json();
-  const token = await readFile(join(dir, "token"));
+  const token = await readFile(join(dir, "config", "token"));
   const removedJobs = [];
   for (const mode of ["style", "recreate", "reenact"]) {
     const response = await request("/jobs", post({ image, mode, ...(mode !== "recreate" ? { reenact: { subjectImage: otherImage, basePrompt: "保留主体" } } : {}) }));
@@ -28,10 +28,10 @@ test("deleting a project removes every lane and owned image, preserves others an
     assert.equal((await request(`/jobs/${job.id}/reference`)).status, 404);
     assert.equal((await request(`/jobs/${job.id}/generations/${job.generations[0].id}/image`)).status, 404);
   }
-  const files = await readdir(dir);
+  const files = await readdir(join(dir, "records"));
   assert.ok(!files.some((name) => name.includes(projectId) || removedJobs.some((job) => name.includes(job.id) || job.generations.some((item) => name.includes(item.id)))));
   assert.equal(await readFile(join(dir, "user-download.png"), "utf8"), "user file");
-  assert.deepEqual(await readFile(join(dir, "token")), token);
+  assert.deepEqual(await readFile(join(dir, "config", "token")), token);
   await restart();
   assert.deepEqual((await (await request("/projects")).json()).map((item) => item.id), [keep.id]);
   assert.equal((await request(`/projects/${projectId}/reference`)).status, 404);
@@ -90,7 +90,7 @@ test("startup finishes an interrupted deletion before importing its old jobs", a
   });
   assert.deepEqual(await (await request("/projects")).json(), []);
   assert.deepEqual(await (await request("/jobs")).json(), []);
-  assert.ok(!(await readdir(dir)).includes(".project-deletion.json"));
+  assert.ok(!(await readdir(join(dir, "records"))).includes(".project-deletion.json"));
 });
 
 const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=";
@@ -98,14 +98,81 @@ const otherImage = "data:image/jpeg;base64,/9j/2Q==";
 const result = { title: "模板项目", observations: ["观察"], promptZh: "中文提示词", promptEn: "English prompt", negativePrompt: "排除项", uncertainties: [] };
 const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 
+test("recreate then reenact stores exactly four distinct images and keeps both outputs after restart", async (t) => {
+  const outputs = ["recreate-result", "reenact-result"].map((label) => ({ bytes: Buffer.concat([decodeImage(image).bytes, Buffer.from(label)]), extension: "png" }));
+  const calls = [];
+  const { request, dir, restart } = await setup(t, {
+    generator: async (args) => { calls.push(args); return outputs[calls.length - 1]; },
+  });
+  const jobs = [];
+  for (const mode of ["recreate", "reenact"]) {
+    const created = await (await request("/jobs", post({ image, mode, ...(mode === "reenact" ? { reenact: { subjectImage: otherImage, basePrompt: "重演" } } : {}) }))).json();
+    await settled(request, created.id);
+    assert.equal((await request(`/jobs/${created.id}/generations`, post({ language: "zh", ...(mode === "reenact" ? { subjectImage: otherImage } : {}) }))).status, 202);
+    jobs.push(await settled(request, created.id));
+  }
+  assert.equal(jobs[0].projectId, jobs[1].projectId);
+  assert.equal(jobs[0].imageAsset, jobs[1].imageAsset);
+  assert.equal(jobs[1].subjectAsset, jobs[1].generations[0].subjectAsset);
+  assert.equal(calls[0].imagePath, undefined);
+  assert.deepEqual(await readFile(calls[1].imagePath), decodeImage(image).bytes);
+  assert.deepEqual(await readFile(calls[1].subjectImagePath), decodeImage(otherImage).bytes);
+  assert.equal((await readdir(join(dir, "images"))).length, 4);
+  assert.ok(!(await readdir(dir)).some((file) => /\.(png|jpeg|webp)$/.test(file)));
+  await restart();
+  for (const [index, job] of jobs.entries()) {
+    const output = await (await request(`/jobs/${job.id}/generations/${job.generations[0].id}/image`)).json();
+    assert.deepEqual(await readFile(output.path), outputs[index].bytes);
+  }
+  assert.equal((await readdir(join(dir, "images"))).length, 4);
+});
+
+test("deleting one project preserves images referenced as another project's subject and output", async (t) => {
+  const { request, dir, restart } = await setup(t);
+  const removed = await (await request("/projects", post({ image }))).json();
+  const created = await (await request("/jobs", post({ image: otherImage, mode: "reenact", reenact: { subjectImage: image, basePrompt: "重演" } }))).json();
+  await settled(request, created.id);
+  await request(`/jobs/${created.id}/generations`, post({ language: "zh", subjectImage: image }));
+  const job = await settled(request, created.id);
+  assert.equal(job.subjectAsset, job.generations[0].imageAsset);
+  assert.equal((await request("/projects/delete", post({ ids: [removed.id] }))).status, 200);
+  await restart();
+  assert.equal((await (await request(`/jobs/${job.id}/reference`)).json()).reenact.subjectImage, image);
+  assert.equal((await (await request(`/jobs/${job.id}/generations/${job.generations[0].id}/image`)).json()).image, image);
+  assert.equal((await readdir(join(dir, "images"))).length, 2);
+  await request("/projects/delete", post({ ids: [job.projectId] }));
+  assert.deepEqual(await readdir(join(dir, "images")), []);
+});
+
+test("deletion defers image collection while another project generates, including a reused output", async (t) => {
+  let finish;
+  const { request, dir } = await setup(t, { generator: () => new Promise((resolve) => { finish = resolve; }) });
+  const removed = await (await request("/projects", post({ image }))).json();
+  const unused = await (await request("/projects", post({ image: `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.from("unused")]).toString("base64")}` }))).json();
+  const created = await (await request("/jobs", post({ image: otherImage, mode: "recreate" }))).json();
+  await settled(request, created.id);
+  await request(`/jobs/${created.id}/generations`, post({ language: "zh" }));
+  assert.equal((await request("/projects/delete", post({ ids: [removed.id, unused.id] }))).status, 200);
+  assert.equal((await readdir(join(dir, "images"))).length, 3, "collection waits for inference to settle");
+  finish(decodeImage(image));
+  const job = await settled(request, created.id);
+  assert.equal((await (await request(`/jobs/${job.id}/generations/${job.generations[0].id}/image`)).json()).image, image);
+  // This POST also waits for any deferred collection ahead of it.
+  await request("/projects", post({ image: otherImage }));
+  assert.equal((await readdir(join(dir, "images"))).length, 2, "the last completed task triggers deferred collection");
+  await request("/projects/delete", post({ ids: [job.projectId] }));
+  assert.deepEqual(await readdir(join(dir, "images")), []);
+});
+
 for (const mode of ["style", "reenact"]) test(`${mode} generates with the latest uploaded subject, preserves earlier inputs, and restores after restart`, async (t) => {
   let analyses = 0;
   const calls = [];
+  const originalSubject = `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.from("original-subject")]).toString("base64")}`;
   const { request, dir, restart } = await setup(t, {
     agent: async () => { analyses++; return result; },
     generator: async (args) => { calls.push(args); return decodeImage(image); },
   });
-  const created = await (await request("/jobs", post({ image, mode, reenact: { subjectImage: image, basePrompt: "保留主体" } }))).json();
+  const created = await (await request("/jobs", post({ image, mode, reenact: { subjectImage: originalSubject, basePrompt: "保留主体" } }))).json();
   const job = await settled(request, created.id);
   const path = `/jobs/${job.id}/generations`;
   for (const subjectImage of [null, "", "bad-image", "data:image/png;base64,aGVsbG8=", `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.alloc(2 * 1024 * 1024)]).toString("base64")}`]) {
@@ -115,16 +182,16 @@ for (const mode of ["style", "reenact"]) test(`${mode} generates with the latest
   assert.equal((await request(path, post({ language: "zh", subjectImage: otherImage }))).status, 202);
   const first = await settled(request, job.id);
   assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(otherImage).bytes);
-  assert.deepEqual(await readFile(join(dir, `${job.id}-subject.png`)), decodeImage(image).bytes, "reverse input remains unchanged");
+  assert.deepEqual(await readFile(join(dir, "images", job.subjectAsset)), decodeImage(originalSubject).bytes, "reverse input remains unchanged");
   assert.equal(calls[0].prompt, result.promptZh);
   assert.equal(calls[0].negativePrompt, result.negativePrompt);
   assert.equal(first.generations[0].subjectExtension, "jpeg");
   await restart();
   const restored = await (await request(`/jobs/${job.id}/reference`)).json();
   assert.equal(restored.generationSubjectImage, otherImage);
-  assert.equal(restored.reenact.subjectImage, image);
+  assert.equal(restored.reenact.subjectImage, originalSubject);
   // A fresh upload must also work when the original reverse subject is gone.
-  await rm(join(dir, `${job.id}-subject.png`));
+  await rm(join(dir, "images", job.subjectAsset));
   assert.equal((await request(path, post({ language: "en", subjectImage: image }))).status, 202);
   const second = await settled(request, job.id);
   assert.deepEqual(await readFile(calls[1].subjectImagePath), decodeImage(image).bytes);
@@ -167,7 +234,7 @@ async function setup(t, options = {}, prepare) {
 async function settled(request, id) {
   for (let i = 0; i < 100; i++) {
     const job = await (await request(`/jobs/${id}`)).json();
-    if (job.status !== "running" && !(await (await request("/health")).json()).active) return job;
+    if (job.status !== "running" && !job.generations?.some((item) => item.status === "running") && !(await (await request("/health")).json()).active) return job;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail("Job did not settle");
@@ -210,7 +277,7 @@ test("duplicate registration and restart retain a template with no extraction jo
   const restored = await (await request(`/projects/${first.id}`)).json();
   assert.deepEqual(restored, first);
   assert.deepEqual(await (await request(`/projects/${first.id}/reference`)).json(), { id: first.id, projectId: first.id, image, sourceUrl: first.sourceUrl, capture: "original" });
-  assert.deepEqual(await readFile(join(dir, `project-${first.id}.png`)), decodeImage(image).bytes);
+  assert.deepEqual(await readFile(join(dir, "images", `${first.id}.png`)), decodeImage(image).bytes);
   assert.equal((await (await request("/health")).json()).active, 0);
 });
 
@@ -246,8 +313,8 @@ test("same template across URLs groups mode histories while each latest mode own
   assert.equal((await (await request("/projects")).json()).length, 1);
   const imagePath = `/jobs/${style.id}/generations/${generation.id}/image`;
   assert.equal((await (await request(imagePath)).json()).image, image);
-  await rm(join(dir, `${style.id}.png`));
-  assert.equal((await (await request(`${path}/reference`)).json()).image, image, "project reference is independent from individual jobs");
+  assert.equal(style.imageAsset, newerStyle.imageAsset, "versions share the template file");
+  assert.equal((await (await request(`${path}/reference`)).json()).image, image, "project and jobs resolve the same template");
   await restart();
   const restored = await (await request(path)).json();
   assert.equal(restored.jobCount, 4);
@@ -295,12 +362,15 @@ test("startup migrates every legacy job including more than 30 projects and miss
   const detail = await (await request(`/projects/${group.id}`)).json();
   assert.deepEqual(detail.jobs.map((job) => job.id), [originals[34].id, originals[0].id]);
   for (const original of originals) {
-    const persisted = JSON.parse(await readFile(join(dir, `${original.id}.json`), "utf8"));
+    const persisted = JSON.parse(await readFile(join(dir, "records", `${original.id}.json`), "utf8"));
     assert.match(persisted.projectId, /^[a-f0-9]{64}$/);
-    const { projectId, ...unchanged } = persisted;
+    const { projectId, imageAsset, ...unchanged } = persisted;
+    if (unchanged.generations) unchanged.generations = unchanged.generations.map(({ imageAsset, subjectAsset, ...generation }) => generation);
     assert.deepEqual(unchanged, original, "migration must preserve all prior job data");
   }
-  assert.deepEqual(await readFile(join(dir, "old-generation-generated.png")), decodeImage(image).bytes);
+  const migrated = JSON.parse(await readFile(join(dir, "records", `${originals[0].id}.json`)));
+  assert.deepEqual(await readFile(join(dir, "images", migrated.generations[0].imageAsset)), decodeImage(image).bytes);
+  await assert.rejects(readFile(join(dir, "old-generation-generated.png")), { code: "ENOENT" });
   const missingJob = await (await request(`/jobs/${originals[35].id}`)).json();
   const missingProjectId = missingJob.projectId;
   assert.equal((await request(`/projects/${missingProjectId}/reference`)).status, 404);

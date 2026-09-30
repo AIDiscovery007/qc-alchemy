@@ -1,15 +1,17 @@
 // Local lifecycle commands. No model calls, browser-profile edits, or global config writes.
-import { access, mkdir, open, readFile, rmdir, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, rmdir, writeFile, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { storagePaths, ensureStorage, migrateStorage, moveLegacyFile, readStoredConfig, rotateServiceLog } from "../bridge/storage.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = resolve(process.env.ALCHEMY_DATA_DIR || join(root, ".local"));
-const configFile = join(dataDir, "runtime.json");
+const paths = storagePaths(dataDir);
+const configFile = paths.settings;
 const port = Number(process.env.ALCHEMY_PORT || 43187);
 const url = `http://127.0.0.1:${port}`;
 const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -19,8 +21,8 @@ const readable = async path => { try { await access(path); return true; } catch 
 
 async function environment() {
   let saved = {};
-  try { saved = JSON.parse(await readFile(configFile, "utf8")); }
-  catch (error) { if (error.code !== "ENOENT") throw error; }
+  const stored = await readStoredConfig(dataDir, "runtime.json");
+  if (stored !== undefined) saved = JSON.parse(stored);
   const env = { ...process.env };
   for (const key of runtimeKeys) if (!env[key] && typeof saved[key] === "string") env[key] = saved[key];
   env.ALCHEMY_SKILL_PATH ||= join(root, ".agents/skills/alchemy/SKILL.md");
@@ -57,8 +59,7 @@ async function doctor(env) {
 }
 
 async function token() {
-  try { return (await readFile(join(dataDir, "token"), "utf8")).trim(); }
-  catch (error) { if (error.code === "ENOENT") return ""; throw error; }
+  return (await readStoredConfig(dataDir, "token"))?.trim() || "";
 }
 
 async function probe() {
@@ -76,7 +77,7 @@ async function probe() {
 }
 
 function connectionInfo() {
-  console.log(`\n服务：${url}\n扩展目录：${join(root, ".output/chrome-mv3")}\n配对码：运行 npm run pair 查看，只粘贴到 QC-Reframe 设置。\n首次加载说明：${join(root, "docs/INSTALL_WITH_CODEX.md")}\n检查：npm run status　停止：npm stop`);
+  console.log(`\n服务：${url}\n扩展目录：${join(root, ".output/chrome-mv3")}\n数据目录：${dataDir}\n配对码：运行 npm run pair 查看，只粘贴到 QC-Reframe 设置。\n首次加载说明：${join(root, "docs/INSTALL_WITH_CODEX.md")}\n检查：npm run status　停止：npm stop`);
 }
 
 async function start(env) {
@@ -91,15 +92,19 @@ async function start(env) {
   const manifest = JSON.parse(await readFile(join(root, ".output/chrome-mv3/manifest.json"), "utf8"));
   if (manifest.version !== version) throw new Error("扩展构建与当前版本不同，请先运行 npm run setup。");
   await doctor(env);
-  const lock = join(dataDir, "start.lock");
+  await ensureStorage(dataDir);
+  const lock = join(paths.runtime, "start.lock");
   try { await mkdir(lock); }
   catch (error) {
-    if (error.code === "EEXIST") throw new Error("另一个启动操作尚未结束。如上次启动被中断，确认没有启动操作后移除 .local/start.lock 空目录再重试。");
+    if (error.code === "EEXIST") throw new Error(`另一个启动操作尚未结束。如上次启动被中断，确认没有启动操作后移除 ${lock} 空目录再重试。`);
     throw error;
   }
   let child;
   try {
-    const log = await open(join(dataDir, "bridge.log"), "a", 0o600);
+    if (await readable(join(dataDir, "start.lock"))) throw new Error("旧版启动锁仍存在，请确认旧启动命令已结束后移除数据目录根部的 start.lock 空目录。");
+    await migrateStorage(dataDir);
+    await rotateServiceLog(paths.log);
+    const log = await open(paths.log, "a", 0o600);
     try {
       child = spawn(process.execPath, [join(root, "bridge/server.mjs")], {
         cwd: root, env: { ...env, ALCHEMY_DATA_DIR: dataDir, ALCHEMY_MANAGED: "1" },
@@ -109,7 +114,7 @@ async function start(env) {
     } finally { await log.close(); }
     for (let i = 0; i < 32; i++) {
       await sleep(250);
-      if (child.exitCode !== null) throw new Error("服务启动失败，请查看 .local/bridge.log。");
+      if (child.exitCode !== null) throw new Error(`服务启动失败，请查看 ${paths.log}。`);
       const health = await probe();
       if (health?.ready && health.version === version && health.managed) {
         child.unref();
@@ -118,7 +123,7 @@ async function start(env) {
         return;
       }
     }
-    throw new Error("服务未按时就绪，请查看 .local/bridge.log。");
+    throw new Error(`服务未按时就绪，请查看 ${paths.log}。`);
   } catch (error) { child?.kill(); throw error; }
   finally { await rmdir(lock); }
 }
@@ -160,7 +165,10 @@ async function main() {
       const run = spawnSync(process.execPath, [process.env.npm_execpath, ...args], { cwd: root, env, stdio: "inherit" });
       if (run.status !== 0) throw new Error(`npm ${args.join(" ")} 失败，请修复后重试。`);
     }
-    await writeFile(configFile, JSON.stringify(Object.fromEntries(runtimeKeys.map(key => [key, env[key]])), null, 2) + "\n", { mode: 0o600 });
+    await ensureStorage(dataDir);
+    await moveLegacyFile(join(dataDir, "runtime.json"), configFile);
+    await writeFile(`${configFile}.tmp`, JSON.stringify(Object.fromEntries(runtimeKeys.map(key => [key, env[key]])), null, 2) + "\n", { mode: 0o600 });
+    await rename(`${configFile}.tmp`, configFile);
     console.log("初始化完成。运行 npm start 启动；首次仍需在浏览器加载扩展并配对。");
     return;
   }

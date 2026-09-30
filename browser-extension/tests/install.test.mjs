@@ -48,7 +48,9 @@ test("fresh local service starts detached, reuses pairing, stops and restarts wi
   const { dir, run } = await installation(t);
   assert.match((await run("doctor")).stdout, /可逆向提示词/);
   assert.match((await run("start")).stdout, /后台启动/);
-  const firstToken = (await readFile(join(dir, "token"), "utf8")).trim();
+  for (const directory of ["config", "records", "images", "logs", "runtime"]) assert.ok((await readdir(dir)).includes(directory));
+  for (const file of ["token", "bridge.log", "model-settings.json", "runtime.json", "start.lock"]) assert.ok(!(await readdir(dir)).includes(file));
+  const firstToken = (await readFile(join(dir, "config", "token"), "utf8")).trim();
   await writeFile(join(dir, "preserved-note.txt"), "user data");
   const again = await run("start");
   assert.match(again.stdout, /复用/);
@@ -59,12 +61,45 @@ test("fresh local service starts detached, reuses pairing, stops and restarts wi
   assert.equal(health.service, "qc-alchemy");
   assert.equal(health.ready, true);
   assert.equal(health.managed, true);
-  assert.ok(!(await readFile(join(dir, "bridge.log"), "utf8")).includes(firstToken));
+  assert.ok(!(await readFile(join(dir, "logs", "bridge.log"), "utf8")).includes(firstToken));
   await run("stop");
   await assert.rejects(run("status"));
   await run("start");
-  assert.equal((await readFile(join(dir, "token"), "utf8")).trim(), firstToken);
+  assert.equal((await readFile(join(dir, "config", "token"), "utf8")).trim(), firstToken);
   assert.equal(await readFile(join(dir, "preserved-note.txt"), "utf8"), "user data");
+});
+
+test("updated manager controls an old running service without moving data, then migrates on restart", { skip: process.platform === "win32" }, async t => {
+  const { dir, env, run } = await installation(t);
+  const token = "legacy-pairing";
+  const version = JSON.parse(await readFile(join(root, "package.json"))).version;
+  await writeFile(join(dir, "token"), token);
+  await writeFile(join(dir, "runtime.json"), JSON.stringify({ CODEX_BIN: env.CODEX_BIN }));
+  await writeFile(join(dir, "model-settings.json"), JSON.stringify({ model: "saved-model", accountKey: "test" }));
+  const old = createServer((req, res) => {
+    if (req.headers.authorization !== `Bearer ${token}`) { res.writeHead(401); res.end(); return; }
+    res.setHeader("Content-Type", "application/json");
+    if (req.url === "/shutdown") {
+      res.end('{"stopped":true}', () => { old.close(); old.closeIdleConnections(); });
+      return;
+    }
+    res.end(JSON.stringify({ service: "qc-alchemy", version, ready: true, managed: true, active: 0 }));
+  });
+  old.listen(Number(env.ALCHEMY_PORT), "127.0.0.1");
+  await once(old, "listening");
+  t.after(() => { old.closeAllConnections(); old.close(); });
+  assert.match((await run("start")).stdout, /复用/);
+  assert.equal((await run("pair")).stdout.trim(), token);
+  assert.equal(JSON.parse((await run("status")).stdout).ready, true);
+  assert.ok(!(await readdir(dir)).includes("config"));
+  await run("stop");
+  await run("start");
+  assert.equal((await run("pair")).stdout.trim(), token);
+  assert.equal(JSON.parse((await run("status")).stdout).model, "saved-model");
+  for (const file of ["token", "runtime.json", "model-settings.json"]) {
+    await readFile(join(dir, "config", file));
+    await assert.rejects(readFile(join(dir, file)), { code: "ENOENT" });
+  }
 });
 
 test("startup refuses an unrelated listener without changing its files or stopping it", { skip: process.platform === "win32" }, async t => {
