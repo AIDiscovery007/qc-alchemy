@@ -1,6 +1,6 @@
-# 用 Codex 安装 QC-Reframe 0.1.18
+# 用 Codex 安装 QC-Reframe 0.1.19
 
-这是供用户及其 Codex 执行的本地安装流程。版本为 `0.1.18`，发行标签为 `v0.1.18`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
+这是供用户及其 Codex 执行的本地安装流程。版本为 `0.1.19`，发行标签为 `v0.1.19`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
 
 ## 1. 获取完整发行版
 
@@ -9,7 +9,7 @@
 优先复用用户已有的同一安装目录；没有时，在用户可写且准备长期保留的位置执行：
 
 ```bash
-git clone --branch v0.1.18 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
+git clone --branch v0.1.19 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
 cd qc-reframe/browser-extension
 ```
 
@@ -39,7 +39,7 @@ npm run status
 
 `start` 在后台运行 bridge，关闭启动终端后仍可使用；它会先验证带配对令牌的 `/health`。重复启动同一版本会复用服务。若端口被其他服务、旧版本或另一份安装占用，会停止启动流程并说明原因，不强行结束别人的进程。不要通过修改端口来绕过冲突，浏览器端默认连接 `43187`。
 
-`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.18"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
+`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.19"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
 
 imagegen 默认读取 `$CODEX_HOME/skills/.system/imagegen/SKILL.md`，未设置 `CODEX_HOME` 时读取 `~/.codex/skills/.system/imagegen/SKILL.md`。如果找不到，让 Codex 查找用户实际安装的 imagegen skill 并设置路径；不要创建一个同名空文件充当已安装。缺失 imagegen 不妨碍提示词逆向，但生图不可用。找到 skill 也不代表账户一定支持内置 `image_gen`。
 
@@ -68,7 +68,7 @@ npm run setup
 
 1. 打开 `chrome://extensions`。
 2. 开启开发者模式，选择“加载已解压的扩展程序”。
-3. 选择 `.output/chrome-mv3`，确认列表显示 QC-Reframe **0.1.18**。
+3. 选择 `.output/chrome-mv3`，确认列表显示 QC-Reframe **0.1.19**。
 
 请用户自行确认浏览器展示的权限。安装到 Chrome 与安装到 Codex 内置浏览器是两份独立安装。
 
@@ -85,7 +85,7 @@ npm run pair
 验收分开报告：
 
 - 服务状态：认证的健康检查成功、版本与 skill 就绪。
-- 扩展状态：实际加载 0.1.18，悬停图片后出现新版 R 标志与“逆向风格”。
+- 扩展状态：实际加载 0.1.19，悬停图片后出现新版 R 标志与“逆向风格”。
 - 配对状态：点击悬浮入口，面板显示连接成功，并能显示选中的参考图。
 
 配对后在「插件模型」选择候选项，点击「验证并使用」才保存。该操作发送一次简短请求，会消耗少量模型额度；用户仅要求安装时，保留为手动步骤并说明尚未验证。
@@ -107,4 +107,4 @@ npm run pair
 - 网页仍显示旧 logo 或提示扩展失效：重新加载扩展后还需刷新网页。
 - 提示词能生成但图片不能生成：检查 imagegen skill、Codex 账户/模型的内置生图支持及额度，不切换成未经用户配置的模型 API。
 
-当前源码把普通运行数据统一归入 `.local/config/`、`records/`、`images/`、`logs/` 和 `runtime/`。旧发布版的配置和记录可能直接位于 `.local/` 根部；更新后的服务会在启动时自动归位，配对信息及共享图片路径保留。备份时先停止服务，再复制整个数据目录；无需逐个整理文件。旧版根部 `start.lock` 若仍存在，也需先确认原启动命令已结束。数据布局更新尚未发布到 0.1.18 下载包。
+普通运行数据统一归入 `.local/config/`、`records/`、`images/`、`logs/` 和 `runtime/`。旧发布版的配置和记录可能直接位于 `.local/` 根部；更新后的服务会在启动时自动归位，配对信息及共享图片路径保留。备份时先停止服务，再复制整个数据目录；无需逐个整理文件。旧版根部 `start.lock` 若仍存在，也需先确认原启动命令已结束。
