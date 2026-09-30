@@ -4,24 +4,12 @@
 
 **选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
 
-当前版本 **0.1.18**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录和额度。0.1.17 在连接设置中新增插件专用模型选择，验证成功后供逆向与生图使用，不修改 Codex 全局模型。
+当前版本 **0.1.18**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
 
 - **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
 - **完整复刻**：分析参考图的内容、构图和视觉表现。
 - **主体重演**：以你的主体重演参考图，任务指令可编辑。
 - **继续生图**：把原图和生成的提示词交给 Codex 的 imagegen，结果保存在本机。
-
-## 0.1.18 · QC-Reframe
-
-统一采用 QC-Reframe 名称与 Raft 配色的 R 标志，支持三条图片逆向路径及一键生图。已有用户在原目录更新，配对码、项目记录和插件模型选择沿用。[版本说明](browser-extension/docs/releases/v0.1.18.md)
-
-## 0.1.17 · 插件独立选择模型
-
-在「连接设置 → 插件模型」刷新模型列表，选择后点击「验证并使用」。验证成功才保存，逆向和生图使用该选择，不修改 Codex 全局模型。
-
-<img src="browser-extension/docs/releases/v0.1.17-model-picker.png" width="420" alt="QC Alchemy 0.1.17 实机截图：插件模型下拉列表，包含 GPT-6.1-Sol、GPT-6-Astra、GPT-6-Sol 等候选模型" />
-
-**使用前请将本机 Codex CLI（独立命令行程序）更新到最新版本。** 更新 Codex 桌面 App 不代表插件调用的 CLI 已更新；旧 CLI 可能无法列出 GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol 等新模型。更新后重启本机服务，再点「刷新列表」。具体模型以账号权限和验证结果为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli) · [版本说明](browser-extension/docs/releases/v0.1.17.md)
 
 ## 界面与效果
 
@@ -63,6 +51,8 @@ Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登
 
 需要 Git、Node.js **22.15+**、已安装并登录的 Codex CLI，以及可加载 Chrome MV3 扩展的浏览器。首发在 macOS 验证；其他系统尚未实测。生图额外需要本机 `imagegen` skill 和账户支持的内置生图能力。
 
+**请单独将本机 Codex CLI 更新到最新版本。** 更新桌面 App 不代表 CLI 已更新；旧 CLI 可能缺少新模型。更新后重启本机服务、刷新模型列表，可用性以账号权限和实际验证为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli)
+
 ```bash
 git clone --branch v0.1.18 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
 cd qc-reframe/browser-extension
@@ -75,7 +65,13 @@ npm run pair
 
 **首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
 
-以后在 `browser-extension` 目录使用：
+## 日常使用
+
+1. 在网页图片上点击「逆向风格」，打开参考模板项目。
+2. 选择「提取风格」「完整复刻」或「主体重演」；按需上传主体图、编辑任务指令，然后生成提示词。
+3. 复制提示词，或点击「用 Codex 生成图片」。提示词与生成结果按项目和路径分别保存，可从「项目记录」继续使用。
+
+在 `browser-extension` 目录管理本机服务：
 
 | 命令 | 用途 |
 | --- | --- |
@@ -96,4 +92,5 @@ npm run pair
 
 - [完整安装步骤与排错](browser-extension/docs/INSTALL_WITH_CODEX.md)
 - [使用方法与开发说明](browser-extension/README.md)
+- [更新日志](browser-extension/docs/releases/README.md)
 - [下载 0.1.18](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18)

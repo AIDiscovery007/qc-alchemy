@@ -1,0 +1,13 @@
+# 更新日志
+
+[← 项目首页](../../../README.md) · [使用说明](../../README.md) · [GitHub Releases](https://github.com/AIDiscovery007/qc-reframe/releases)
+
+功能变化、修复、升级说明和版本截图集中记录在这里。首页 README 保留产品介绍与安装使用方法。
+
+| 版本 | 更新内容 | 详情 |
+| --- | --- | --- |
+| 0.1.18 | 更名为 QC-Reframe，全局替换 R 标志 | [版本说明](v0.1.18.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18) |
+| 0.1.17 | 插件独立选择并验证本机账号模型，附功能截图与 CLI 更新提醒 | [版本说明](v0.1.17.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.17) |
+| 0.1.2–0.1.16 | 三条逆向路径、一键生图、项目记录、Raft 界面与动态避让等已有开发记录 | [早期迭代记录](early-versions.md) |
+
+后续版本在本目录新增 `v版本号.md`，并将入口添加到表格顶部；需要发布的版本同步到 GitHub Releases。版本截图也保存在本目录。
