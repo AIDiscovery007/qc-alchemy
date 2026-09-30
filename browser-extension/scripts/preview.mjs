@@ -106,10 +106,20 @@ createServer(async (req, res) => {
         const selection=(project)=>({id:project.id,projectId:project.id,image:template,capture:'original',sourceUrl:project.sourceUrl});
         const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'?undefined:selection(projects[0])};
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
+        const models={accountLabel:'ChatGPT · 预览',selected:state==='models-new'?null:'preview-vision',models:[{model:'preview-vision',label:'Vision Model',isDefault:true,status:state==='models-new'?'unverified':'verified'},{model:'preview-unavailable',label:'Unavailable Model',status:'unverified'}]};
         const listeners = new Set();
         globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.9'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection})};
-          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',active:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
+          if(message.type==='alchemy:models-refresh'||(message.type==='alchemy:query'&&message.path==='/models'))return {ok:true,value:structuredClone(models)};
+          if(message.type==='alchemy:model-verify'){
+            models.verification={model:message.model,status:'running'};
+            setTimeout(()=>{
+              if(message.model==='preview-unavailable'){models.verification={model:message.model,status:'failed',error:'该模型当前无法调用，请选择其他模型并验证。'};models.models[1].status='unavailable';}
+              else {models.selected=message.model;models.models[0].status='verified';models.verification={model:message.model,status:'completed'};}
+            },1800);
+            return {ok:true,value:structuredClone(models)};
+          }
+          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',model:models.selected,active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
             if(projects.some(p=>message.ids.includes(p.id)&&summary(p).busy))return {error:'所选项目仍在逆向或生图'};
@@ -196,8 +206,8 @@ createServer(async (req, res) => {
     res.writeHead(404);
     res.end("请先运行 npm run build");
   }
-}).listen(43188, "127.0.0.1", () =>
+}).listen(Number(process.env.PREVIEW_PORT || 43188), "127.0.0.1", () =>
   console.log(
-    "UI preview: http://127.0.0.1:43188/?state=result (empty / running / failed)",
+    `UI preview: http://127.0.0.1:${process.env.PREVIEW_PORT || 43188}/?state=result (empty / running / failed / models-new)`,
   ),
 );

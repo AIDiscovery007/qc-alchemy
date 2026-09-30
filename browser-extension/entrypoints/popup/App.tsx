@@ -6,6 +6,7 @@ import SubjectForm from "./SubjectForm";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
+import ModelSettings from "./ModelSettings";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -34,6 +35,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const [connected, setConnected] = useState(false);
   const [connectionText, setConnectionText] = useState("尚未连接");
   const [serviceBusy, setServiceBusy] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [lang, setLang] = useState<"zh" | "en">("zh");
@@ -54,7 +56,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const reading = selection && !selection.image && !selection.error;
   const referenceError = job && referenceErrors[job.id];
   const restoring = !!job?.reenact && !references[job.id] && !referenceError;
-  const blocked = !connected || busy || savingMode || serviceBusy || !!running || !!generating || loadingProject || restoring;
+  const blocked = !connected || !selectedModel || busy || savingMode || serviceBusy || !!running || !!generating || loadingProject || restoring;
 
   useEffect(() => {
     setCopied(false);
@@ -115,10 +117,11 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     const refresh = async () => {
       const revision = projectRevision.current;
       try {
-        const health = await query<{ ready: boolean; skill: string; active: number }>("/health");
+        const health = await query<{ ready: boolean; skill: string; active: number; model?: string }>("/health");
         if (cancelled) return;
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
+        setSelectedModel(health.model || null);
         setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到 Alchemy 技能");
         if (historyOpen && !deletingProjects.current) {
           const items = await query<ProjectSummary[]>("/projects");
@@ -180,7 +183,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       setTokenDraft("");
       setConnected(true);
       setConnectionText(`已连接 · ${health.skill}`);
-      setSettings(false);
+      setSettings(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -324,6 +327,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
           >
             {busy ? "正在连接…" : "连接 Codex"}
           </button>
+          {connected && <ModelSettings serviceBusy={serviceBusy} />}
         </section>
       )}
       {error && (
@@ -334,6 +338,10 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       {!connected && preferences.paired && !settings && (
         <div className="error">{connectionText}</div>
       )}
+      {connected && !selectedModel && !settings && <div className="model-notice">
+        <span>先为 Alchemy 选择可用模型</span>
+        <button className="text-button" onClick={() => setSettings(true)}>选择模型</button>
+      </div>}
 
       <main>
         {historyOpen ? (
@@ -500,7 +508,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                     <p>{result.uncertainties.join("\n")}</p>
                   </details>
                 )}
-                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || busy || serviceBusy || !!running}
+                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || !selectedModel || busy || serviceBusy || !!running}
                   onUpdate={updateJob} />
                 <button className="secondary" onClick={exportResult}>
                   <Icon name="download" />导出 Markdown

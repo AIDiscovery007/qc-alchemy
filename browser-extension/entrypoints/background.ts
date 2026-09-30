@@ -170,9 +170,14 @@ export default defineBackground(() => {
         await browser.storage.local.set({ preferences: { ...preferences, token, mode: message.mode } });
         return;
       case "alchemy:query":
-        if (typeof message.path !== "string" || !/^\/(health|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
+        if (typeof message.path !== "string" || !/^\/(health|models|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
         return bridge(message.path, token);
+      case "alchemy:models-refresh":
+        return bridge("/models/refresh", token, {});
+      case "alchemy:model-verify":
+        if (typeof message.model !== "string" || !message.model || message.model.length > 200) throw new Error("请选择有效模型");
+        return bridge("/models/verify", token, { model: message.model });
       case "alchemy:cancel":
         if (typeof message.id !== "string" || !/^[\w-]+$/.test(message.id)) throw new Error("无效任务");
         return bridge(`/jobs/${message.id}/cancel`, token, {});
@@ -242,7 +247,7 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

@@ -37,6 +37,7 @@ export type Job = {
   result?: Result;
   error?: string;
   threadId?: string;
+  model?: string;
   reenact?: Omit<SubjectInput, "subjectImage">;
   generations?: Generation[];
 };
@@ -61,6 +62,7 @@ export type Generation = {
   prompt: string;
   negativePrompt: string;
   threadId?: string;
+  model?: string;
   extension?: "png" | "jpeg" | "webp";
   revisedPrompt?: string;
   error?: string;
@@ -75,4 +77,12 @@ export type ImageTarget = {
     viewportWidth: number;
     viewportHeight: number;
   };
+};
+
+export type ModelCatalog = {
+  accountLabel?: string;
+  selected: string | null;
+  verifiedAt?: string;
+  models: { model: string; label: string; isDefault: boolean; status: "verified" | "unverified" | "unavailable" }[];
+  verification?: { model: string; status: "running" | "completed" | "failed"; error?: string };
 };

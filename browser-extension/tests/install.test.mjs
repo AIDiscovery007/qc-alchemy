@@ -55,7 +55,7 @@ test("fresh local service starts detached, reuses pairing, stops and restarts wi
   assert.ok(!again.stdout.includes(firstToken));
   assert.equal((await run("pair")).stdout.trim(), firstToken);
   const health = JSON.parse((await run("status")).stdout);
-  assert.equal(health.version, "0.1.16");
+  assert.equal(health.version, JSON.parse(await readFile(join(root, "package.json"), "utf8")).version);
   assert.equal(health.service, "qc-alchemy");
   assert.equal(health.ready, true);
   assert.equal(health.managed, true);
@@ -88,6 +88,7 @@ test("doctor rejects invalid CLI and logged-out accounts instead of reporting re
 
 test("managed shutdown requires authentication and refuses while a model task is active", async t => {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-shutdown-"));
+  await writeFile(join(dir, "model-settings.json"), JSON.stringify({ model: "test-model", accountKey: "test" }));
   let finish;
   const app = await createBridge({ dataDir: dir, allowShutdown: true, agent: () => new Promise(resolve => { finish = resolve; }) });
   app.server.listen(0, "127.0.0.1");

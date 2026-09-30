@@ -1,6 +1,6 @@
 # QC Alchemy for Chrome
 
-首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.16**。
+首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.17**。
 
 <img src="assets/brand/alchemy.svg" width="72" height="72" alt="QC Alchemy logo" />
 
@@ -60,11 +60,21 @@ npm run pair
 
 1. 在 Codex 内置浏览器的扩展管理中加载 `.output/chrome-mv3`（支持 ZIP 的客户端也可导入 Release 的 Chrome ZIP）。首次加载及权限确认可能需要用户手动完成。
 2. Chrome 则打开 `chrome://extensions`，启用开发者模式并加载该目录。不同浏览器分别安装。
-3. 打开 Alchemy 设置，粘贴本机配对码并连接。
+3. 打开 Alchemy 设置，粘贴本机配对码并连接。在「插件模型」选择模型，点击「验证并使用」。
 4. 打开或刷新 Pinterest 等网页，悬停图片点击「逆向风格」，或右键图片选择 Alchemy。
 5. 网页浮层打开模板项目，选择路径生成提示词，再按需生成图片。
 
 首次默认「提取风格」，选中参考图后上传自己的主体图，再生成风格转换提示词；「完整复刻」只使用参考图。悬浮选图和切换路径均不会自动开始逆向，需点击生成按钮。任务执行中仍可查看其他路径，下一次调用需等待完成或取消。
+
+## 独立选择模型（0.1.17）
+
+请先把插件实际调用的本机 **Codex CLI** 更新到最新版本；仅更新桌面 App 不代表 CLI 已更新。旧 CLI 可能缺少 GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol 等模型。更新后重启本机服务并刷新列表，具体可用性以账号权限和验证结果为准。[官方更新说明](https://learn.chatgpt.com/docs/codex/cli) · [功能截图与版本说明](docs/releases/v0.1.17.md)
+
+连接设置中的「插件模型」从本机 Codex 获取图像输入模型列表，不写死模型名，也不修改 `~/.codex/config.toml`。首次使用或从旧版升级后，需选择模型并点击「验证并使用」。刷新列表不会自动调用推理；验证会通过同一个 Codex CLI 和登录状态发送一次简短请求，消耗少量模型额度，不发送项目图片。成功后保存到已忽略的 `.local/model-settings.json`，逆向和生图均显式使用该模型及其推荐推理强度。
+
+模型目录可能包含缓存项，所以目录中的「待验证」不代表账号已经有调用权限。验证失败时保留原有选择，明确拒绝访问的模型标记为不可用；网络或额度问题不等同于模型权限问题。账号、登录状态或提供方变化后需重新验证。验证不会写入项目历史，已有提示词和图片保持原样；运行中的任务禁止切换模型。
+
+验证成功表示当前请求可以完成推理，不保证内置生图工具可用或还有生图额度。生图仍单独检查提供方能力，并以真实工具结果为准。模型目录和请求协议参考 [OpenAI Docs](https://learn.chatgpt.com/docs/app-server)；[官方说明](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)也提示目录不等于权限验证。
 
 ## 提取风格
 

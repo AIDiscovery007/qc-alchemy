@@ -1,6 +1,6 @@
-# 用 Codex 安装 QC Alchemy 0.1.16
+# 用 Codex 安装 QC Alchemy 0.1.17
 
-这是供用户及其 Codex 执行的本地安装流程。版本保持 `0.1.16`，发行标签为 `v0.1.16`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
+这是供用户及其 Codex 执行的本地安装流程。版本为 `0.1.17`，发行标签为 `v0.1.17`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
 
 ## 1. 获取完整发行版
 
@@ -9,7 +9,7 @@
 优先复用用户已有的同一安装目录；没有时，在用户可写且准备长期保留的位置执行：
 
 ```bash
-git clone --branch v0.1.16 --single-branch https://github.com/AIDiscovery007/qc-alchemy.git
+git clone --branch v0.1.17 --single-branch https://github.com/AIDiscovery007/qc-alchemy.git
 cd qc-alchemy/browser-extension
 ```
 
@@ -20,8 +20,10 @@ cd qc-alchemy/browser-extension
 需要 Node.js 22.15+ 和 Codex CLI。先检查 `node --version`、`npm --version`、`codex --version`、`codex login status`。缺少时从官方来源安装：
 
 - Node.js：[官方下载](https://nodejs.org/en/download)。
-- Codex CLI：[官方安装与登录说明](https://developers.openai.com/codex/cli)。常用安装方式为 `npm install -g @openai/codex`。已有可用 CLI 时不要重复安装。
+- Codex CLI：[官方安装与登录说明](https://developers.openai.com/codex/cli)。常用安装方式为 `npm install -g @openai/codex`。已有 CLI 时按原安装方式升级到最新版本，避免重复安装多份。
 - 登录需要用户本人完成时，指导运行 `codex login`；不索取密码或复制账户凭据。
+
+**必须单独检查本机 Codex CLI 的更新。** 桌面 App 更新不代表插件调用的 CLI 已更新；旧 CLI 可能缺少 GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol 等新模型。按 [官方更新说明](https://learn.chatgpt.com/docs/codex/cli)升级后，用 `codex --version` 确认，再重启本机服务、刷新插件模型列表。具体可用性以账号权限和「验证并使用」结果为准。
 
 脚本会在 PATH 及 macOS 常见的 Codex/ChatGPT App 资源目录查找 CLI。无法找到时，通过 `CODEX_BIN` 指定真实可执行文件的绝对路径；不修改用户全局 PATH 或 Codex 配置。Windows 上请让 Codex 定位可直接启动的 `codex.exe`，不要将 npm 的 `.cmd` 包装文件设为 `CODEX_BIN`。首发自动化在 macOS 验证，其他系统需单独确认。
 
@@ -37,7 +39,7 @@ npm run status
 
 `start` 在后台运行 bridge，关闭启动终端后仍可使用；它会先验证带配对令牌的 `/health`。重复启动同一版本会复用服务。若端口被其他服务、旧版本或另一份安装占用，会停止启动流程并说明原因，不强行结束别人的进程。不要通过修改端口来绕过冲突，浏览器端默认连接 `43187`。
 
-`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.16"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
+`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.17"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
 
 imagegen 默认读取 `$CODEX_HOME/skills/.system/imagegen/SKILL.md`，未设置 `CODEX_HOME` 时读取 `~/.codex/skills/.system/imagegen/SKILL.md`。如果找不到，让 Codex 查找用户实际安装的 imagegen skill 并设置路径；不要创建一个同名空文件充当已安装。缺失 imagegen 不妨碍提示词逆向，但生图不可用。找到 skill 也不代表账户一定支持内置 `image_gen`。
 
@@ -50,7 +52,7 @@ IMAGEGEN_SKILL_PATH=/absolute/path/to/imagegen/SKILL.md \
 npm run setup
 ```
 
-使用默认位置时不需要这些参数。保留 skill 的伴随 `references/` 文件。环境变量优先于保存的路径。
+若曾指定 `CODEX_BIN`，确认它指向更新后的 CLI，必要时用新路径重新运行 `npm run setup`。使用默认位置时不需要这些参数。保留 skill 的伴随 `references/` 文件。环境变量优先于保存的路径。
 
 ## 4. 加载到浏览器
 
@@ -66,7 +68,7 @@ npm run setup
 
 1. 打开 `chrome://extensions`。
 2. 开启开发者模式，选择“加载已解压的扩展程序”。
-3. 选择 `.output/chrome-mv3`，确认列表显示 QC Alchemy **0.1.16**。
+3. 选择 `.output/chrome-mv3`，确认列表显示 QC Alchemy **0.1.17**。
 
 请用户自行确认浏览器展示的权限。安装到 Chrome 与安装到 Codex 内置浏览器是两份独立安装。
 
@@ -83,13 +85,17 @@ npm run pair
 验收分开报告：
 
 - 服务状态：认证的健康检查成功、版本与 skill 就绪。
-- 扩展状态：实际加载 0.1.16，悬停图片后出现新版 A 标志与“逆向风格”。
+- 扩展状态：实际加载 0.1.17，悬停图片后出现新版 A 标志与“逆向风格”。
 - 配对状态：点击悬浮入口，面板显示连接成功，并能显示选中的参考图。
+
+配对后在「插件模型」选择候选项，点击「验证并使用」才保存。该操作发送一次简短请求，会消耗少量模型额度；用户仅要求安装时，保留为手动步骤并说明尚未验证。
 
 选择图片会打开或创建本机项目；首次安装验收到此即可。没有用户额外要求，不自动进行提示词逆向或生图，不消耗模型额度。未实际验证的项明确保留为待完成。
 
 ## 日常启动、升级和排错
 
+- 配对后在「连接设置 → 插件模型」选择模型并点击「验证并使用」。这会发送一次简短请求，消耗少量模型额度；用户仅要求安装时，保留为手动步骤，不自动验证。不要通过修改 Codex 全局模型来修复插件兼容性。
+- `model is not supported when using Codex with a ChatGPT account`：刷新插件模型列表，选择其他模型并验证。CLI 登录成功或目录中出现模型名称，都不等于实际调用成功。切换账号、登录状态或提供方后重新验证。
 - 在同一 `browser-extension` 目录运行 `npm start`；电脑重启后需要再次运行，不会配置开机自启。
 - `npm stop` 停止脚本启动的后台服务，保留配对码和全部项目；任务运行中会拒绝停止。先在插件完成或取消任务。
 - `npm run bridge` 前台启动，适合排错，用 Ctrl+C 停止。由原终端启动的服务也从原终端停止。

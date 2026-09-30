@@ -101,6 +101,7 @@ const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 async function setup(t, options = {}, prepare) {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-projects-"));
   const skillPath = join(dir, "SKILL.md");
+  await writeFile(join(dir, "model-settings.json"), JSON.stringify({ model: "test-model", accountKey: "test" }));
   await writeFile(skillPath, "---\nname: alchemy\n---\nTest skill");
   if (prepare) await prepare(dir);
   let app;

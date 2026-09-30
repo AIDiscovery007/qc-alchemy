@@ -87,6 +87,12 @@ p { margin: 8px 0 14px; }
 .command { display: block; margin-bottom: 14px; padding: 10px; border-radius: 4px; color: var(--ink); background: var(--paper); font: 12px/1.6 "Space Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
 .settings label { display: block; font-size: 11px; font-weight: 600; margin: 10px 0 6px; }
 .settings input { padding: 10px; }
+.model-settings { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.model-heading, .model-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.model-heading h2 { margin: 0; }
+.model-notice { margin: 16px 20px 0; padding: 10px 12px; border: 1px solid var(--ink); border-radius: 8px; background: var(--yellow); font-size: 11px; }
+.model-notice button { white-space: nowrap; }
+.settings .select-field { display: grid; margin: 12px 0; }
 .error { padding: 12px; margin: 12px 0; border: 1px solid #a33d33; border-radius: 8px; background: #fff0ec; color: #892d24; font-size: 12px; overflow-wrap: anywhere; }
 .app > .error { margin: 16px 20px 0; }
 .image-card { margin: 18px 0; border: 1px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--surface); }

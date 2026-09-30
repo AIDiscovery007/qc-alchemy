@@ -4,12 +4,20 @@
 
 **选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
 
-当前版本 **0.1.16**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录、模型和额度。
+当前版本 **0.1.17**。一个与本机 Codex 协作的 Chrome MV3 扩展，支持网页图片悬浮选取、主体上传、项目记录与版本管理。不需要填写模型 API Key；沿用你的 Codex 登录和额度。0.1.17 在连接设置中新增插件专用模型选择，验证成功后供逆向与生图使用，不修改 Codex 全局模型。
 
 - **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
 - **完整复刻**：分析参考图的内容、构图和视觉表现。
 - **主体重演**：以你的主体重演参考图，任务指令可编辑。
 - **继续生图**：把原图和生成的提示词交给 Codex 的 imagegen，结果保存在本机。
+
+## 0.1.17 · 插件独立选择模型
+
+在「连接设置 → 插件模型」刷新模型列表，选择后点击「验证并使用」。验证成功才保存，逆向和生图使用该选择，不修改 Codex 全局模型。
+
+<img src="browser-extension/docs/releases/v0.1.17-model-picker.png" width="420" alt="QC Alchemy 0.1.17 实机截图：插件模型下拉列表，包含 GPT-6.1-Sol、GPT-6-Astra、GPT-6-Sol 等候选模型" />
+
+**使用前请将本机 Codex CLI（独立命令行程序）更新到最新版本。** 更新 Codex 桌面 App 不代表插件调用的 CLI 已更新；旧 CLI 可能无法列出 GPT-6.1 Sol、GPT-6 Astra、GPT-6 Sol 等新模型。更新后重启本机服务，再点「刷新列表」。具体模型以账号权限和验证结果为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli) · [版本说明](browser-extension/docs/releases/v0.1.17.md)
 
 ## 界面与效果
 
@@ -33,11 +41,11 @@
 在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
 
 ```text
-请帮我安装并启动 QC Alchemy 0.1.16：
+请帮我安装并启动 QC Alchemy 0.1.17：
 https://github.com/AIDiscovery007/qc-alchemy
 
-请获取仓库的 v0.1.16 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
-然后实际完成环境检查、初始化、构建、本机服务启动和配对准备，
+请获取仓库的 v0.1.17 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
+先确认插件实际使用的本机 Codex CLI 已更新到最新版本，再完成环境检查、初始化、构建、本机服务启动和配对准备，
 优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
 需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
 不要覆盖已有安装、项目记录或 Codex 全局配置。
@@ -52,14 +60,14 @@ Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登
 需要 Git、Node.js **22.15+**、已安装并登录的 Codex CLI，以及可加载 Chrome MV3 扩展的浏览器。首发在 macOS 验证；其他系统尚未实测。生图额外需要本机 `imagegen` skill 和账户支持的内置生图能力。
 
 ```bash
-git clone --branch v0.1.16 --single-branch https://github.com/AIDiscovery007/qc-alchemy.git
+git clone --branch v0.1.17 --single-branch https://github.com/AIDiscovery007/qc-alchemy.git
 cd qc-alchemy/browser-extension
 npm run setup
 npm start
 npm run pair
 ```
 
-`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.16)。在 Alchemy 设置粘贴 `pair` 输出的本机配对码，再刷新网页。
+`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.17)。在 Alchemy 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
 
 **首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
 
@@ -84,4 +92,4 @@ npm run pair
 
 - [完整安装步骤与排错](browser-extension/docs/INSTALL_WITH_CODEX.md)
 - [使用方法与开发说明](browser-extension/README.md)
-- [下载 0.1.16](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.16)
+- [下载 0.1.17](https://github.com/AIDiscovery007/qc-alchemy/releases/tag/v0.1.17)

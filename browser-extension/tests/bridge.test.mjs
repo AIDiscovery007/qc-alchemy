@@ -22,6 +22,7 @@ const result = {
 async function setup(t, agent = async () => result, generator) {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-test-"));
   const skillPath = join(dir, "SKILL.md");
+  await writeFile(join(dir, "model-settings.json"), JSON.stringify({ model: "test-model", accountKey: "test" }));
   await writeFile(skillPath, "---\nname: alchemy\n---\nTest skill");
   const app = await createBridge({ dataDir: dir, skillPath, agent, generator, generationSkillPath: skillPath });
   app.server.listen(0, "127.0.0.1");

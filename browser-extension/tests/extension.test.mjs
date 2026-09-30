@@ -5,6 +5,26 @@ import { runInNewContext } from "node:vm";
 
 const build = new URL("../.output/chrome-mv3/", import.meta.url);
 
+test("model messages stay authenticated in background and only reach allowed endpoints", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ selected: null, models: [] }) };
+  });
+  const sender = { id: "test", frameId: 0, url: "https://pinterest.com/", tab: { id: 4 } };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  assert.equal((await send({ type: "alchemy:query", path: "/models" })).ok, true);
+  assert.equal((await send({ type: "alchemy:models-refresh" })).ok, true);
+  assert.equal((await send({ type: "alchemy:model-verify", model: "vision-model" })).ok, true);
+  assert.ok(calls.every(c => c.options.headers.Authorization === "Bearer test"));
+  assert.ok(calls[0].url.endsWith("/models"));
+  assert.ok(calls[1].url.endsWith("/models/refresh"));
+  assert.deepEqual(JSON.parse(calls[2].options.body), { model: "vision-model" });
+  assert.ok((await send({ type: "alchemy:model-verify", model: 42 })).error);
+  assert.ok((await send({ type: "alchemy:query", path: "/models/../../token" })).error);
+  assert.equal(calls.length, 3);
+});
+
 test("deleting projects validates ids and clears only the deleted active selection after success", async () => {
   const id = "a".repeat(64), other = "b".repeat(64);
   let fail = false;

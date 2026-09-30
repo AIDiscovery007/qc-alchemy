@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
 import { runGeneration, imagegenSkillPath } from "./generation.mjs";
 import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./projects.mjs";
+import { createModelStore } from "./models.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
@@ -73,8 +74,10 @@ export async function createBridge({
   generator = runGeneration,
   generationSkillPath = imagegenSkillPath(),
   allowShutdown = false,
+  models,
 } = {}) {
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  models ||= await createModelStore({ dataDir, cwd: root });
   await recoverProjectDeletion(dataDir);
   const tokenPath = join(dataDir, "token");
   let token;
@@ -195,12 +198,25 @@ export async function createBridge({
           managed: allowShutdown,
           skill: skill || null,
           ready: Boolean(skill),
-          active: controllers.size,
+          active: controllers.size + Number(models.busy),
+          model: models.selectedModel,
         });
         return;
       }
+      if (req.method === "GET" && path === "/models") {
+        try { json(200, await models.list()); } catch (error) { throw bad(error.message, 503); }
+        return;
+      }
+      if (req.method === "POST" && ["/models/refresh", "/models/verify"].includes(path)) {
+        if (controllers.size || models.busy) throw bad("已有 Codex 任务正在执行，请等待完成或取消。", 409);
+        const body = await readBody(req);
+        if (path.endsWith("/verify") && (typeof body.model !== "string" || body.model.length > 200)) throw bad("请选择有效模型");
+        try { json(path.endsWith("/verify") ? 202 : 200, path.endsWith("/verify") ? await models.start(body.model) : await models.refresh()); }
+        catch (error) { throw bad(error.message, error.status || 503); }
+        return;
+      }
       if (req.method === "POST" && path === "/shutdown" && allowShutdown) {
-        if (controllers.size) throw bad("任务执行中，请完成或在插件内取消后再停止服务。", 409);
+        if (controllers.size || models.busy) throw bad("任务执行中，请完成或在插件内取消后再停止服务。", 409);
         shuttingDown = true;
         json(200, { stopped: true });
         server.close();
@@ -278,7 +294,7 @@ export async function createBridge({
         if (req.method !== "POST" || generationMatch[2]) throw bad("Not found", 404);
         if (job.status !== "completed" || !job.result) throw bad("请先完成提示词逆向", 409);
         if (job.mode === "style" && !job.reenact) throw bad("通用风格需要先补充主体图并重新逆向，才能生成图片");
-        if (controllers.size) throw bad("已有 Codex 任务正在执行，请等待完成或取消", 409);
+        if (controllers.size || models.busy) throw bad("已有 Codex 任务正在执行，请等待完成或取消", 409);
         const body = await readBody(req);
         if (!["zh", "en"].includes(body.language)) throw bad("无效提示词语言");
         const prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
@@ -286,11 +302,12 @@ export async function createBridge({
         const imagePath = await storedImage(job.id, false, true);
         const subjectImagePath = job.reenact ? await storedImage(job.id, true, true) : undefined;
         try { await readFile(generationSkillPath); } catch { throw bad("找不到 imagegen 技能，请设置 IMAGEGEN_SKILL_PATH", 503); }
+        const modelSettings = models.selection();
         if (controllers.size) throw bad("已有 Codex 任务正在执行", 409);
         const id = randomUUID();
         const controller = new AbortController();
         controllers.set(id, controller);
-        const next = { id, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt: job.result.negativePrompt };
+        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt: job.result.negativePrompt };
         job.generations ||= [];
         job.generations.push(next);
         try { await save(job); } catch (error) { controllers.delete(id); job.generations.pop(); throw error; }
@@ -298,7 +315,7 @@ export async function createBridge({
         void (async () => {
           try {
             const output = await generator({ imagePath, subjectImagePath, prompt, negativePrompt: next.negativePrompt,
-              skillPath: generationSkillPath, cwd: root, signal: controller.signal,
+              skillPath: generationSkillPath, cwd: root, signal: controller.signal, modelSettings,
               onProgress: (update) => { if (next.status === "running") Object.assign(next, update); },
             });
             if (next.status === "running") {
@@ -308,6 +325,7 @@ export async function createBridge({
             }
           } catch (error) {
             if (next.status === "running") Object.assign(next, { status: "failed", stage: "生图失败", error: error.message });
+            await models.invalidate(modelSettings, error).catch((failure) => console.error("保存模型状态失败:", failure.message));
           } finally {
             await save(job).catch((error) => console.error("保存生图任务失败:", error.message));
             controllers.delete(id);
@@ -351,7 +369,7 @@ export async function createBridge({
       }
       if (req.method !== "POST" || path !== "/jobs")
         throw bad("Not found", 404);
-      if (controllers.size)
+      if (controllers.size || models.busy)
         throw bad("已有 Codex 任务正在执行，请等待完成或取消当前任务", 409);
       const body = await readBody(req);
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
@@ -381,6 +399,7 @@ export async function createBridge({
       } catch {
         throw bad("找不到 Alchemy 技能，请设置 ALCHEMY_SKILL_PATH", 503);
       }
+      const modelSettings = models.selection();
       const sourceUrl = sourceUrlFor(body.sourceUrl);
       await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
       // Recheck after body I/O so simultaneous requests cannot both start.
@@ -394,6 +413,7 @@ export async function createBridge({
         id,
         projectId,
         mode: body.mode,
+        model: modelSettings.model,
         status: "running",
         stage: "正在连接本机 Codex…",
         createdAt: new Date().toISOString(),
@@ -421,6 +441,7 @@ export async function createBridge({
             skillPath,
             cwd: root,
             signal: controller.signal,
+            modelSettings,
             onProgress: (update) => {
               if (job.status === "running") Object.assign(job, update);
             },
@@ -438,6 +459,7 @@ export async function createBridge({
               error: error.message,
               stage: "逆向失败",
             });
+          await models.invalidate(modelSettings, error).catch((failure) => console.error("保存模型状态失败:", failure.message));
         } finally {
           await save(job).catch((error) =>
             console.error("保存任务失败:", error.message),
@@ -455,6 +477,7 @@ export async function createBridge({
     }
   });
   server.on("close", () => {
+    models.close();
     for (const controller of controllers.values()) controller.abort();
   });
   return { server, token, tokenPath };

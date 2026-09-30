@@ -52,7 +52,7 @@ async function doctor(env) {
   for (const match of skill.matchAll(/\]\((references\/[^)]+)\)/g))
     if (!await readable(resolve(dirname(env.ALCHEMY_SKILL_PATH), match[1]))) throw new Error(`Alchemy skill 缺少 ${match[1]}`);
   const imagegen = await readable(env.IMAGEGEN_SKILL_PATH);
-  console.log(`QC Alchemy ${version}\nNode.js ${process.versions.node}\nCodex CLI：已登录\nAlchemy skill：就绪\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
+  console.log(`QC Alchemy ${version}\nNode.js ${process.versions.node}\nCodex CLI：已登录\nAlchemy skill：就绪\n插件模型：在扩展连接设置中选择并验证\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
   return env;
 }
 

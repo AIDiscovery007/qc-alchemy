@@ -15,7 +15,7 @@ export async function bridge<T>(
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(path.startsWith("/models") ? 30_000 : 15_000),
     });
   } catch {
     throw new Error("连接不到本机服务，请在 browser-extension 目录运行 npm start");

@@ -2,9 +2,11 @@
   "name": "qc-alchemy-extension",
   "description": "Turn selected images into prompts with your local Codex agent.",
   "private": true,
-  "version": "0.1.16",
+  "version": "0.1.17",
   "type": "module",
-  "engines": { "node": ">=22.15.0" },
+  "engines": {
+    "node": ">=22.15.0"
+  },
   "scripts": {
     "setup": "node scripts/manage.mjs setup",
     "doctor": "node scripts/manage.mjs doctor",
