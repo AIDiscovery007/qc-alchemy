@@ -29,7 +29,7 @@ export default defineBackground(() => {
     browser.contextMenus.removeAll().then(() =>
       browser.contextMenus.create({
         id: "alchemy-image",
-        title: "用 Alchemy 逆向图片风格",
+        title: "用 QC-Reframe 逆向图片风格",
         contexts: ["image"],
       }),
     );
@@ -161,7 +161,7 @@ export default defineBackground(() => {
       case "alchemy:connect": {
         if (typeof message.token !== "string") throw new Error("无效配对码");
         const health = await bridge<{ ready: boolean; skill: string }>("/health", message.token);
-        if (!health.ready) throw new Error("服务已启动，但未找到 Alchemy 技能。");
+        if (!health.ready) throw new Error("服务已启动，但未找到图片逆向技能。");
         await browser.storage.local.set({ preferences: { ...preferences, mode: preferences?.mode || "style", token: message.token } });
         return health;
       }

@@ -43,7 +43,7 @@ createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     if (path === "/hover-preview") {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end('<html><head><meta charset="UTF-8"><title>Alchemy · 动态避让预览</title></head><body style="margin:0"><iframe title="悬浮避让示例" src="/hover-fixture" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
+      res.end('<html><head><meta charset="UTF-8"><title>QC-Reframe · 动态避让预览</title></head><body style="margin:0"><iframe title="悬浮避让示例" src="/hover-fixture" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
       return;
     }
     if (path === "/hover-fixture") {
@@ -74,7 +74,7 @@ createServer(async (req, res) => {
     if (path === "/panel-preview") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       // Keep installed top-frame extensions from covering the build under test.
-      res.end('<html><head><meta charset="UTF-8"><title>Alchemy · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview?state=projects" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
+      res.end('<html><head><meta charset="UTF-8"><title>QC-Reframe · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview?state=projects" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
       return;
     }
     if (path === "/preview.js") {
@@ -108,7 +108,7 @@ createServer(async (req, res) => {
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
         const models={accountLabel:'ChatGPT · 预览',selected:state==='models-new'?null:'preview-vision',models:[{model:'preview-vision',label:'Vision Model',isDefault:true,status:state==='models-new'?'unverified':'verified'},{model:'preview-unavailable',label:'Unavailable Model',status:'unverified'}]};
         const listeners = new Set();
-        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'Alchemy preview',version:'0.1.9'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection})};
           if(message.type==='alchemy:models-refresh'||(message.type==='alchemy:query'&&message.path==='/models'))return {ok:true,value:structuredClone(models)};
           if(message.type==='alchemy:model-verify'){
@@ -146,7 +146,7 @@ createServer(async (req, res) => {
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
           if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
-          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template,path:'/example/Alchemy/'+message.generationId+'-generated.png'}};
+          if(message.type==='alchemy:generation-image')return {ok:true,value:{image:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png'};

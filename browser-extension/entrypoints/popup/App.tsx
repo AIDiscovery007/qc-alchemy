@@ -122,7 +122,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
         setSelectedModel(health.model || null);
-        setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到 Alchemy 技能");
+        setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到图片逆向技能");
         if (historyOpen && !deletingProjects.current) {
           const items = await query<ProjectSummary[]>("/projects");
           if (!cancelled && revision === projectRevision.current) setProjects(items);
@@ -267,7 +267,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = `alchemy-${job.id.slice(0, 8)}.md`;
+    a.download = `qc-reframe-${job.id.slice(0, 8)}.md`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -277,7 +277,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       {!embedded && <header>
         <div className="brand">
           <img className="brand-mark" src={logo} alt="" />
-          <strong>QC Alchemy</strong>
+          <strong>QC-Reframe</strong>
         </div>
       </header>}
       <div className="connection">
@@ -339,7 +339,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         <div className="error">{connectionText}</div>
       )}
       {connected && !selectedModel && !settings && <div className="model-notice">
-        <span>先为 Alchemy 选择可用模型</span>
+        <span>先为 QC-Reframe 选择可用模型</span>
         <button className="text-button" onClick={() => setSettings(true)}>选择模型</button>
       </div>}
 

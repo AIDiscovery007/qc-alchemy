@@ -499,7 +499,7 @@ if (
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(
-      `QC Alchemy ${version} 本机服务：http://127.0.0.1:${port}\n运行 npm run pair 查看配对码（保存在 ${tokenPath}）。\n仅调用本机 Codex，按 Ctrl+C 停止。`,
+      `QC-Reframe ${version} 本机服务：http://127.0.0.1:${port}\n运行 npm run pair 查看配对码（保存在 ${tokenPath}）。\n仅调用本机 Codex，按 Ctrl+C 停止。`,
     );
   });
   for (const signal of ["SIGINT", "SIGTERM"])

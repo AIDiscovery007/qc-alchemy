@@ -49,7 +49,7 @@ export async function withCodex({ cwd, signal, onNotification = () => {}, timeou
       if (message.error) waiting.reject(new Error(message.error.message));
       else waiting.resolve(message.result);
     } else if (message.id !== undefined && message.method) {
-      send({ id: message.id, error: { code: -32601, message: "Interactive approvals are unavailable in QC Alchemy." } });
+      send({ id: message.id, error: { code: -32601, message: "Interactive approvals are unavailable in QC-Reframe." } });
       stop(new Error("Codex 请求交互式操作，请在 Codex 中检查后重试。"));
     } else {
       try { onNotification(message); } catch (error) { stop(error); }
@@ -57,7 +57,7 @@ export async function withCodex({ cwd, signal, onNotification = () => {}, timeou
   });
   try {
     return await Promise.race([failed, (async () => {
-      await request("initialize", { clientInfo: { name: "qc_alchemy", title: "QC Alchemy", version } });
+      await request("initialize", { clientInfo: { name: "qc_reframe", title: "QC-Reframe", version } });
       send({ method: "initialized", params: {} });
       return action(request);
     })()]);

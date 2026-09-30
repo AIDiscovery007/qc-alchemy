@@ -52,7 +52,7 @@ async function doctor(env) {
   for (const match of skill.matchAll(/\]\((references\/[^)]+)\)/g))
     if (!await readable(resolve(dirname(env.ALCHEMY_SKILL_PATH), match[1]))) throw new Error(`Alchemy skill 缺少 ${match[1]}`);
   const imagegen = await readable(env.IMAGEGEN_SKILL_PATH);
-  console.log(`QC Alchemy ${version}\nNode.js ${process.versions.node}\nCodex CLI：已登录\nAlchemy skill：就绪\n插件模型：在扩展连接设置中选择并验证\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
+  console.log(`QC-Reframe ${version}\nNode.js ${process.versions.node}\nCodex CLI：已登录\nAlchemy skill：就绪\n插件模型：在扩展连接设置中选择并验证\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
   return env;
 }
 
@@ -69,14 +69,14 @@ async function probe() {
     if (error.cause?.code === "ECONNREFUSED") return null;
     throw new Error(`无法确认 ${url} 的状态，未启动或停止任何现有服务。`);
   }
-  if (!response.ok) throw new Error(`端口 ${port} 已被其他服务或另一份 Alchemy 安装占用，未改动现有服务。`);
+  if (!response.ok) throw new Error(`端口 ${port} 已被其他服务或另一份 QC-Reframe 安装占用，未改动现有服务。`);
   const health = await response.json();
   if (health.service !== "qc-alchemy") throw new Error(`端口 ${port} 已占用；可能是旧版服务，请先从原终端停止它。`);
   return health;
 }
 
 function connectionInfo() {
-  console.log(`\n服务：${url}\n扩展目录：${join(root, ".output/chrome-mv3")}\n配对码：运行 npm run pair 查看，只粘贴到 Alchemy 设置。\n首次加载说明：${join(root, "docs/INSTALL_WITH_CODEX.md")}\n检查：npm run status　停止：npm stop`);
+  console.log(`\n服务：${url}\n扩展目录：${join(root, ".output/chrome-mv3")}\n配对码：运行 npm run pair 查看，只粘贴到 QC-Reframe 设置。\n首次加载说明：${join(root, "docs/INSTALL_WITH_CODEX.md")}\n检查：npm run status　停止：npm stop`);
 }
 
 async function start(env) {
@@ -177,4 +177,4 @@ async function main() {
 }
 
 try { await main(); }
-catch (error) { console.error(`Alchemy：${error.message}`); process.exitCode = 1; }
+catch (error) { console.error(`QC-Reframe：${error.message}`); process.exitCode = 1; }

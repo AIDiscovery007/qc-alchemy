@@ -1,8 +1,8 @@
 {
-  "name": "qc-alchemy-extension",
+  "name": "qc-reframe-extension",
   "description": "Turn selected images into prompts with your local Codex agent.",
   "private": true,
-  "version": "0.1.17",
+  "version": "0.1.18",
   "type": "module",
   "engines": {
     "node": ">=22.15.0"

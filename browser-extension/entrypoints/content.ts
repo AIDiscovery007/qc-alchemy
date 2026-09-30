@@ -17,7 +17,7 @@ export default defineContentScript({
       "all:initial;position:fixed;z-index:2147483647;pointer-events:none;inset:0;";
     const shadow = host.attachShadow({ mode: "closed" });
     shadow.innerHTML = `<button class="pick" type="button" aria-label="逆向风格" title="逆向风格 · 将这张图片交给本机 Codex"><img src="${logo}" alt=""><span>逆向风格</span></button>
-    <section class="panel" role="dialog" aria-label="Alchemy 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC ALCHEMY</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
+    <section class="panel" role="dialog" aria-label="QC-Reframe 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC-Reframe</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
     <div class="notice" role="alert" hidden><div></div><button class="refresh" type="button">刷新网页</button><button class="dismiss" type="button">关闭</button></div>`;
     const styles = document.createElement("style");
     styles.textContent = panelCss + shellCss;

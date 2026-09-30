@@ -98,7 +98,7 @@ export async function runCodex({ input, schema, cwd, signal, onProgress = () => 
       message.method === "item/started" &&
       p.item?.type === "commandExecution"
     )
-      onProgress({ stage: generation ? "正在读取 imagegen 技能…" : "正在读取 Alchemy 分析规则…" });
+      onProgress({ stage: generation ? "正在读取 imagegen 技能…" : "正在读取图片分析规则…" });
     if (message.method === "item/agentMessage/delta")
       onProgress({ stage: generation ? "Codex 正在处理生图任务…" : "正在整理提示词…" });
     if (p.item?.type === "imageGeneration") {
