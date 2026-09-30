@@ -2,6 +2,8 @@
 
 首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.18**。迭代记录见 [更新日志](docs/releases/README.md)。
 
+开发与后续维护请先阅读 [贡献指南](../Contribution.md) 和 [AGENTS.md](AGENTS.md)。
+
 <img src="assets/brand/reframe.svg" width="72" height="72" alt="QC-Reframe logo" />
 
 将网页中选中的图片交给本机 Codex，通过现有 `alchemy` 技能逆向为提示词。使用 WXT 官方 React + TypeScript 模板、Manifest V3。
@@ -129,7 +131,7 @@ imagegen 默认位于 `$CODEX_HOME/skills/.system/imagegen/SKILL.md`（未设置
 
 品牌标识采用 Raft 的亮黄 `#ffd440`、墨黑 `#141111`、青色 `#27ccf3` 与粉色 `#fe7da8`，以几何 R、圆角卡片和右下硬阴影呼应插件界面。当前品牌源图为 `assets/brand/reframe.svg`。界面内嵌该 SVG，避免扩展资源地址在网页浮层中不可用；`npm run icons` 从同一源图生成 `public/icon/` 中的 16/32/48/96/128 px 图标。`build` 与 `zip` 会先更新图标。
 
-Git 保存 `browser-extension/`、根目录 README 与忽略规则。本地 `.local/`（配对令牌、Prompt JSON、参考图、截图）、下载/实验目录、依赖与构建产物不提交，也不会被删除；必要的品牌 SVG/PNG 和项目配置 JSON 正常提交。`alchemy` 的发布副本位于本目录 `.agents/skills/alchemy/`，包含运行所需参考文档；不包含作者的历史案例、Prompt JSON、来源索引或图片。`ALCHEMY_SKILL_PATH` 可指定其他完整安装。`imagegen` 使用新用户自己 Codex 中的技能，不随本仓库分发。
+Git 保存 `browser-extension/`、根目录 README、贡献指南与忽略规则。本地 `.local/`（配对令牌、Prompt JSON、参考图、截图）、下载/实验目录、依赖与构建产物不提交，也不会被删除；必要的品牌 SVG/PNG 和项目配置 JSON 正常提交。`alchemy` 的发布副本位于本目录 `.agents/skills/alchemy/`，包含运行所需参考文档；不包含作者的历史案例、Prompt JSON、来源索引或图片。`ALCHEMY_SKILL_PATH` 可指定其他完整安装。`imagegen` 使用新用户自己 Codex 中的技能，不随本仓库分发。
 
 ```bash
 npm run dev       # WXT 开发模式

@@ -92,5 +92,6 @@ npm run pair
 
 - [完整安装步骤与排错](browser-extension/docs/INSTALL_WITH_CODEX.md)
 - [使用方法与开发说明](browser-extension/README.md)
+- [贡献与维护指南](Contribution.md)
 - [更新日志](browser-extension/docs/releases/README.md)
 - [下载 0.1.18](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18)
