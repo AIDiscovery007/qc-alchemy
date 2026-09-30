@@ -113,12 +113,18 @@ test("startup refuses an unrelated listener without changing its files or stoppi
   assert.ok(!(await readdir(dir)).includes("token"));
 });
 
-test("doctor rejects invalid CLI and logged-out accounts instead of reporting readiness", { skip: process.platform === "win32" }, async t => {
+test("doctor stays strict while startup permits managing missing and logged-out CLI", { skip: process.platform === "win32" }, async t => {
   const { env, run } = await installation(t);
   await writeFile(env.CODEX_BIN, '#!/usr/bin/env node\nconsole.log("not a compatible tool");\n');
   await assert.rejects(run("doctor"), error => /找不到 Codex CLI/.test(error.stderr));
   await writeFile(env.CODEX_BIN, '#!/usr/bin/env node\nconsole.log("codex-cli test");if(process.argv[2]==="login")process.exit(1);\n');
-  await assert.rejects(run("start"), error => /尚未登录/.test(error.stderr));
+  await assert.rejects(run("doctor"), error => /尚未登录/.test(error.stderr));
+  assert.match((await run("start")).stderr, /仅启动本机管理服务/);
+  assert.equal(JSON.parse((await run("status")).stdout).ready, true);
+  await run("stop");
+  await rm(env.CODEX_BIN);
+  assert.match((await run("start")).stderr, /找不到 Codex CLI/);
+  assert.equal(JSON.parse((await run("status")).stdout).ready, true);
 });
 
 test("managed shutdown requires authentication and refuses while a model task is active", async t => {

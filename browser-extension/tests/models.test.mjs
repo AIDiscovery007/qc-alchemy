@@ -153,3 +153,18 @@ if(m.method==='turn/start'){send({method:'item/completed',params:{threadId:'prob
   const controller = new AbortController(); controller.abort();
   await assert.rejects(runCodex({ cwd: dir, signal: controller.signal, input: [], modelSettings: selection }), /取消/);
 });
+
+test('CLI upgrade clears persisted model trust even when refreshing the new catalog fails', async t => {
+  const dataDir = await directory(t);
+  let fail = false;
+  const store = await createModelStore({ dataDir, readCatalog: async () => {
+    if (fail) throw new Error('new CLI protocol unavailable');
+    return catalog;
+  }, verify: async () => {} });
+  await store.start('model-a'); await settled(store);
+  fail = true;
+  await assert.rejects(store.reset(), /protocol unavailable/);
+  assert.equal(store.selectedModel, null);
+  assert.throws(() => store.selection(), /选择模型/);
+  assert.equal(await readFile(join(dataDir, 'model-settings.json'), 'utf8'), 'null');
+});

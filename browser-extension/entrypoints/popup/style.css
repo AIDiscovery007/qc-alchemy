@@ -186,3 +186,7 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   :is(.primary, .secondary, .copy-button, .history-item):active:not(:disabled) { transform: none; }
 }
+
+.compact-main { display: contents; }
+.compact-main > .error { margin: 16px 20px 0; }
+.workspace-entry { white-space: nowrap; }

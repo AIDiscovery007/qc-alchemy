@@ -1,3 +1,11 @@
+import { createPortal } from "react-dom";
+import { normalizeImage } from "../../lib/image";
+import NewProject from "../workspace/NewProject";
+import WorkspacePrompt from "../workspace/PromptEditor";
+import RecentProject from "../workspace/RecentProject";
+import ImageInput from "../workspace/ImageInput";
+import SettingsCenter from "./SettingsCenter";
+import TaskCenter from "./TaskCenter";
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from "../../lib/types";
@@ -17,7 +25,17 @@ const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" 
 const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演" })[mode];
 type PromptDraft = Pick<NonNullable<Job["result"]>, "promptZh" | "promptEn" | "negativePrompt">;
 
-export default function App({ embedded = false }: { embedded?: boolean }) {
+export default function App({ embedded = false, workspace = false }: { embedded?: boolean; workspace?: boolean }) {
+  const [projectSearchTarget, setProjectSearchTarget] = useState<HTMLDivElement | null>(null);
+  const [resultPane, setResultPane] = useState<HTMLElement | null>(null);
+  const [generationActions, setGenerationActions] = useState<HTMLDivElement | null>(null);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [mobilePane, setMobilePane] = useState("edit");
+  const [instructions, setInstructions] = useState<Record<string, string>>({});
+  const referenceInput = useRef<HTMLInputElement>(null);
+  const [activeCount, setActiveCount] = useState(0);
+  const [cliBusy, setCliBusy] = useState(false);
   const [preferences, setPreferences] = useState(defaults);
   const [tokenDraft, setTokenDraft] = useState("");
   const [selection, setSelection] = useState<Selection>();
@@ -67,7 +85,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
   const reading = selection && !selection.image && !selection.error;
   const referenceError = job && referenceErrors[job.id];
   const restoring = !!job?.reenact && !references[job.id] && !referenceError;
-  const blocked = !connected || !selectedModel || busy || savingMode || modelBusy || !!running || loadingProject || restoring;
+  const blocked = !connected || !selectedModel || busy || savingMode || modelBusy || cliBusy || !!running || loadingProject || restoring;
 
   useEffect(() => {
     setCopied(false);
@@ -106,7 +124,25 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       } catch (e) { if (!cancelled) setError((e as Error).message); }
       if (!cancelled) timer = setTimeout(refresh, 1500);
     };
-    void refresh();
+    const initialize = async () => {
+      const id = workspace && new URLSearchParams(location.search).get("handoff");
+      if (id) {
+        try {
+          const handoff = await request<{ selection?: Selection; draft?: { subjectDrafts?: Record<string, string>; promptDrafts?: Record<string, PromptDraft>; instructions?: Record<string, string>; versions?: Record<string, string>; lang?: "zh" | "en" } }>({ type: "alchemy:workspace-handoff", id });
+          if (cancelled) return;
+          if (handoff?.draft) {
+            setSubjectDrafts(handoff.draft.subjectDrafts || {});
+            setPromptDrafts(handoff.draft.promptDrafts || {});
+            setInstructions(handoff.draft.instructions || {});
+            setVersions(handoff.draft.versions || {});
+            setLang(handoff.draft.lang || "zh");
+          }
+          history.replaceState(null, "", location.pathname);
+        } catch (e) { if (!cancelled) setError((e as Error).message); }
+      }
+      if (!cancelled) void refresh();
+    };
+    void initialize();
     return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
@@ -128,14 +164,16 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     const refresh = async () => {
       const revision = projectRevision.current;
       try {
-        const health = await query<{ ready: boolean; skill: string; active: number; modelBusy?: boolean; model?: string }>("/health");
+        const health = await query<{ ready: boolean; skill: string; active: number; modelBusy?: boolean; cliBusy?: boolean; model?: string }>("/health");
         if (cancelled) return;
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
+        setActiveCount(health.active);
+        setCliBusy(!!health.cliBusy);
         setModelBusy(!!health.modelBusy);
         setSelectedModel(health.model || null);
         setConnectionText(health.ready ? `已连接 · ${health.skill}` : "未找到图片逆向技能");
-        if (historyOpen && !deletingProjects.current) {
+        if ((historyOpen || workspace) && !deletingProjects.current) {
           const items = await query<ProjectSummary[]>("/projects");
           if (!cancelled && revision === projectRevision.current) setProjects(items);
         }
@@ -150,7 +188,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     };
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [preferences.paired, selection?.projectId, historyOpen]);
+  }, [preferences.paired, selection?.projectId, historyOpen, workspace]);
 
   useEffect(() => {
     if (!job?.reenact || references[job.id] || referenceErrors[job.id]) return;
@@ -162,6 +200,29 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     return () => { cancelled = true; };
   }, [job?.id, !!job?.reenact, referenceError]);
 
+  const openWorkspace = async () => {
+    try {
+      const prefix = `${selection?.projectId || selection?.id}:`;
+      const forProject = (items: Record<string, string>) => Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith(prefix)));
+      await request({ type: "alchemy:open-workspace", draft: {
+        subjectDrafts: forProject(subjectDrafts), instructions: forProject(instructions), versions: forProject(versions), lang,
+        promptDrafts: Object.fromEntries(Object.entries(promptDrafts).filter(([id]) => activeProject?.jobs.some(job => job.id === id))),
+      } });
+    } catch (e) { setError((e as Error).message); }
+  };
+  const uploadReference = async (file?: File) => {
+    if (!file) return;
+    setBusy(true); setError("");
+    try {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024)
+        throw new Error("请上传不超过 20 MB 的 PNG、JPEG 或 WebP 图片");
+      const image = await normalizeImage(file, 4 * 1024 * 1024);
+      const next = await request<Selection>({ type: "alchemy:upload-reference", image });
+      selectionRevision.current++;
+      setSelection(next); setHistoryOpen(false); setMobilePane("edit"); setNewProjectOpen(false);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
   const updateJob = (updated: Job) => {
     projectRevision.current++;
     setProject((current) => current && current.id === updated.projectId
@@ -233,6 +294,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
       selectionRevision.current++;
       setSelection(next);
       setHistoryOpen(false);
+      setMobilePane("edit");
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -301,15 +363,45 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const versionSelector = modeJobs(preferences.mode).length > (workspace ? 0 : 1) && <SelectField className={workspace ? "version-select" : undefined} label={workspace ? "" : "提示词版本"} aria-label="提示词版本" value={job?.id} disabled={busy}
+              onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
+              {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>{workspace ? `版本 ${items.length - i}${i === 0 ? " · 最新" : ""}` : `第 ${items.length - i} 次 · ${new Date(item.createdAt).toLocaleString("zh-CN")} · ${laneStatus(item)}`}</option>)}
+            </SelectField>;
+  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft}
+                  subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
+                  onUpdate={(updated, image) => {
+                    updateJob(updated);
+                    if (image) setReferences((items) => {
+                      const saved = items[updated.id];
+                      return saved ? { ...items, [updated.id]: { ...saved, generationSubjectImage: image } } : items;
+                    });
+                  }} /> : null;
+
   return (
-    <div className="app">
-      {!embedded && <header>
+    <div className={workspace ? "app workspace-app" : "app"}>
+      {workspace && <aside className="sidebar" aria-label="工作台导航">
+        <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div></div>
+        <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
+        <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
+        <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{projects.length}</span></button>
+        <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span><span className="count">{activeCount}</span></button>
+        <div className="sidebar-label">最近项目 <span>{projects.length}</span></div>
+        <div className="project-nav">{projects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
+        <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span><span className="count">↑</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"} · 本地存储</div></div>
+      </aside>}
+      <div className={workspace ? "workspace-main" : "compact-main"}>
+      {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "所有灵感，都在这里。" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
+        {historyOpen && <div ref={setProjectSearchTarget} />}
+        {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><button className="quiet-button" aria-label="导出提示词" disabled={!result || !!promptDraft} onClick={exportResult}><Icon name="download" /><span>导出提示词</span></button></>}
+        <button className="outline-button" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" />{activeCount ? `${activeCount} 项执行中` : "任务中心"}</button>
+      </div></header>}
+      {!workspace && !embedded && <header>
         <div className="brand">
           <img className="brand-mark" src={logo} alt="" />
           <strong>QC-Reframe</strong>
         </div>
       </header>}
-      <div className="connection">
+      {!workspace && <div className="connection">
         <span className={`dot ${connected ? "online" : ""}`} />
         <span title={connectionText}>
           {connected ? "Codex 已连接" : "Codex 未连接"}
@@ -318,6 +410,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
           <Icon name={historyOpen ? "back" : "history"} />
           {historyOpen ? "返回项目" : "项目记录"}
         </button>
+        <button className="text-button workspace-entry" onClick={openWorkspace} title="在新标签页打开宽版工作台"><Icon name="expand" />工作台</button>
         <button
           className="icon-button"
           title="连接设置"
@@ -330,9 +423,9 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         >
           <Icon name="settings" />
         </button>
-      </div>
+      </div>}
 
-      {settings && (
+      {!workspace && settings && (
         <section className="settings card">
           <h2>连接 Codex</h2>
           <p>在扩展项目目录启动服务，复制终端显示的配对码。</p>
@@ -372,9 +465,21 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
         <button className="text-button" onClick={() => setSettings(true)}>选择模型</button>
       </div>}
 
+      {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
+      {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
+      {workspace && tasksOpen && <TaskCenter onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId) => {
+        const next = await request<Selection>({ type: "alchemy:open-project", id: projectId });
+        selectionRevision.current++; setSelection(next); setHistoryOpen(false); setMobilePane("edit");
+        setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
+        await saveMode(mode);
+      }} />}
+      {cliBusy && <p className="error" role="status">Codex 正在升级，完成后可继续提交任务。</p>}
+      {workspace && !historyOpen && <div className="workspace-mobile-tabs"><button aria-pressed={mobilePane === "edit"} onClick={() => setMobilePane("edit")}>画面与提示词</button><button aria-pressed={mobilePane === "result"} onClick={() => setMobilePane("result")}>生成结果</button></div>}
+      <div className={workspace ? "workspace-body" : undefined} data-pane={mobilePane} data-history={historyOpen}>
+      <div className={workspace ? "workspace-editor" : undefined}>
       <main>
         {historyOpen ? (
-          <ProjectHistory projects={projects} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
+          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={projects} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
         ) : (
           <>
             {!selection && (
@@ -385,7 +490,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
               </section>
             )}
 
-            {activeProject && <div className="project-heading"><h1>{activeProject.title}</h1></div>}
+            {!workspace && activeProject && <div className="project-heading"><h1>{activeProject.title}</h1></div>}
             {restoring && <p className="fine" role="status">正在恢复这条路径的主体图…</p>}
             {referenceError && <div className="error" role="alert">{referenceError}
               <button className="text-button" disabled={!connected} onClick={() => setReferenceErrors((items) => {
@@ -416,11 +521,12 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
               </button>
             </div>
             {modelBusy && <p className="fine" role="status">正在验证模型，请完成后再提交。</p>}
-            {serviceBusy && !modelBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
+            {serviceBusy && !cliBusy && !modelBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
               <p className="fine" role="status">其他任务正在后台运行，可继续提交。</p>}
             {loadingProject && selection?.image && <p className="fine" role="status">正在读取模板项目…</p>}
+            {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>准备画面</h2></div>}
             {selection?.image && preferences.mode === "recreate" && (
-              <figure className="image-card">
+              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
                 <img src={selection.image} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
@@ -428,10 +534,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                 </figcaption>
               </figure>
             )}
-            {modeJobs(preferences.mode).length > 1 && <SelectField label="提示词版本" value={job?.id} disabled={busy}
-              onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
-              {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>第 {items.length - i} 次 · {new Date(item.createdAt).toLocaleString("zh-CN")} · {laneStatus(item)}</option>)}
-            </SelectField>}
+            {!workspace && versionSelector}
             {(selection || result) && (
               <>
                 {(reading || running) && (
@@ -457,18 +560,19 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                 )}
                 {selection && preferences.mode === "recreate" && (
                   <button
-                    className="primary"
+                    className={workspace ? "outline-button workspace-reverse" : "primary"}
                     disabled={blocked || !selection.image}
                     onClick={() => start()}
                     aria-busy={busy || running}
                   >
+                    {workspace && !busy && !running && <Icon name="edit" />}
                     {busy
                       ? "正在提交…"
                       : restoring
                         ? "正在恢复原图…"
                         : running
                           ? `正在${modeName(preferences.mode)}…`
-                          : "生成复刻提示词"}
+                          : workspace ? result ? "重新逆向提示词" : "逆向提示词" : "生成复刻提示词"}
                   </button>
                 )}
               </>
@@ -477,21 +581,26 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
             {selection && (["style", "reenact"] as const).map((mode) => {
               const savedJob = modeJob(mode);
               const savedReference = savedJob && references[savedJob.id];
-              return <SubjectForm key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
+              return <SubjectForm workspace={workspace} key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
                 selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
+                instruction={instructions[subjectKey(mode)]} onInstructionChange={(value) => setInstructions(items => ({ ...items, [subjectKey(mode)]: value }))}
                 subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              <h2>{running ? "提示词生成中…" : "提示词待生成"}</h2>
-              <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary" disabled>先生成提示词</button></div>
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : "提示词待生成"}</h2>}
+              {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />用 Codex 生成图片<Icon name="arrow" /></button></div>}
             </section>}
 
             {result && activeJob && (
               <section className="result" aria-label={`${modeName(activeJob.mode)}提示词`}>
-                <h2>{result.title === activeProject?.title ? "提示词" : result.title}</h2>
+                {workspace ? <WorkspacePrompt result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={versionSelector}
+                  onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
+                  onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} /> : <>
+                <h2 className={workspace ? "workspace-step" : undefined}>{workspace ? <><span>2</span>雕琢提示词</> : result.title === activeProject?.title ? "提示词" : result.title}</h2>
+                {workspace && versionSelector}
                 <div className="prompt-card">
                   <div className="prompt-toolbar">
                     <div className="language" role="group" aria-label="提示词语言">
@@ -541,7 +650,7 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                 {activeJob.mode === "style" && !activeJob.reenact && (
                   <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
                 )}
-                {!!result.observations.length && <details>
+                {!workspace && !!result.observations.length && <details>
                   <summary>视觉观察</summary>
                   <ul className="observations">
                     {result.observations.map((text, i) => <li key={i}>{text}</li>)}
@@ -553,23 +662,16 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
                     <p>{result.negativePrompt}</p>
                   </details>
                 )}
-                {!!result.uncertainties.length && (
+                {!workspace && !!result.uncertainties.length && (
                   <details>
                     <summary>观察边界</summary>
                     <p>{result.uncertainties.join("\n")}</p>
                   </details>
                 )}
                 {promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
-                <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} disabled={!connected || !selectedModel || busy || modelBusy || !!running || !!promptDraft}
-                  subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
-                  onUpdate={(updated, image) => {
-                    updateJob(updated);
-                    if (image) setReferences((items) => {
-                      const saved = items[updated.id];
-                      return saved ? { ...items, [updated.id]: { ...saved, generationSubjectImage: image } } : items;
-                    });
-                  }} />
-                <button className="secondary" disabled={!!promptDraft} onClick={exportResult}>
+                </>}
+                {workspace ? resultPane && generationPanel && createPortal(generationPanel, resultPane) : generationPanel}
+                <button className="secondary prompt-export" disabled={!!promptDraft} onClick={exportResult}>
                   <Icon name="download" />导出 Markdown
                 </button>
               </section>
@@ -577,6 +679,11 @@ export default function App({ embedded = false }: { embedded?: boolean }) {
           </>
         )}
       </main>
+      {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />用 Codex 生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
+      </div>
+      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>生成结果 <small>0 张 · 当前提示词版本</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas"><div className="empty-canvas"><Icon name="image" /><h3>留一点空间，给想象。</h3><p>准备图片，逆向提示词，再让新的画面在这里发生。</p></div></div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
+      </div>
+      </div>
     </div>
   );
 }

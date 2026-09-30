@@ -91,9 +91,11 @@ test("built extension uses a popup without declaring unsupported native side pan
   assert.equal(manifest.side_panel, undefined);
   assert.ok(!manifest.permissions.includes("sidePanel"));
   assert.ok(!manifest.web_accessible_resources?.some((rule) => rule.resources.includes("popup.html")));
+  assert.ok(!manifest.web_accessible_resources?.some((rule) => rule.resources.includes("workspace.html")));
   assert.ok(
     (await readFile(new URL("popup.html", build), "utf8")).includes("root"),
   );
+  assert.ok((await readFile(new URL("workspace.html", build), "utf8")).includes("root"));
 });
 
 test("project messages restore a template and start only the explicitly chosen lane", async () => {
@@ -142,6 +144,7 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
   const handlers = {};
   const messages = [];
   const tabs = [];
+  const sessionStorage = {};
   const chrome = {
     runtime: {
       id: "test",
@@ -158,6 +161,11 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
       },
     },
     storage: {
+      session: {
+        set: async (value) => Object.assign(sessionStorage, structuredClone(value)),
+        get: async (key) => ({ [key]: structuredClone(sessionStorage[key]) }),
+        remove: async (key) => { delete sessionStorage[key]; },
+      },
       local: {
         setAccessLevel: async () => {},
         get: async () => ({
@@ -192,11 +200,12 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
     console,
     crypto,
     AbortSignal,
+    TextEncoder,
     fetch,
     ...globals,
   });
   assert.equal(typeof handlers.message, "function");
-  return { handlers, messages, tabs, chrome };
+  return { handlers, messages, tabs, chrome, sessionStorage };
 }
 
 test("background starts and opens results when sidePanel API is absent", async () => {
@@ -355,4 +364,133 @@ test("prompt edits are validated, authenticated and limited to prompt fields", a
     assert.ok((await send({ type: "alchemy:save-prompt", id, ...edits, ...invalid })).error);
   assert.equal(calls.length, 1);
   assert.equal(handlers.message({ type: "alchemy:save-prompt", id, ...edits }, { ...sender, id: "other" }, () => assert.fail("untrusted reply")), undefined);
+});
+
+test("workspace handoff preserves drafts only in session storage and is consumed only by extension pages", async () => {
+  const { handlers, chrome, tabs, sessionStorage } = await background(() => assert.fail("opening workspace must not call bridge"));
+  const selection = { id: "selected", projectId: "a".repeat(64), image: "saved-reference" };
+  chrome.storage.local.get = async () => ({ preferences: { token: "private-token", mode: "reenact" }, selection });
+  chrome.storage.local.set = async () => assert.fail("drafts must not be saved to local storage");
+  const content = { id: "test", frameId: 0, url: "https://pinterest.com/", tab: { id: 4 } };
+  const workspace = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = (message, sender = content) => new Promise(resolve => handlers.message(message, sender, resolve));
+  const draft = { activeJobId: "saved-job", subject: { subjectImage: "subject-draft", basePrompt: "edited instruction" }, promptDraft: { promptZh: "未保存中文", promptEn: "unsaved prompt", negativePrompt: "blur" } };
+  assert.equal((await send({ type: "alchemy:open-workspace", draft, url: "https://untrusted.example/", path: "/other.html" })).ok, true);
+  const url = new URL(tabs[0].url);
+  assert.equal(url.protocol, "chrome-extension:");
+  assert.equal(url.host, "test");
+  assert.equal(url.pathname, "/workspace.html");
+  const id = url.searchParams.get("handoff");
+  assert.match(id, /^[\da-f-]{36}$/);
+  assert.equal(url.searchParams.size, 1, "drafts and credentials must not appear in the URL");
+  assert.deepEqual(sessionStorage[`workspace:${id}`], { mode: "reenact", draft });
+  assert.ok(!JSON.stringify(sessionStorage).includes("saved-reference"), "handoff must not duplicate the durable reference image");
+  assert.ok(!JSON.stringify(sessionStorage).includes("private-token"));
+  for (const sender of [content, { ...workspace, id: "other" }, { ...workspace, url: "chrome-extension://test.evil/workspace.html" }])
+    assert.equal(handlers.message({ type: "alchemy:workspace-handoff", id }, sender, () => assert.fail("untrusted handoff read")), undefined);
+  assert.ok(sessionStorage[`workspace:${id}`], "rejected readers must not consume a draft");
+  const restored = await send({ type: "alchemy:workspace-handoff", id }, workspace);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(restored.value, { mode: "reenact", draft });
+  assert.equal(sessionStorage[`workspace:${id}`], undefined);
+  assert.equal((await send({ type: "alchemy:workspace-handoff", id }, workspace)).value, undefined, "handoff is one use");
+  assert.ok((await send({ type: "alchemy:workspace-handoff", id: "../preferences" }, workspace)).error);
+  assert.equal(handlers.message({ type: "alchemy:open-workspace", draft }, { ...content, id: "other" }, () => assert.fail("untrusted workspace open")), undefined);
+  assert.equal(tabs.length, 1);
+});
+
+test("workspace rejects invalid drafts and removes a handoff if opening the tab fails", async () => {
+  const { handlers, chrome, tabs, sessionStorage } = await background();
+  const sender = { id: "test", url: "chrome-extension://test/popup.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  for (const draft of [null, "text", 7, { prompt: "x".repeat(8 * 1024 * 1024) }, { prompt: "图".repeat(3 * 1024 * 1024) }])
+    assert.ok((await send({ type: "alchemy:open-workspace", draft })).error);
+  assert.equal(tabs.length, 0);
+  assert.equal(Object.keys(sessionStorage).length, 0);
+  chrome.tabs.create = async () => { throw new Error("Cannot open tab"); };
+  assert.match((await send({ type: "alchemy:open-workspace", draft: { subject: "unsaved" } })).error, /Cannot open tab/);
+  assert.equal(Object.keys(sessionStorage).length, 0, "failed opens must not leave image drafts in session storage");
+});
+
+test("reference uploads validate image input and register an authenticated project without starting inference", async () => {
+  const calls = [];
+  let fail = false;
+  const projectId = "c".repeat(64);
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: !fail, json: async () => fail ? { error: "Cannot save image" } : { id: projectId } };
+  });
+  const storage = { preferences: { token: "private-token", mode: "style" }, selection: { id: "old" } };
+  chrome.storage.local.get = async () => storage;
+  chrome.storage.local.set = async value => Object.assign(storage, value);
+  const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  for (const image of [undefined, null, 42, "", "file:///tmp/photo.png", "https://example.com/photo.png", "data:image/svg+xml;base64,PHN2Zz4=", "data:image/png;base64,not valid!", `data:image/png;base64,${"A".repeat(6 * 1024 * 1024)}`])
+    assert.ok((await send({ type: "alchemy:upload-reference", image })).error);
+  assert.equal(calls.length, 0);
+  const image = "data:image/png;base64,iVBORw==";
+  fail = true;
+  assert.match((await send({ type: "alchemy:upload-reference", image })).error, /Cannot save image/);
+  assert.equal(storage.selection.id, "old", "failed upload preserves the selected project");
+  fail = false;
+  const result = await send({ type: "alchemy:upload-reference", image, sourceUrl: "file:///private", projectId: "forged" });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.projectId, projectId);
+  assert.equal(storage.selection.image, image);
+  assert.equal(storage.selection.jobId, undefined);
+  assert.equal(storage.selection.sourceUrl, "");
+  assert.ok(calls.every(call => call.url === "http://127.0.0.1:43187/projects" && call.options.headers.Authorization === "Bearer private-token"));
+  assert.deepEqual(JSON.parse(calls[1].options.body), { image, sourceUrl: "", capture: "original" });
+  storage.preferences.token = "";
+  assert.match((await send({ type: "alchemy:upload-reference", image })).error, /配对码/);
+  assert.equal(calls.length, 2);
+  assert.equal(handlers.message({ type: "alchemy:upload-reference", image }, { ...sender, id: "other" }, () => assert.fail("untrusted upload")), undefined);
+});
+
+test("CLI management messages expose only fixed authenticated endpoints and never forward shell input", async () => {
+  const calls = [];
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ status: "ready" }) };
+  });
+  const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  assert.equal((await send({ type: "alchemy:query", path: "/cli/status" })).ok, true);
+  for (const type of ["alchemy:cli-check", "alchemy:cli-update"])
+    assert.equal((await send({ type, command: "arbitrary shell input", args: ["--unsafe"], path: "/token", url: "https://external.example/", token: "forged" })).ok, true);
+  assert.deepEqual(calls.map(call => call.url), ["http://127.0.0.1:43187/cli/status", "http://127.0.0.1:43187/cli/check", "http://127.0.0.1:43187/cli/update"]);
+  assert.deepEqual(calls.map(call => call.options.method), ["GET", "POST", "POST"]);
+  assert.equal(calls[0].options.body, undefined);
+  for (const call of calls.slice(1)) assert.deepEqual(JSON.parse(call.options.body), {});
+  assert.ok(calls.every(call => call.options.headers.Authorization === "Bearer test"));
+  for (const path of ["/cli", "/cli/check", "/cli/update", "/cli/status?command=whoami", "/cli/status/../../token", "/cli/execute", "http://127.0.0.1:43187/cli/status"])
+    assert.ok((await send({ type: "alchemy:query", path })).error);
+  assert.equal(handlers.message({ type: "alchemy:cli-execute", command: "anything" }, sender, () => assert.fail("unknown CLI command reply")), undefined);
+  for (const type of ["alchemy:cli-check", "alchemy:cli-update"])
+    assert.equal(handlers.message({ type }, { ...sender, id: "other" }, () => assert.fail("untrusted CLI reply")), undefined);
+  chrome.storage.local.get = async () => ({});
+  assert.match((await send({ type: "alchemy:cli-update" })).error, /配对码/);
+  assert.equal(calls.length, 3);
+});
+
+test("generation comparison references validate both IDs and retain authentication in the background", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ image: "reference-snapshot", subjectImage: "subject-snapshot" }) };
+  });
+  const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const id = "00000000-0000-0000-0000-000000000001";
+  const generationId = "00000000-0000-0000-0000-000000000002";
+  const result = await send({ type: "alchemy:generation-reference", id, generationId, path: "/token" });
+  assert.equal(result.value.subjectImage, "subject-snapshot");
+  assert.equal(calls[0].url, `http://127.0.0.1:43187/jobs/${id}/generations/${generationId}/reference`);
+  assert.equal(calls[0].options.method, "GET");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer test");
+  for (const invalid of [undefined, null, 42, "../token", `${generationId}/image`, "not-a-job"])
+    for (const key of ["id", "generationId"])
+      assert.ok((await send({ type: "alchemy:generation-reference", id, generationId, [key]: invalid })).error);
+  assert.equal(handlers.message({ type: "alchemy:generation-reference", id, generationId }, { ...sender, id: "other" }, () => assert.fail("untrusted generation reply")), undefined);
+  assert.equal(calls.length, 1);
 });

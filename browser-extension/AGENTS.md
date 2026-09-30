@@ -45,7 +45,8 @@
 | --- | --- |
 | `entrypoints/content.ts`、`lib/image-action-placement.ts` | 网页选图、悬浮按钮避让、closed Shadow DOM 浮层及焦点行为。 |
 | `entrypoints/background.ts`、`lib/bridge.ts`、`lib/client.ts` | 扩展消息、配对、受限后台请求；令牌留在扩展后台。 |
-| `entrypoints/popup/` | 共享 React 界面、三路径表单、项目记录、模型设置、生图结果。 |
+| `entrypoints/popup/`、`entrypoints/workspace/` | 共用 React 业务界面；轻量浮层/弹窗保留，独立扩展工作台提供分栏、任务中心及宽版设置。 |
+| `bridge/cli.mjs` | 实际 CLI 来源、版本、每日检查及受限独立版/npm/Homebrew 升级；与模型和任务互斥。 |
 | `bridge/server.mjs`、`bridge/projects.mjs`、`bridge/images.mjs`、`bridge/storage.mjs` | 本机 HTTP 服务、任务与项目持久化、共享图片存储、迁移与回收。 |
 | `bridge/codex-rpc.mjs`、`bridge/agent.mjs` | Codex CLI app-server stdio JSON-RPC、图片与 skill 输入、逆向结果校验。 |
 | `bridge/models.mjs`、`bridge/model-context.mjs` | 动态模型目录、真实验证、选择保存与账号/CLI 上下文检查。 |
@@ -57,6 +58,7 @@
 
 - bridge 默认仅监听 `127.0.0.1:43187`，保留配对认证、Host / Origin 和消息来源检查。页面内容不能任意请求本机文件或端点；不将配对码暴露到页面 DOM。
 - 模型目录取自插件实际调用的本机 CLI；列表出现不等于账号有权限。验证成功才保存插件选择，失败保留原有效选择；账号、登录、提供方或 CLI 变化需重新确认上下文。不要硬编码“可用模型”，不要悄悄回退到全局默认模型。
+- CLI 管理只允许固定认证端点，已确认来源的独立版/npm/Homebrew 可更新；独立版校验包元数据与稳定入口，固定执行原 CLI 的 codex update；App/custom 保留原安装方式。检测对应 manager 与运行时，升级与任务/验证互斥，成功后清除模型信任并刷新目录；失败保留错误，不声称升级成功。定时检查只读，手动按钮才执行升级。
 - 独立安装的 Codex CLI 与桌面 App 更新是两回事；检查 `CODEX_BIN` 实际指向。API / 协议变化需核对实际 CLI 能力和官方文档，不根据模型名字推断支持情况。
 - Agent 通过显式图片和技能输入运行，保留只读 sandbox 与不自动批准交互式工具的约束。逆向输出仍需结构校验，不把任意模型文本当成可信控制命令。
 - 生图调用用户本机的 imagegen skill 与内置 `image_gen`；只认真实 `imageGeneration` 完成结果，不把聊天中提及的路径当成图片。能力不可用时明确失败，不改用需要 API Key 的生图脚本或其他接口。
@@ -73,6 +75,8 @@
 - 所有下拉框复用 `SelectField.tsx`。当前约定为高 40px、标签间距 8px、箭头 16px、距右边框 12px、文本右内边距 40px；保留原生键盘、Escape、焦点与禁用交互。
 - 指针按压反馈约 120ms，指针打开浮层轻移 18px / 淡入 180ms；键盘打开、路径和语言切换即时完成。尊重 reduced motion，Escape 返回有效触发器；不要给普通切换增加等待。
 - 悬浮按钮通用检测网页控件并动态避让，优先邻近安全空位，滚动和延迟控件出现后重新检查。空间不足缩为图标，无安全位置则隐藏并保留右键入口；不回退到固定盖住网站按钮的位置，不依赖单站点类名。
+- 轻量浮层和工具栏弹窗始终保留，通过「工作台」按钮进入独立 `workspace.html` 扩展标签页。共用 App/表单/任务逻辑，草稿通过 trusted session storage 一次性交接，配对令牌不进入交接数据。参考原型保留在 `codex/prototype-settings` 的 `60d352d`，实现分支不带原型源码。
+- 工作台遵循已选宽版方案：紧凑标题、项目导航、输入/提示词与结果分栏、独立设置中心；不恢复已删除的 WORKSPACE 路径标题、静态输入说明和视觉观察区。原图对照读取生图不可变快照，缺失明确报错，不回退最新上传图。
 - 结果面板使用当前 Shadow DOM 方案和普通工具栏弹窗，不重新引入此前不兼容的原生 sidePanel 或扩展 iframe 依赖。预览中的 iframe 是测试容器，不能视作运行时方案。
 - 大范围 UI 重构先用有限原型明确方向；已有确认方案直接落实。任务适用且环境提供设计 skill 时使用它；普通文案修正和已确定的缺陷修复不另设审批流程。
 

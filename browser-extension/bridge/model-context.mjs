@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { stat, realpath } from "node:fs/promises";
+import { readFile, stat, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -16,8 +16,11 @@ export async function readModelContext(request, cwd) {
   for (const candidate of binary.includes("/") || binary.includes("\\") ? [binary] : (process.env.PATH || "").split(delimiter).map((dir) => join(dir, binary))) {
     try { executable = await realpath(candidate); break; } catch {}
   }
+  const executableStamp = await stat(executable).then(s => [s.ino, s.size, s.mtimeMs, s.ctimeMs], () => null);
+  const packageRoot = executable.match(/^(.*[\\/]node_modules[\\/]@openai[\\/]codex)[\\/]/)?.[1];
+  const packageVersion = packageRoot ? await readFile(join(packageRoot, "package.json"), "utf8").then(text => JSON.parse(text).version).catch(() => null) : null;
   const accountKey = createHash("sha256").update(JSON.stringify({ account, provider,
-    providerConfig: config.model_providers?.[provider], authStamp, home, executable })).digest("hex");
+    providerConfig: config.model_providers?.[provider], authStamp, home, executable, executableStamp, packageVersion })).digest("hex");
   return { accountKey, provider, accountLabel: account?.type === "chatgpt"
     ? `ChatGPT · ${account.planType}` : account?.type || provider };
 }

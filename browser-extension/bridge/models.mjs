@@ -63,10 +63,18 @@ export async function createModelStore({ dataDir, cwd, readCatalog = readModelCa
     return loading;
   };
   return {
-    get busy() { return !!controller; },
+    get busy() { return !!controller || !!loading; },
     get selectedModel() { return current()?.model || null; },
     async list() { return catalog ? view() : refresh(); },
     refresh,
+    async reset() {
+      selected = undefined;
+      catalog = undefined;
+      failures.clear();
+      verification = undefined;
+      await writeFile(path, "null", { mode: 0o600 });
+      return refresh();
+    },
     selection() {
       if (!selected?.model) throw Object.assign(new Error("请在连接设置中选择模型，并点击「验证并使用」。"), { status: 409 });
       return { ...selected };

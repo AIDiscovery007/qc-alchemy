@@ -198,6 +198,8 @@ for (const mode of ["style", "reenact"]) test(`${mode} generates with the latest
   assert.notEqual(calls[0].subjectImagePath, calls[1].subjectImagePath);
   assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(otherImage).bytes, "new uploads never overwrite earlier generation snapshots");
   assert.deepEqual(second.generations[0], first.generations[0]);
+  assert.equal((await (await request(`${path}/${first.generations[0].id}/reference`)).json()).image, otherImage);
+  assert.equal((await (await request(`${path}/${second.generations[1].id}/reference`)).json()).image, image);
   assert.deepEqual(second.result, result);
   assert.equal(analyses, 1, "changing the generation subject does not rerun analysis");
   await restart();

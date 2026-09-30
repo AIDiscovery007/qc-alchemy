@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import Icon from "./Icon";
+import ImageInput from "../workspace/ImageInput";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
@@ -7,7 +9,10 @@ const defaultPrompts = {
   reenact: "以图 1 为主体，以图 2 为风格参考模板，生成基于图 1 的风格转换与主体重演提示词。",
 };
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, instruction, onInstructionChange, workspace = false }: {
+  workspace?: boolean;
+  instruction?: string;
+  onInstructionChange?: (value: string) => void;
   mode: "style" | "reenact";
   selection: Selection;
   job?: Job;
@@ -21,7 +26,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
 }) {
   const style = mode === "style";
   const defaultPrompt = defaultPrompts[mode];
-  const [basePrompt, setBasePrompt] = useState(defaultPrompt);
+  const [basePrompt, setBasePrompt] = useState(instruction ?? defaultPrompt);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const promptEdited = useRef(false);
@@ -30,8 +35,8 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   const originalPrompt = saved?.basePrompt ?? defaultPrompt;
 
   useEffect(() => {
-    if (!promptEdited.current) setBasePrompt(originalPrompt);
-  }, [originalPrompt]);
+    if (!promptEdited.current) setBasePrompt(instruction ?? originalPrompt);
+  }, [originalPrompt, instruction]);
   useEffect(() => () => { uploadRevision.current++; }, []);
 
   const upload = async (file?: File) => {
@@ -56,7 +61,10 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
 
   return (
     <section className="reenact-form" hidden={!active} aria-label={`${style ? "提取风格" : "主体重演"}输入`}>
-      <div className="reenact-images">
+      {workspace ? <div className="workspace-inputs">
+        <ImageInput image={subjectImage} label="图 1 · 主体" caption="保留身份与结构" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
+        <ImageInput image={selection.image} label="图 2 · 参考" caption={style ? "提取视觉语言" : "重演画面"} alt="图 2：原始参考模板" />
+      </div> : <div className="reenact-images">
         <div className="input-image">
           <strong>图 1 · 主体</strong>
           {subjectImage ? <img src={subjectImage} alt="图 1：用户指定的主体" /> : <div className="image-placeholder">{uploading ? "正在读取…" : <span aria-hidden="true">＋</span>}</div>}
@@ -70,20 +78,23 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
           {selection.image ? <img src={selection.image} alt="图 2：原始参考模板" /> : <div className="image-placeholder">正在恢复参考图…</div>}
           {selection.capture === "screenshot" && <span className="input-source">屏幕截取</span>}
         </div>
-      </div>
+      </div>}
       {error && <div className="error" role="alert">{error}</div>}
       {selection.subjectError && !subjectImage && <p className="fine">{selection.subjectError}</p>}
       <label className="prompt-label" htmlFor={`${mode}-prompt`}>任务指令</label>
-      <textarea id={`${mode}-prompt`} rows={4} maxLength={20000} value={basePrompt} disabled={disabled}
+      <textarea id={`${mode}-prompt`} rows={workspace ? 2 : 4} maxLength={20000} value={basePrompt} disabled={disabled}
         placeholder="描述你想怎样结合两张图，例如：保留图 1 的姿势，只迁移图 2 的配色与笔触。"
-        onChange={(e) => { promptEdited.current = true; setBasePrompt(e.target.value); }} />
-      <button className="primary" disabled={disabled || uploading || !selection.image || !subjectImage || !basePrompt.trim()} aria-busy={submitting}
+        onChange={(e) => { promptEdited.current = true; setBasePrompt(e.target.value); onInstructionChange?.(e.target.value); }} />
+      <div className={workspace ? "button-row" : undefined}>
+      <button className={workspace ? "outline-button" : "primary"} disabled={disabled || uploading || !selection.image || !subjectImage || !basePrompt.trim()} aria-busy={submitting}
         onClick={() => onSubmit({ subjectImage, basePrompt })}>
-        {submitting ? "正在提交…" : job?.status === "running" ? "正在生成提示词…" : `生成${style ? "风格转换" : "主体重演"}提示词`}
+        {workspace && !submitting && job?.status !== "running" && <Icon name="edit" />}
+        {submitting ? "正在提交…" : job?.status === "running" ? "正在生成提示词…" : workspace ? job?.result ? "重新逆向提示词" : "逆向提示词" : `生成${style ? "风格转换" : "主体重演"}提示词`}
       </button>
+      {onExtract && <button className={workspace ? "text-link" : "secondary"} disabled={disabled} onClick={onExtract}
+        title="仅分析参考图，不使用主体图和任务指令">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
+      </div>
       {subjectImage && !basePrompt.trim() && <p className="fine" role="status">填写任务指令后可生成提示词。</p>}
-      {onExtract && <button className="secondary" disabled={disabled} onClick={onExtract}
-        title="仅分析参考图，不使用主体图和任务指令">仅用图 2 提取通用风格</button>}
     </section>
   );
 }

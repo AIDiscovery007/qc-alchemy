@@ -129,6 +129,40 @@ export default defineBackground(() => {
     ])) as { preferences?: Preferences; selection?: Selection };
     const token = preferences?.token || "";
     switch (message.type) {
+      case "alchemy:open-workspace": {
+        const id = crypto.randomUUID();
+        // Session-only transfer keeps unfinished form input out of durable project records.
+        const draft = message.draft;
+        if (draft !== undefined && (typeof draft !== "object" || draft === null || new TextEncoder().encode(JSON.stringify(draft)).length > 8 * 1024 * 1024))
+          throw new Error("工作台草稿过大，请先保存提示词后重试");
+        await browser.storage.session.set({ [`workspace:${id}`]: { mode: preferences?.mode || "style", draft } });
+        try { await browser.tabs.create({ url: `${browser.runtime.getURL("/workspace.html")}?handoff=${id}` }); }
+        catch (error) { await browser.storage.session.remove(`workspace:${id}`); throw error; }
+        return;
+      }
+      case "alchemy:workspace-handoff": {
+        if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效工作台入口");
+        const key = `workspace:${message.id}`;
+        const value = (await browser.storage.session.get(key))[key];
+        await browser.storage.session.remove(key);
+        return value;
+      }
+      case "alchemy:upload-reference": {
+        if (selecting) throw new Error("正在处理图片，请稍候");
+        if (typeof message.image !== "string" || message.image.length > 6 * 1024 * 1024 || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.image))
+          throw new Error("请上传有效的参考图");
+        selecting = true;
+        try {
+          const project = await bridge<Project>("/projects", token, { image: message.image, sourceUrl: "", capture: "original" });
+          const next: Selection = { id: crypto.randomUUID(), projectId: project.id, image: message.image, sourceUrl: "", capture: "original" };
+          await browser.storage.local.set({ selection: next });
+          return next;
+        } finally { selecting = false; }
+      }
+      case "alchemy:cli-check":
+        return bridge("/cli/check", token, {});
+      case "alchemy:cli-update":
+        return bridge("/cli/update", token, {});
       case "alchemy:state":
         return {
           preferences: { paired: !!token, mode: preferences?.mode || "style" },
@@ -148,7 +182,7 @@ export default defineBackground(() => {
         await browser.storage.local.set({ preferences: { ...preferences, token, mode: message.mode } });
         return;
       case "alchemy:query":
-        if (typeof message.path !== "string" || !/^\/(health|models|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
+        if (typeof message.path !== "string" || !/^\/(health|models|cli\/status|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
         return bridge(message.path, token);
       case "alchemy:models-refresh":
@@ -214,6 +248,7 @@ export default defineBackground(() => {
       }
       case "alchemy:generate":
       case "alchemy:generation-cancel":
+      case "alchemy:generation-reference":
       case "alchemy:generation-image": {
         if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效任务");
         const path = `/jobs/${message.id}/generations`;
@@ -224,7 +259,9 @@ export default defineBackground(() => {
           return bridge(path, token, { language: message.language, subjectImage: message.subjectImage });
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
-        return message.type === "alchemy:generation-image"
+        return message.type === "alchemy:generation-reference"
+          ? bridge(`${path}/${message.generationId}/reference`, token)
+          : message.type === "alchemy:generation-image"
           ? bridge(`${path}/${message.generationId}/image`, token)
           : bridge(`${path}/${message.generationId}/cancel`, token, {});
       }
@@ -237,7 +274,11 @@ export default defineBackground(() => {
     if (sender.id !== browser.runtime.id) return;
     const contentSender = sender.tab?.id != null && sender.frameId === 0 && /^https?:/.test(sender.url || sender.tab.url || "");
     const extensionSender = sender.url?.startsWith(browser.runtime.getURL("/"));
-    if ((contentSender || extensionSender) && ["alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-image"].includes(message?.type)) {
+    if (extensionSender && message?.type === "alchemy:workspace-handoff") {
+      uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
+      return true;
+    }
+    if ((contentSender || extensionSender) && ["alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

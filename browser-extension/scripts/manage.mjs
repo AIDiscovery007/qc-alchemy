@@ -30,7 +30,7 @@ async function environment() {
   return env;
 }
 
-async function doctor(env) {
+async function doctor(env, maintenance = false) {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 15)) throw new Error("需要 Node.js 22.15+，请先安装受支持的 Node.js LTS。");
   const candidates = env.CODEX_BIN ? [env.CODEX_BIN] : [
@@ -44,17 +44,22 @@ async function doctor(env) {
     const check = spawnSync(candidate, ["--version"], { encoding: "utf8", timeout: 10000 });
     if (check.status === 0 && /codex/i.test(check.stdout)) { env.CODEX_BIN = candidate; found = true; break; }
   }
-  if (!found) throw new Error("找不到 Codex CLI。请安装并登录，或用 CODEX_BIN 指定可执行文件的绝对路径。");
-  const login = spawnSync(env.CODEX_BIN, ["login", "status"], { env, encoding: "utf8", timeout: 15000 });
-  if (login.status !== 0) throw new Error("Codex 尚未登录或 CLI 无法运行。请运行 codex login 完成登录，再重试。");
-  const cli = spawnSync(env.CODEX_BIN, ["app-server", "--help"], { env, encoding: "utf8", timeout: 10000 });
-  if (cli.status !== 0) throw new Error("此 Codex CLI 不支持 app-server，请更新 Codex CLI。");
+  let cliIssue;
+  if (!found) cliIssue = "找不到 Codex CLI。请安装并登录，或用 CODEX_BIN 指定可执行文件的绝对路径。";
+  else {
+    const login = spawnSync(env.CODEX_BIN, ["login", "status"], { env, encoding: "utf8", timeout: 15000 });
+    const cli = spawnSync(env.CODEX_BIN, ["app-server", "--help"], { env, encoding: "utf8", timeout: 10000 });
+    if (login.status !== 0) cliIssue = "Codex 尚未登录或 CLI 无法运行。请运行 codex login 完成登录，再重试。";
+    else if (cli.status !== 0) cliIssue = "此 Codex CLI 不支持 app-server，请更新 Codex CLI。";
+  }
+  if (cliIssue && !maintenance) throw new Error(cliIssue);
+  if (cliIssue) console.warn(`仅启动本机管理服务：${cliIssue}`);
   const skill = await readFile(env.ALCHEMY_SKILL_PATH, "utf8");
   if (!/^name:\s*alchemy\s*$/m.test(skill)) throw new Error("Alchemy skill 缺失或名称不匹配，请重新获取完整仓库。");
   for (const match of skill.matchAll(/\]\((references\/[^)]+)\)/g))
     if (!await readable(resolve(dirname(env.ALCHEMY_SKILL_PATH), match[1]))) throw new Error(`Alchemy skill 缺少 ${match[1]}`);
   const imagegen = await readable(env.IMAGEGEN_SKILL_PATH);
-  console.log(`QC-Reframe ${version}\nNode.js ${process.versions.node}\nCodex CLI：已登录\nAlchemy skill：就绪\n插件模型：在扩展连接设置中选择并验证\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
+  console.log(`QC-Reframe ${version}\nNode.js ${process.versions.node}\nCodex CLI：${cliIssue ? "需要处理，请在设置中心检查" : "已登录"}\nAlchemy skill：就绪\n插件模型：在扩展连接设置中选择并验证\nimagegen：${imagegen ? "已找到（实际生图能力以账户和模型为准）" : "未找到；可逆向提示词，生图前需配置 IMAGEGEN_SKILL_PATH"}`);
   return env;
 }
 
@@ -91,7 +96,7 @@ async function start(env) {
   }
   const manifest = JSON.parse(await readFile(join(root, ".output/chrome-mv3/manifest.json"), "utf8"));
   if (manifest.version !== version) throw new Error("扩展构建与当前版本不同，请先运行 npm run setup。");
-  await doctor(env);
+  await doctor(env, true);
   await ensureStorage(dataDir);
   const lock = join(paths.runtime, "start.lock");
   try { await mkdir(lock); }
@@ -174,7 +179,7 @@ async function main() {
   }
   if (command === "start") return start(env);
   if (command === "run") {
-    await doctor(env);
+    await doctor(env, true);
     const child = spawn(process.execPath, [join(root, "bridge/server.mjs")], { cwd: root, env, stdio: "inherit" });
     for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => child.kill(signal));
     const [code] = await once(child, "exit");

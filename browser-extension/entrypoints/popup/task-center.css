@@ -1,0 +1,28 @@
+/* Modal and task row dimensions match the approved wide workspace prototype. */
+.task-center { width: min(880px, calc(100% - 56px)); height: min(670px, calc(100dvh - 100px)); max-width: none; max-height: none; margin: auto; padding: 0; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: 14px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden; font: 13px/1.6 var(--font); }
+.task-center[open] { display: flex; flex-direction: column; }
+.task-center::backdrop { background: #2b241f66; }
+.task-center .modal-head { padding: 18px 24px; border-bottom: 1px solid var(--ink); display: flex; align-items: center; gap: 10px; flex: none; }
+.task-center .modal-head > img { width: 25px; }
+.task-center .modal-head h2 { font-size: 18px; flex: 1; margin: 0; }
+.task-center .close-btn { border: 0; background: none; font-size: 21px; padding: 0 5px; }
+.task-center .task-list { padding: 20px 24px; overflow: auto; flex: 1; min-height: 0; }
+.task-center .task-list > ul { list-style: none; margin: 0; padding: 0; }
+.task-center .hint { font-size: 10px; line-height: 1.8; color: var(--muted); margin-top: 10px; }
+.task-center .task-scope { margin: 0 0 20px; }
+.task-center .task-item { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; background: var(--surface); }
+.task-center .task-image { width: 40px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 5px; background: #e9e4da; color: var(--muted); overflow: hidden; }
+.task-center .task-item img { width: 40px; height: 48px; object-fit: cover; border-radius: 5px; }
+.task-center .task-meta { flex: 1; min-width: 0; }
+.task-center .task-item strong { font-size: 12px; display: block; overflow-wrap: anywhere; }
+.task-center .task-item small { font-size: 10px; color: var(--muted); display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.task-center .task-item small.task-error { color: #94382d; }
+.task-center button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.task-center .task-item button { font-size: 10px; flex: none; }
+.task-center .outline-button { border: 1px solid var(--line); background: var(--surface); padding: 8px 11px; border-radius: 7px; }
+.task-center .text-link { padding: 0; border: 0; background: none; text-decoration: underline; text-underline-offset: 3px; }
+.task-center .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #14111130; border-top-color: var(--ink); }
+.task-center .empty-canvas { padding: 30px; text-align: center; color: var(--muted); }
+.task-center .empty-canvas h3 { color: var(--ink); font-size: 18px; margin: 0 0 10px; }
+.task-center .empty-canvas p { font-size: 11px; line-height: 1.9; max-width: 250px; margin: auto; }
+@media (max-width: 650px) { .task-center { width: calc(100% - 24px); height: calc(100dvh - 70px); } .task-center .modal-head { padding: 16px; } .task-center .task-list { padding: 15px; } .task-center .task-item { flex-wrap: wrap; } }

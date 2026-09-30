@@ -93,6 +93,7 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   assert.equal(!!calls[0].subjectImagePath, paired);
   if (paired) assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(image).bytes);
   const generated = first.generations[0];
+  assert.equal((await (await request(`${path}/${generated.id}/reference`)).json()).image, image);
   const imagePath = `${path}/${generated.id}/image`;
   assert.equal((await fetch(url + imagePath)).status, 401);
   assert.equal((await request(imagePath, { headers: { Origin: "https://example.com" } })).status, 403);
@@ -521,4 +522,39 @@ test("restart preserves completed output and marks interrupted jobs as failed", 
     headers: { Authorization: `Bearer ${token}` },
   })).json();
   assert.equal(reference.image, image);
+});
+
+test("task history includes old active reverse/generation tasks beyond the 30 recent completed records", async (t) => {
+  let finishReverse, finishGeneration, calls = 0;
+  const concrete = { ...result, promptZh: "一只猫", promptEn: "A cat" };
+  const waitReverse = async (request, id) => {
+    for (let i = 0; i < 100; i++) {
+      if ((await (await request(`/jobs/${id}`)).json()).status === "completed") return;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.fail("reverse did not complete");
+  };
+  const { request } = await setup(t, () => ++calls === 1 ? new Promise(resolve => { finishReverse = resolve; }) : Promise.resolve(concrete),
+    () => new Promise(resolve => { finishGeneration = resolve; }));
+  const active = await (await request("/jobs", submit())).json();
+  const older = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  await waitReverse(request, older.id);
+  await request(`/jobs/${older.id}/generations`, { method: "POST", body: JSON.stringify({ language: "zh" }) });
+  assert.equal(typeof finishGeneration, "function");
+  for (let i = 0; i < 31; i++) {
+    const job = await (await request("/jobs", submit())).json();
+    await waitReverse(request, job.id);
+  }
+  const history = await (await request("/jobs")).json();
+  assert.equal(history.length, 32);
+  assert.ok(history.some(job => job.id === active.id));
+  assert.ok(history.some(job => job.id === older.id && job.generations[0].status === "running"));
+  assert.equal((await request("/cli/update", { method: "POST", body: "{}" })).status, 409);
+  finishReverse(concrete);
+  finishGeneration(decodeImage(image));
+  await waitGeneration(request, older.id, "completed");
+  await request(`/jobs/${older.id}/generations`, { method: "POST", body: JSON.stringify({ language: "zh" }) });
+  assert.equal((await (await request("/jobs")).json())[0].id, older.id, "new generation activity moves the old reverse record to the front");
+  finishGeneration(decodeImage(image));
+  await waitGeneration(request, older.id, "completed");
 });

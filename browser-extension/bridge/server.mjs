@@ -7,6 +7,7 @@ import { runAgent } from "./agent.mjs";
 import { runGeneration, imagegenSkillPath } from "./generation.mjs";
 import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./projects.mjs";
 import { createModelStore } from "./models.mjs";
+import { createCliManager } from "./cli.mjs";
 import { createImageStore } from "./images.mjs";
 import { migrateStorage } from "./storage.mjs";
 
@@ -77,9 +78,11 @@ export async function createBridge({
   generationSkillPath = imagegenSkillPath(),
   allowShutdown = false,
   models,
+  cli,
 } = {}) {
   const paths = await migrateStorage(dataDir);
   models ||= await createModelStore({ dataDir: paths.config, cwd: root });
+  cli ||= createCliManager({ onUpdated: () => models.reset() });
   await recoverProjectDeletion(paths.records, dataDir);
   const images = await createImageStore(dataDir, paths.records);
   await images.migrate();
@@ -168,6 +171,8 @@ export async function createBridge({
   };
   let deletionFailed = false;
   let shuttingDown = false;
+  let cliStarting = false;
+  const cliBusy = () => cliStarting || cli.busy;
   const server = createServer(async (req, res) => {
     let releaseMutation;
     res.setHeader("Cache-Control", "no-store");
@@ -227,17 +232,35 @@ export async function createBridge({
           managed: allowShutdown,
           skill: skill || null,
           ready: Boolean(skill),
-          active: controllers.size + Number(models.busy),
+          active: controllers.size + Number(models.busy) + Number(cliBusy()),
+          cliBusy: cliBusy(),
           modelBusy: models.busy,
           model: models.selectedModel,
         });
         return;
       }
       if (req.method === "GET" && path === "/models") {
+        if (cliBusy()) throw bad("Codex 正在升级，请等待完成。", 409);
         try { json(200, await models.list()); } catch (error) { throw bad(error.message, 503); }
         return;
       }
+      if (req.method === "GET" && path === "/cli/status") {
+        json(200, await cli.status());
+        return;
+      }
+      if (req.method === "POST" && ["/cli/check", "/cli/update"].includes(path)) {
+        const body = await readBody(req);
+        if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) throw bad("Codex 管理操作不接受命令或路径参数。");
+        if (path.endsWith("/update") && (controllers.size || models.busy)) throw bad("已有 Codex 任务正在执行，请等待完成或取消。", 409);
+        if (path.endsWith("/update")) {
+          cliStarting = true;
+          try { json(202, await cli.update()); }
+          finally { cliStarting = false; }
+        } else json(200, await cli.check());
+        return;
+      }
       if (req.method === "POST" && ["/models/refresh", "/models/verify"].includes(path)) {
+        if (cliBusy()) throw bad("Codex 正在升级，请等待完成。", 409);
         if (controllers.size || models.busy) throw bad("已有 Codex 任务正在执行，请等待完成或取消。", 409);
         const body = await readBody(req);
         if (path.endsWith("/verify") && (typeof body.model !== "string" || body.model.length > 200)) throw bad("请选择有效模型");
@@ -246,7 +269,7 @@ export async function createBridge({
         return;
       }
       if (req.method === "POST" && path === "/shutdown" && allowShutdown) {
-        if (controllers.size || models.busy) throw bad("任务执行中，请完成或在插件内取消后再停止服务。", 409);
+        if (controllers.size || models.busy || cliBusy()) throw bad("任务或 Codex 升级执行中，请等待完成后再停止服务。", 409);
         shuttingDown = true;
         json(200, { stopped: true });
         server.close();
@@ -294,12 +317,10 @@ export async function createBridge({
         return;
       }
       if (req.method === "GET" && path === "/jobs") {
-        json(
-          200,
-          [...jobs.values()]
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 30),
-        );
+        const activity = (job) => [job.createdAt, ...(job.generations || []).map(item => item.createdAt)].filter(value => typeof value === "string").sort().at(-1) || "";
+        const recent = [...jobs.values()].sort((a, b) => activity(b).localeCompare(activity(a)));
+        let completed = 0;
+        json(200, recent.filter(job => job.status === "running" || job.generations?.some(item => item.status === "running") || completed++ < 30));
         return;
       }
       const promptMatch = /^\/jobs\/([\da-f-]{36})\/prompt$/.exec(path);
@@ -319,12 +340,17 @@ export async function createBridge({
         json(200, job);
         return;
       }
-      const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|cancel))?$/.exec(path);
+      const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|reference|cancel))?$/.exec(path);
       if (generationMatch) {
         const job = jobs.get(generationMatch[1]);
         if (!job) throw bad("任务不存在", 404);
         const generation = job.generations?.find((item) => item.id === generationMatch[2]);
         if (generationMatch[2] && !generation) throw bad("生图记录不存在", 404);
+        if (req.method === "GET" && generationMatch[3] === "reference") {
+          if (job.mode !== "recreate" && !generation.subjectAsset && !generation.subjectExtension) throw bad("此生图记录没有保存主体图快照", 404);
+          json(200, { image: await storedImage(job.mode === "recreate" ? job : generation, job.mode !== "recreate") });
+          return;
+        }
         if (req.method === "GET" && generationMatch[3] === "image") {
           if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
           const imagePath = generation.imageAsset !== undefined ? images.path(generation.imageAsset)
@@ -347,6 +373,7 @@ export async function createBridge({
         if (req.method !== "POST" || generationMatch[2]) throw bad("Not found", 404);
         if (job.status !== "completed" || !job.result) throw bad("请先完成提示词逆向", 409);
         if (job.mode === "style" && !job.reenact) throw bad("通用风格需要先补充主体图并重新逆向，才能生成图片");
+        if (cliBusy()) throw bad("Codex 正在升级，请等待完成。", 409);
         if (models.busy) throw bad("正在验证模型，请稍候", 409);
         if (job.generations?.some((item) => item.status === "running" || controllers.has(item.id)))
           throw bad("这条提示词仍在生图，请等待完成或取消", 409);
@@ -445,6 +472,7 @@ export async function createBridge({
       }
       if (req.method !== "POST" || path !== "/jobs")
         throw bad("Not found", 404);
+      if (cliBusy()) throw bad("Codex 正在升级，请等待完成。", 409);
       if (models.busy) throw bad("正在验证模型，请稍候", 409);
       const body = await readBody(req);
       if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
@@ -552,6 +580,7 @@ export async function createBridge({
     }
   });
   server.on("close", () => {
+    cli.close();
     models.close();
     for (const controller of controllers.values()) controller.abort();
   });
