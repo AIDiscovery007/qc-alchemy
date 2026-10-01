@@ -103,9 +103,9 @@ export default function ImageViewer({ src, alt, onError }: { src: string; alt: s
       <img ref={image} src={src} alt={alt} draggable={false} onError={onError} />
     </div>
     <div className="image-viewer-tools" role="group" aria-label="缩放控制">
-      <button type="button" aria-label="缩小图片" disabled={scale <= 1} onClick={() => controls.current(1 / 1.25)}>−</button>
+      <button type="button" aria-label="缩小图片" disabled={scale <= 1} onClick={() => controls.current(1 / 1.25)}><Icon name="minus" /></button>
       <output aria-label="缩放比例">{Math.round(scale * 100)}%</output>
-      <button type="button" aria-label="放大图片" disabled={scale >= 8} onClick={() => controls.current(1.25)}>+</button>
+      <button type="button" aria-label="放大图片" disabled={scale >= 8} onClick={() => controls.current(1.25)}><Icon name="plus" /></button>
       <button type="button" aria-label="适应窗口" title="适应窗口" onClick={() => controls.current(0)}><Icon name="maximize" /></button>
     </div>
   </div>;

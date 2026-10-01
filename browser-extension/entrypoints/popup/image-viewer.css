@@ -4,6 +4,7 @@
 .image-viewer-stage[data-zoomed="true"][data-dragging="true"] { cursor: grabbing; }
 .image-viewer-stage img { position: absolute; left: 50%; top: 50%; max-width: none; max-height: none; pointer-events: none; transform-origin: center; }
 .image-viewer-tools { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--paper); border: 1px solid var(--ink); border-radius: 8px; box-shadow: 2px 2px 0 var(--ink); }
-.image-viewer-tools button { display: grid; place-items: center; width: 32px; height: 32px; padding: 6px; border: 0; border-radius: 4px; background: transparent; font-size: 20px; }
+.image-viewer-tools button { display: grid; place-items: center; width: 32px; height: 32px; padding: 6px; border: 0; border-radius: 4px; background: transparent; line-height: 1; }
+.image-viewer-tools .ui-icon { display: block; width: 20px; height: 20px; }
 .image-viewer-tools button:disabled { opacity: .3; }
 .image-viewer-tools output { min-width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
