@@ -4,19 +4,19 @@
 
 **选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
 
-当前版本 **0.1.20**。一个与本机 Codex 协作的 Chrome MV3 扩展，保留轻量插件界面，同时提供宽版工作台、主体上传、项目与版本管理、本机 CLI 检测和升级。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
+当前版本 **0.1.21**。一个与本机 Codex 协作的 Chrome MV3 扩展，保留轻量插件界面，同时提供宽版工作台、主体上传、项目与版本管理、本机 CLI 检测和升级。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
 
 - **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
 - **完整复刻**：分析参考图的内容、构图和视觉表现。
 - **主体重演**：以你的主体重演参考图，任务指令可编辑。
-- **多图重演**（本地待发布）：按模板编排 2–6 张主体，逐图指定用途与保留特征，融合到同一画面。
+- **多图重演**：按模板编排 2–6 张主体，逐图指定用途与保留特征，融合到同一画面。
 - **继续生图**：把生成的提示词交给 Codex 的 imagegen，结果保存在本机。当前源码的完整复刻使用纯文生图；风格转换、主体重演及多图重演附带主体图与参考图。
 
 ## 界面与效果
 
-<img src="browser-extension/docs/gallery/alchemy-ui.jpg" width="960" alt="QC Alchemy 0.1.16 主体重演界面：三条逆向路径、主体图、参考模板与任务指令" />
+<img src="browser-extension/docs/releases/v0.1.21-multi.png" width="960" alt="QC-Reframe 0.1.21 多图重演：模板、主体编排与逐图用途" />
 
-界面截图来自更名前的 0.1.16，展示已保存的「短发回眸暖金水彩肖像」结果；截图使用本地展示数据，未重新调用模型。
+当前版本多图编排界面，使用公开画廊中的示例素材，不代表本次生成结果。[本版亮点与配图 →](browser-extension/docs/releases/v0.1.21.md)
 
 <table>
   <tr>
@@ -34,15 +34,15 @@
 在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
 
 ```text
-请帮我安装并启动 QC-Reframe 0.1.20：
+请帮我安装并启动 QC-Reframe 0.1.21：
 https://github.com/AIDiscovery007/qc-reframe
 
-请获取仓库的 v0.1.20 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
+请获取仓库的 v0.1.21 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
 先确认插件实际使用的本机 Codex CLI 已更新到最新版本，再完成环境检查、初始化、构建、本机服务启动和配对准备，
 优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
 需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
 不要覆盖已有安装、项目记录或 Codex 全局配置。
-完成后打开 Pinterest，让我能点击图片上的“逆向风格”开始使用。
+完成后打开 Pinterest，让我能点击图片上的 Reframe 图标，再选择“立即逆向”开始使用。
 请分别说明服务、扩展加载、配对是否已实际验证，尚未完成的步骤不要标为完成。
 ```
 
@@ -55,20 +55,20 @@ Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登
 **请单独将本机 Codex CLI 更新到最新版本。** 更新桌面 App 不代表 CLI 已更新；旧 CLI 可能缺少新模型。更新后重启本机服务、刷新模型列表，可用性以账号权限和实际验证为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli)
 
 ```bash
-git clone --branch v0.1.20 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
+git clone --branch v0.1.21 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
 cd qc-reframe/browser-extension
 npm run setup
 npm start
 npm run pair
 ```
 
-`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20)。在 QC-Reframe 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
+`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21)。在 QC-Reframe 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
 
 **首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
 
 ## 日常使用
 
-1. 在网页图片上点击「逆向风格」，打开参考模板项目。
+1. 在网页图片上点击 Reframe 图标，选择「立即逆向」开始，或「加入 Reframe」先收藏、稍后创作。
 2. 选择「提取风格」「完整复刻」「主体重演」或「多图重演」；按需上传主体图、编辑任务指令，然后生成提示词。
 3. 复制提示词，或点击「用 Codex 生成图片」。提示词与生成结果按项目和路径分别保存，可从「项目记录」继续使用。
 
@@ -95,4 +95,4 @@ npm run pair
 - [使用方法与开发说明](browser-extension/README.md)
 - [贡献与维护指南](Contribution.md)
 - [更新日志](browser-extension/docs/releases/README.md)
-- [下载 0.1.20](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20)
+- [下载 0.1.21](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21)

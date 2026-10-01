@@ -4,11 +4,11 @@
 
 功能变化、修复、升级说明和版本截图集中记录在这里。首页 README 保留产品介绍与安装使用方法。
 
-待发布：[项目分页与按需加载](unreleased.md)（本地实现，尚未发布）。
+最新版本：[v0.1.21 · 多图重演、细节观察与图片预览](v0.1.21.md)。
 
 | 版本 | 更新内容 | 详情 |
 | --- | --- | --- |
-| 待发布 | macOS 直接打开生成图片、在 Finder 中定位 | [功能说明](local-image-actions.md) |
+| 0.1.21 | 多图重演、工具细查、通用预览与旋转、网页收集、分页搜索与隐藏管理 | [版本说明与配图](v0.1.21.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21) |
 | 0.1.20 | 宽版创作工作台与设置中心；本机 Codex CLI 检测和升级；历史原图对照；像素生图动效 | [版本说明](v0.1.20.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.20) |
 | 0.1.19 | 任务并行；完整复刻纯文生图；双图路径使用最新上传主体；逆向提示词可编辑；图片共享存储与去重；运行数据分类收纳 | [版本说明](v0.1.19.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.19) |
 | 0.1.18 | 更名为 QC-Reframe，全局替换 R 标志 | [版本说明](v0.1.18.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.18) |
