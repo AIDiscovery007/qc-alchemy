@@ -24,7 +24,8 @@
 
 | 位置 | 维护内容 |
 | --- | --- |
-| [根 README](README.md) | 产品介绍、三条路径、界面与画廊入口、安装 Prompt、安装与日常使用；只保留当前版本和下载入口，不堆叠迭代日志。 |
+| [根 README](README.md) | 产品定位、核心亮点、公开效果对照、工作台与文档索引；安装 Prompt 和操作细节放到副页，首页只保留当前版本和下载入口。 |
+| [功能导览](browser-extension/docs/FEATURES.md) | 按创作流程介绍核心亮点、配图与适用范围，链接到使用手册，不复制整套操作步骤。 |
 | [插件 README](browser-extension/README.md) | 当前功能行为、使用细节、开发命令和能力边界，不记录历次测试流水。 |
 | [安装指引](browser-extension/docs/INSTALL_WITH_CODEX.md) | 可由其他用户的 Codex 执行的初始化、配对、升级和排错流程。 |
 | [版本目录](browser-extension/docs/releases/README.md) | 新版本使用 `v版本号.md`；写明变化、升级影响、验证和限制，截图放同目录，并更新索引。 |

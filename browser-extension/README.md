@@ -1,6 +1,6 @@
 # QC-Reframe for Chrome
 
-首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.21**。迭代记录见 [更新日志](docs/releases/README.md)。
+功能概览见 [功能导览](docs/FEATURES.md)。首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.21**。迭代记录见 [更新日志](docs/releases/README.md)。
 
 本版亮点与配图见 [v0.1.21 更新说明](docs/releases/v0.1.21.md)。升级需同步更新本机服务与扩展：任务结束后停止服务，运行 `npm run setup` 安装依赖并构建，再启动服务、重新加载扩展并刷新网页。
 

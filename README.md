@@ -1,98 +1,51 @@
-# QC-Reframe
+![QC-Reframe — 把灵感，变成你的下一张图。](browser-extension/docs/media/hero.svg)
 
-<img src="browser-extension/assets/brand/reframe.svg" width="72" height="72" alt="QC-Reframe" />
+**在 Codex 内置浏览器里选图，用本机 Codex CLI 逆向提示词，再让 Codex 直接生图。**
 
-**选中网页图片 → Codex 逆向提示词 → 按需生成新图片。**
+从单图细查到多图编排，把收集、逆向、生成和本机管理连成一条创作流程。沿用你的 Codex 登录与额度，无需另外填写模型 API Key。
 
-当前版本 **0.1.21**。一个与本机 Codex 协作的 Chrome MV3 扩展，保留轻量插件界面，同时提供宽版工作台、主体上传、项目与版本管理、本机 CLI 检测和升级。不需要填写模型 API Key；沿用你的 Codex 登录和额度。可在连接设置中单独选择并验证插件模型，不修改 Codex 全局模型。
+**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md)**　 /　 [功能导览](browser-extension/docs/FEATURES.md)　 /　 [效果画廊](browser-extension/docs/gallery/README.md)　 /　 [v0.1.21 · 下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21)
 
-- **提取风格**：提取通用风格，或保留你的主体结构，仅转换画法。
-- **完整复刻**：分析参考图的内容、构图和视觉表现。
-- **主体重演**：以你的主体重演参考图，任务指令可编辑。
-- **多图重演**：按模板编排 2–6 张主体，逐图指定用途与保留特征，融合到同一画面。
-- **继续生图**：把生成的提示词交给 Codex 的 imagegen，结果保存在本机。当前源码的完整复刻使用纯文生图；风格转换、主体重演及多图重演附带主体图与参考图。
+## 看见参考，做出自己的版本
 
-## 界面与效果
+保留你的主体，让参考图提供构图、姿态与视觉语言。
 
-<img src="browser-extension/docs/releases/v0.1.21-multi.png" width="960" alt="QC-Reframe 0.1.21 多图重演：模板、主体编排与逐图用途" />
+| 01 · 你的主体 | 02 · 参考模板 | 03 · Codex 生成 |
+| :---: | :---: | :---: |
+| ![主体原图：黑发人物](browser-extension/docs/gallery/urban-poster/subject.png) | ![参考模板：巨型字形都市海报](browser-extension/docs/gallery/urban-poster/reference.png) | ![主体重演结果：巨型字形都市海报](browser-extension/docs/gallery/urban-poster/result.png) |
 
-当前版本多图编排界面，使用公开画廊中的示例素材，不代表本次生成结果。[本版亮点与配图 →](browser-extension/docs/releases/v0.1.21.md)
+**[都市海报 · 查看完整 Prompt →](browser-extension/docs/gallery/urban-poster/README.md)**　插件内逆向，并调用 Codex imagegen 生成。
 
-<table>
-  <tr>
-    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/urban-poster/README.md"><img src="browser-extension/docs/gallery/urban-poster/result.png" width="220" alt="巨型字形都市海报" /></a><br /><a href="browser-extension/docs/gallery/urban-poster/README.md">都市海报 · 主体重演</a></td>
-    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/watercolor-portrait/README.md"><img src="browser-extension/docs/gallery/watercolor-portrait/result.png" width="220" alt="短发回眸水彩肖像" /></a><br /><a href="browser-extension/docs/gallery/watercolor-portrait/README.md">水彩肖像 · 主体重演</a></td>
-    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/watercolor-mug/README.md"><img src="browser-extension/docs/gallery/watercolor-mug/result.png" width="220" alt="暖金蓝灰水彩陶瓷杯" /></a><br /><a href="browser-extension/docs/gallery/watercolor-mug/README.md">陶瓷杯 · 提取风格</a></td>
-    <td width="25%" valign="top"><a href="browser-extension/docs/gallery/red-mecha/README.md"><img src="browser-extension/docs/gallery/red-mecha/result.png" width="220" alt="红白机甲人物重演" /></a><br /><a href="browser-extension/docs/gallery/red-mecha/README.md">红白机甲 · 主体重演</a></td>
-  </tr>
-</table>
+更多风格：[水彩肖像](browser-extension/docs/gallery/watercolor-portrait/README.md) · [水彩陶瓷杯](browser-extension/docs/gallery/watercolor-mug/README.md) · [完整画廊](browser-extension/docs/gallery/README.md)
 
-**[查看完整画廊 →](browser-extension/docs/gallery/README.md)** 每例均附主体原图、参考模板和可复制的 Prompt。前三例在插件中发起生图，红白机甲案例在独立 Codex 会话中生成。
+## 创作需要的，都接上了
 
-## 让 Codex 帮你安装
+| Codex 驱动 | 从灵感到成图 | 本机工作流 |
+| :--- | :--- | :--- |
+| **[Codex 全流程](browser-extension/docs/FEATURES.md#codex-全流程)**<br>内置浏览器选图，CLI 直接交互，Codex 内置工具直接生图。 | **[单图到多图](browser-extension/docs/FEATURES.md#单图到多图)**<br>四条创作路径；2–6 张主体配合参考模板，编排后融合生图。 | **[多任务并行](browser-extension/docs/FEATURES.md#多任务并行)**<br>多个逆向与生图任务同时推进，独立查看进度、取消和取回结果。 |
+| **[先放大细看，再写词](browser-extension/docs/FEATURES.md#先放大细看再写词)**<br>内置 Alchemy skill，整图定位、局部放大、细节核查与整图回看。 | **[浮窗三种入口](browser-extension/docs/FEATURES.md#浮窗三种入口)**<br>立即逆向、先加入再逆向，或直接打开工作台。 | **[图片直接在本机打开](browser-extension/docs/FEATURES.md#图片直接在本机打开)**<br>复制图片路径；macOS 一键打开图片、在 Finder 定位。 |
+| **[CLI 版本探针](browser-extension/docs/FEATURES.md#cli-版本探针)**<br>检测实际版本与安装来源，支持的安装方式可一键升级。 | **[图片方向就地调整](browser-extension/docs/FEATURES.md#图片方向就地调整)**<br>预览中旋转、应用，直接用于后续逆向与生图，省去下载再上传。 | **[成果留在本机](browser-extension/docs/FEATURES.md#成果留在本机)**<br>图片、提示词、项目记录与日志存入本机目录，随时继续创作。 |
 
-在 **Codex 桌面 App 的本地聊天**里复制发送下面这段话：
+## 小浮窗起步，工作台继续
 
-```text
-请帮我安装并启动 QC-Reframe 0.1.21：
-https://github.com/AIDiscovery007/qc-reframe
+轻量选图，宽屏编排。项目、提示词版本和生成记录贯通，关闭面板后任务仍继续运行。
 
-请获取仓库的 v0.1.21 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
-先确认插件实际使用的本机 Codex CLI 已更新到最新版本，再完成环境检查、初始化、构建、本机服务启动和配对准备，
-优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
-需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
-不要覆盖已有安装、项目记录或 Codex 全局配置。
-完成后打开 Pinterest，让我能点击图片上的 Reframe 图标，再选择“立即逆向”开始使用。
-请分别说明服务、扩展加载、配对是否已实际验证，尚未完成的步骤不要标为完成。
-```
+![QC-Reframe 工作台：参考模板、多主体编排、提示词与生成区域](browser-extension/docs/releases/v0.1.21-multi.png)
 
-Codex 会运行仓库内的初始化和启动脚本。**首次安装扩展、登录和浏览器权限确认可能需要你手动完成**；扩展管理入口因客户端版本而异。Codex 内置浏览器已在开发环境验证过，不保证每个客户端或受管账号都开放第三方扩展加载。没有对应入口时可使用 Chrome。
+*v0.1.21 示例界面，使用公开画廊素材，展示编排操作。[工作台与更多功能截图 →](browser-extension/docs/FEATURES.md)*
 
-## 自己安装
+## 开始你的第一张图
 
-需要 Git、Node.js **22.15+**、已安装并登录的 Codex CLI，以及可加载 Chrome MV3 扩展的浏览器。首发在 macOS 验证；其他系统尚未实测。生图额外需要本机 `imagegen` skill 和账户支持的内置生图能力。
+**[把安装交给 Codex →](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　复制安装指令，完成环境检查、本机服务启动与浏览器配对。也可按同页步骤手动安装。
 
-**请单独将本机 Codex CLI 更新到最新版本。** 更新桌面 App 不代表 CLI 已更新；旧 CLI 可能缺少新模型。更新后重启本机服务、刷新模型列表，可用性以账号权限和实际验证为准。[CLI 更新说明](https://learn.chatgpt.com/docs/codex/cli)
+需要已登录的 Codex CLI、Node.js 22.15+ 和可加载 MV3 扩展的浏览器。已在 macOS 的 Codex 内置浏览器验证，也保留 Chrome 使用路径；生图需账户支持内置生图能力。**首次安装需要完整仓库，Release 中的 Chrome ZIP 仅含浏览器端。**
 
-```bash
-git clone --branch v0.1.21 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
-cd qc-reframe/browser-extension
-npm run setup
-npm start
-npm run pair
-```
+| 想做什么 | 从这里开始 |
+| :--- | :--- |
+| 安装、升级或排错 | [安装指南](browser-extension/docs/INSTALL_WITH_CODEX.md) |
+| 了解功能与创作路径 | [功能导览](browser-extension/docs/FEATURES.md) |
+| 找效果、参考图与可复制的 Prompt | [效果画廊](browser-extension/docs/gallery/README.md) |
+| 查询操作细节与开发命令 | [使用手册](browser-extension/README.md) · [贡献指南](Contribution.md) |
+| 查看版本变化 | [更新日志](browser-extension/docs/releases/README.md) · [Releases](https://github.com/AIDiscovery007/qc-reframe/releases) |
 
-`setup` 检查环境、安装锁定依赖并构建；`start` 将服务启动到后台，重复运行会复用同一版本服务和配对码。将 `.output/chrome-mv3` 加载为已解压扩展，或在支持 ZIP 的客户端导入 [Release 的 Chrome ZIP](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21)。在 QC-Reframe 设置粘贴 `pair` 输出的本机配对码，选择插件模型并点击「验证并使用」，再刷新网页。
-
-**首次必须获取完整仓库**，其中包含 bridge 和 Alchemy skill。Chrome ZIP 只包含浏览器端，不包含本机服务。
-
-## 日常使用
-
-1. 在网页图片上点击 Reframe 图标，选择「立即逆向」开始，或「加入 Reframe」先收藏、稍后创作。
-2. 选择「提取风格」「完整复刻」「主体重演」或「多图重演」；按需上传主体图、编辑任务指令，然后生成提示词。
-3. 复制提示词，或点击「用 Codex 生成图片」。提示词与生成结果按项目和路径分别保存，可从「项目记录」继续使用。
-
-在 `browser-extension` 目录管理本机服务：
-
-| 命令 | 用途 |
-| --- | --- |
-| `npm start` | 启动或复用后台服务 |
-| `npm run status` | 查看连接、版本及运行中的任务数 |
-| `npm run doctor` | 检查 CLI 登录、Alchemy 和 imagegen skill |
-| `npm run pair` | 显示配对码，仅粘贴到本机插件设置 |
-| `npm stop` | 停止后台服务，保留项目与配对码；任务进行中会拒绝停止 |
-| `npm run bridge` | 前台运行，适合查看日志或排查问题 |
-
-后台服务不等于开机自启，电脑重启后运行 `npm start`。升级前先完成或取消任务，再停止旧服务、更新文件、重新构建并启动，最后重新加载扩展和刷新网页。
-
-## 数据与能力边界
-
-图片、提示词、生成结果、配对码及本机配置统一留在 `browser-extension/.local/`，当前源码按图片、记录、配置、日志和临时状态分目录收纳，不提交 Git；`docs/gallery/` 单独收录本页选定的公开演示案例。服务仅监听 `127.0.0.1:43187`，需要配对码。调用本机 Codex 不等于离线推理，图片会按你的 Codex 配置交给模型处理。首次安装不会自动提交图片或消耗生图额度。
-
-悬浮按钮按网页控件位置动态避让；复杂 canvas、跨域 iframe 或被遮挡的图片不保证支持。没有安全空位时可用图片右键入口。逆向结果是近似复刻或风格迁移方案，不保证还原原始 Prompt 或逐像素一致。
-
-- [完整安装步骤与排错](browser-extension/docs/INSTALL_WITH_CODEX.md)
-- [使用方法与开发说明](browser-extension/README.md)
-- [贡献与维护指南](Contribution.md)
-- [更新日志](browser-extension/docs/releases/README.md)
-- [下载 0.1.21](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.21)
+本机保存，模型按你的 Codex 配置调用；不代表离线推理。逆向用于近似复刻与风格迁移，不保证恢复原始 Prompt。浏览器扩展支持与其他使用边界见[安装指南](browser-extension/docs/INSTALL_WITH_CODEX.md)及[使用手册](browser-extension/README.md#图片与数据)。
