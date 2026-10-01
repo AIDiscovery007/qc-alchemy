@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
 import type { Generation, Job, Mode } from "../../lib/types";
 import Icon from "./Icon";
+import ImagePreview from "./ImagePreview";
 import { logo } from "../../lib/brand";
 
 const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
@@ -107,7 +108,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
       {actionError && <div className="error" role="alert">{actionError}</div>}
       {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>没有任务在排队。</h3><p>回到项目，发起一次逆向或生图。</p></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>
-        <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} />
+        <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} loadImage={async () => (await request<{ image: string }>({ type: job.projectId ? "alchemy:project-reference" : "alchemy:reference", id: job.projectId || job.id })).image} />
         <div className="task-meta"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>
           <small title={timestamp === null ? "时间未知" : new Date(timestamp).toLocaleString("zh-CN")}>{generation ? "生成图片" : "逆向提示词"} / <i className={task.status === "running" ? "activity-dot" : "task-status-dot"} aria-hidden="true" /> {statuses[task.status]}</small>
           <small className="task-stage" role="status" title={task.status === "running" ? task.stage : undefined}>{task.status === "running" ? task.stage : statuses[task.status]}</small>
@@ -120,7 +121,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
   </dialog>;
 }
 
-function TaskImage({ image, onVisible }: { image?: string; onVisible(): void }) {
+function TaskImage({ image, onVisible, loadImage }: { image?: string; onVisible(): void; loadImage(): Promise<string> }) {
   const element = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const observer = new IntersectionObserver(entries => {
@@ -131,5 +132,5 @@ function TaskImage({ image, onVisible }: { image?: string; onVisible(): void }) 
     if (element.current) observer.observe(element.current);
     return () => observer.disconnect();
   }, []);
-  return <span ref={element} className="task-image">{image ? <img src={image} alt="项目参考图" /> : <Icon name="image" />}</span>;
+  return <span ref={element} className="task-image">{image ? <ImagePreview showIcon={false} src={image} alt="项目参考图" loadImage={loadImage} /> : <Icon name="image" />}</span>;
 }

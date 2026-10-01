@@ -19,7 +19,7 @@
 .workspace-project-info { padding: 14px; }
 .workspace-project-info strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
 .workspace-project-info small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
-.workspace-project-card > .project-checkbox { position: absolute; top: 12px; left: 12px; box-shadow: 0 0 0 4px var(--surface); }
+.workspace-project-card > .project-checkbox { z-index: 2; position: absolute; top: 12px; left: 12px; box-shadow: 0 0 0 4px var(--surface); }
 .workspace-project-actions { display: flex; justify-content: space-between; padding: 8px 12px; border-top: 1px solid var(--line); }
 .workspace-app .workspace-project-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 7px; padding: 8px 11px; background: none; color: var(--ink); font: inherit; font-size: 10px; }
 .workspace-app .workspace-project-actions .danger { color: #94382d; }
@@ -32,3 +32,6 @@
   .workspace-library-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
   .workspace-library-toolbar > div { justify-content: flex-end; }
 }
+
+.workspace-project-card .project-open-with-preview { position: relative; }
+.workspace-project-card .project-preview-action { position: absolute; inset: 0 0 auto; width: 100%; height: 225px; border-radius: 0; }

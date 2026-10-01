@@ -4,6 +4,7 @@ import type { MultiSubject, SubjectInput } from "../../lib/types";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
+import { ImagePreviewButton } from "./ImagePreview";
 
 export const multiInstruction = "将各主体融合在同一画面中，重演参考模板的画风、构图、姿态与光影，保留每张主体图指定的特征。";
 
@@ -58,12 +59,12 @@ export default function MultiSubjectForm({ image, subjects, instruction, active,
 
   return <section className="multi-subject-form" hidden={!active} aria-label="多图重演输入">
     <div className="composition-layout" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void addFiles([...event.dataTransfer.files]); }}>
-      <div className="template-card"><button disabled={locked || !onReference} aria-label="更换参考模板" onClick={() => reference.current?.click()}>
+      <div className="template-card"><button className="template-replace" disabled={locked || !onReference} aria-label="更换参考模板" onClick={() => reference.current?.click()}>
         {image ? <img src={image} alt="参考模板" width="240" height="300" /> : <span>正在读取模板…</span>}<span className="replace-label">更换</span>
-      </button><span>参考模板</span></div>
-      <div className="subject-filmstrip" aria-label="主体编排">{subjects.map((item, i) => <button key={item.id} className={current?.id === item.id ? "selected" : ""} aria-label={`选择主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => setSelected(item.id)}>
+      </button>{image && <ImagePreviewButton src={image} alt="参考模板" className="template-preview" />}<span>参考模板</span></div>
+      <div className="subject-filmstrip" aria-label="主体编排">{subjects.map((item, i) => <div key={item.id} className="subject-thumbnail"><button className={current?.id === item.id ? "selected" : ""} aria-label={`选择主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => setSelected(item.id)}>
         {item.subjectImage ? <img src={item.subjectImage} alt={`主体 ${i + 1}`} width="88" height="88" /> : <small>{uploading ? "读取中" : "待上传"}</small>}<span>{i + 1}</span>
-      </button>)}<button className="add-subject" disabled={locked || subjects.length >= 6} aria-label="添加主体图" title="添加主体图" onClick={() => upload.current?.click()}><Icon name="plus" /><span>添加主体图</span></button></div>
+      </button>{item.subjectImage && <ImagePreviewButton src={item.subjectImage} alt={`主体 ${i + 1}`} className="subject-preview" />}</div>)}<button className="add-subject" disabled={locked || subjects.length >= 6} aria-label="添加主体图" title="添加主体图" onClick={() => upload.current?.click()}><Icon name="plus" /><span>添加主体图</span></button></div>
       {current && <div className="selected-subject"><div className="subject-meta"><strong>主体 {index + 1}</strong><div className="subject-actions">
         <button type="button" aria-label={`互换主体 ${index + 1} 与参考模板`} title="与参考模板互换" disabled={locked || !image || !current.subjectImage} onClick={() => onSwap(current.id)}><Icon name="swap" /></button>
         <button disabled={locked} onClick={() => { replacing.current = current.id; replace.current?.click(); }}>更换</button>

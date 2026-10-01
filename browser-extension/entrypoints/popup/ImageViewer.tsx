@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { constrainView, zoomView, type View } from "../../lib/image-view";
 import Icon from "./Icon";
 
-export default function ImageViewer({ src, alt }: { src: string; alt: string }) {
+export default function ImageViewer({ src, alt, onError }: { src: string; alt: string; onError?(): void }) {
   const stage = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const controls = useRef<(factor: number) => void>(() => {});
@@ -100,7 +100,7 @@ export default function ImageViewer({ src, alt }: { src: string; alt: string }) 
 
   return <div className="image-viewer">
     <div ref={stage} className="image-viewer-stage" role="region" aria-label="图片缩放与拖拽" tabIndex={0}>
-      <img ref={image} src={src} alt={alt} draggable={false} />
+      <img ref={image} src={src} alt={alt} draggable={false} onError={onError} />
     </div>
     <div className="image-viewer-tools" role="group" aria-label="缩放控制">
       <button type="button" aria-label="缩小图片" disabled={scale <= 1} onClick={() => controls.current(1 / 1.25)}>−</button>

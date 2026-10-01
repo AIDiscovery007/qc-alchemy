@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import AsyncAction from "./AsyncAction";
 import ImageInput from "../workspace/ImageInput";
+import ImagePreview from "./ImagePreview";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
@@ -72,7 +73,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
       </div> : <div className="reenact-images">
         <div className="input-image">
           <strong>图 1 · 主体</strong>
-          {subjectImage ? <img src={subjectImage} alt="图 1：用户指定的主体" /> : <div className="image-placeholder">{uploading ? "正在读取…" : <span aria-hidden="true">＋</span>}</div>}
+          {subjectImage ? <ImagePreview src={subjectImage} alt="图 1：用户指定的主体" /> : <div className="image-placeholder">{uploading ? "正在读取…" : <span aria-hidden="true">＋</span>}</div>}
           <label className="file-picker">
             {subjectImage ? "更换主体图" : "上传主体图"}
             <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传主体图" disabled={disabled || uploading} onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
@@ -80,7 +81,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
         </div>
         <div className="input-image">
           <strong>图 2 · {style ? "风格参考" : "参考模板"}</strong>
-          {selection.image ? <img src={selection.image} alt="图 2：原始参考模板" /> : <div className="image-placeholder">正在恢复参考图…</div>}
+          {selection.image ? <ImagePreview src={selection.image} alt="图 2：原始参考模板" /> : <div className="image-placeholder">正在恢复参考图…</div>}
           {selection.capture === "screenshot" && <span className="input-source">屏幕截取</span>}
         </div>
       </div>}

@@ -594,6 +594,7 @@ test("thumbnail routes preserve source choice, require auth and fall back from m
     return [width, height];
   };
   assert.deepEqual(await dimensions(original), [480, 160]);
+  assert.deepEqual(original.source, { kind: "reference" });
   await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
   const generated = await settled(request, job.id);
   const generation = generated.generations[0];
@@ -602,9 +603,13 @@ test("thumbnail routes preserve source choice, require auth and fall back from m
   assert.equal((await request(`${generationPath}?path=other`)).status, 400);
   const cover = await (await request(path)).json();
   assert.deepEqual(await dimensions(cover), [160, 480]);
+  assert.deepEqual(cover.source, { kind: "generation", jobId: job.id, generationId: generation.id });
   assert.deepEqual(await (await request(generationPath)).json(), cover);
   assert.deepEqual(await (await request(`${path}?reference=1`)).json(), original);
+  const fullCoverPath = `/jobs/${cover.source.jobId}/generations/${cover.source.generationId}/image`;
+  assert.equal((await (await request(fullCoverPath)).json()).image, `data:image/png;base64,${output.toString("base64")}`);
   await rm(join(dir, "images", generation.imageAsset));
+  assert.equal((await request(fullCoverPath)).status, 404);
   assert.deepEqual(await (await request(path)).json(), original);
 });
 

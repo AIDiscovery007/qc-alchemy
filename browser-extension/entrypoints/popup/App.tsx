@@ -6,6 +6,7 @@ import NewProject from "../workspace/NewProject";
 import WorkspacePrompt from "../workspace/PromptEditor";
 import RecentProject from "../workspace/RecentProject";
 import ImageInput from "../workspace/ImageInput";
+import ImagePreview from "./ImagePreview";
 import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
 import { useEffect, useRef, useState } from "react";
@@ -595,7 +596,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection?.image && preferences.mode === "recreate" && (
               workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
-                <img src={selection.image} alt="本次选择的参考图片" />
+                <ImagePreview src={selection.image} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
                   {selection.capture === "screenshot" && <span>屏幕截取</span>}

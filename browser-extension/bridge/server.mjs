@@ -369,11 +369,14 @@ export async function createBridge({
         if (!project) throw bad("项目不存在", 404);
         if (projectMatch[2] === "/thumbnail") {
           if (!query.has("reference") && project.cover?.imageAsset) {
-            try { json(200, await thumbnails.read(project.cover.imageAsset)); return; }
+            try {
+              json(200, { ...await thumbnails.read(project.cover.imageAsset), source: { kind: "generation", jobId: project.cover.jobId, generationId: project.cover.generationId } });
+              return;
+            }
             catch { /* A missing generated cover can still show the source template. */ }
           }
           if (!project.imageAsset) throw bad("这个项目的参考模板已不存在，请回到网页重新选择图片。", 404);
-          json(200, await thumbnails.read(project.imageAsset));
+          json(200, { ...await thumbnails.read(project.imageAsset), source: { kind: "reference" } });
         } else if (projectMatch[2]) {
           const reference = await projects.reference(project.id);
           if (!reference) throw bad("这个项目的参考模板已不存在，请回到网页重新选择图片。", 404);
@@ -416,7 +419,7 @@ export async function createBridge({
           validateQuery([]);
           if (generation.status !== "completed") throw bad("图片尚未生成", 409);
           if (!generation.imageAsset) throw bad("生成图片已不存在，请重新生成", 404);
-          json(200, await thumbnails.read(generation.imageAsset));
+          json(200, { ...await thumbnails.read(generation.imageAsset), source: { kind: "generation", jobId: job.id, generationId: generation.id } });
           return;
         }
         if (req.method === "GET" && generationMatch[3] === "reference") {

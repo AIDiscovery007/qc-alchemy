@@ -1,6 +1,6 @@
 import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
-import ImageViewer from "./ImageViewer";
+import ImagePreview, { ImagePreviewButton } from "./ImagePreview";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { request } from "../../lib/client";
@@ -22,8 +22,8 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   const [compare, setCompare] = useState(false);
   const [original, setOriginal] = useState<{ key: string; image: string; subjects?: MultiSubject[] }>();
   const [comparisonError, setComparisonError] = useState("");
-  const [modal, setModal] = useState<{ kind: "info" | "zoom"; generation: Generation; image: string }>();
-  const zoomDialog = useRef<HTMLDialogElement>(null);
+  const [modal, setModal] = useState<Generation>();
+  const infoDialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("");
@@ -78,7 +78,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   }, [compare, assetKey]);
   useEffect(() => {
     if (!modal) return;
-    const element = zoomDialog.current!;
+    const element = infoDialog.current!;
     return showMotionDialog(element);
   }, [modal]);
   const act = async (cancel = false) => {
@@ -135,9 +135,9 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   const dimensions = image && asset?.width && asset?.height ? <p className="generation-dimensions">{asset.width} × {asset.height} px · {imageRatio(asset.width, asset.height)}</p> : null;
   const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : !inputsReady ? multi ? "请添加至少 2 张可用的主体图。" : "请先上传可用的主体图。" : "";
   const comparisonInputs = original?.key === assetKey ? multi ? <div className="multi-comparison-inputs">
-    {original.subjects?.map((subject, index) => <figure key={subject.id}><img src={subject.subjectImage} alt={`本次主体 ${index + 1}`} loading="lazy" /><figcaption>主体 {index + 1} · {subject.role}{subject.detail && <small>{subject.detail}</small>}</figcaption></figure>)}
-    <figure><img src={original.image} alt="本次参考模板" loading="lazy" /><figcaption>参考模板</figcaption></figure>
-  </div> : <figure><img src={original.image} alt="本次生成的原始输入" /><figcaption>{job.mode === "recreate" ? "逆向参考图（未发送生图）" : "本次主体图"}</figcaption></figure>
+    {original.subjects?.map((subject, index) => <figure key={subject.id}><ImagePreview src={subject.subjectImage} alt={`本次主体 ${index + 1}`} loading="lazy" /><figcaption>主体 {index + 1} · {subject.role}{subject.detail && <small>{subject.detail}</small>}</figcaption></figure>)}
+    <figure><ImagePreview src={original.image} alt="本次参考模板" loading="lazy" /><figcaption>参考模板</figcaption></figure>
+  </div> : <figure><ImagePreview src={original.image} alt="本次生成的原始输入" /><figcaption>{job.mode === "recreate" ? "逆向参考图（未发送生图）" : "本次主体图"}</figcaption></figure>
     : <p role="status">{comparisonError || "正在读取原图…"}</p>;
   const copyNotice = copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>;
 
@@ -150,8 +150,8 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     {error && <div className="error result-notice" role="alert">{error}</div>}
     <div className="preview-canvas">{!generation && inputPreview}{image ? compare ? <div className="compare-images">
       {comparisonInputs}
-      <figure><img src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <><button onClick={() => generation && setModal({ kind: "zoom", generation, image })} aria-label="放大生成结果"><img src={image} alt={`${job.result!.title} · 生成结果`} /></button><span className="canvas-tag">生成结果</span></> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
+      <figure><ImagePreview src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
+    </div> : <><ImagePreview src={image} alt={`${job.result!.title} · 生成结果`} /><span className="canvas-tag">生成结果</span></> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
       <Icon name="image" />
       <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
       <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
@@ -162,15 +162,15 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
     <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button copy-path-button" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>
-      <button className="outline-button" disabled={!generation} onClick={() => generation && setModal({ kind: "info", generation, image })}><ResultIcon name="clock" />生成信息</button></div>
-    {modal && <dialog className={`result-dialog modal${modal.kind === "zoom" ? " zoom-modal" : ""}`} ref={zoomDialog} aria-label={modal.kind === "zoom" ? "图片预览" : "本次生成信息"}
+      <button className="outline-button" disabled={!generation} onClick={() => generation && setModal(generation)}><ResultIcon name="clock" />生成信息</button></div>
+    {modal && <dialog className="result-dialog modal" ref={infoDialog} aria-label="本次生成信息"
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
-      <div className="modal-head"><img src={logo} alt="" /><h2>{modal.kind === "zoom" ? "图片预览" : "本次生成信息"}</h2><button className="close-btn" aria-label="关闭窗口" onClick={() => setModal(undefined)}>×</button></div>
-      {modal.kind === "zoom" ? <ImageViewer src={modal.image} alt="生成结果大图" /> : <div className="generation-details">
-        <p className="hint">模型：{modal.generation.model || job.model || "未记录"} · 语言：{modal.generation.language === "zh" ? "中文" : "英文"}</p>
-        <p className="hint">输入：{job.mode === "recreate" ? "纯文字，不附参考图" : multi ? `${modal.generation.subjects?.length || 0} 张主体图 + 参考模板` : "生成时的主体图 + 参考图"}</p>
-        <div className="prompt-box"><div className="prompt-text">{modal.generation.prompt || "此记录未保存提示词快照。"}</div><div className="negative"><p>排除项：{modal.generation.negativePrompt || "无"}</p></div></div>
-      </div>}
+      <div className="modal-head"><img src={logo} alt="" /><h2>本次生成信息</h2><button className="close-btn" aria-label="关闭窗口" onClick={() => setModal(undefined)}>×</button></div>
+      <div className="generation-details">
+        <p className="hint">模型：{modal.model || job.model || "未记录"} · 语言：{modal.language === "zh" ? "中文" : "英文"}</p>
+        <p className="hint">输入：{job.mode === "recreate" ? "纯文字，不附参考图" : multi ? `${modal.subjects?.length || 0} 张主体图 + 参考模板` : "生成时的主体图 + 参考图"}</p>
+        <div className="prompt-box"><div className="prompt-text">{modal.prompt || "此记录未保存提示词快照。"}</div><div className="negative"><p>排除项：{modal.negativePrompt || "无"}</p></div></div>
+      </div>
     </dialog>}
   </section>;
 
@@ -188,7 +188,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     {generation?.status === "failed" && <div className="error" role="alert">{generation.error || "生图失败，请重试"}</div>}
     {generation?.status === "cancelled" && <p className="fine">图片生成已取消。</p>}
     {generation?.status === "completed" && <>{imageError ? <div className="error" role="alert">{imageError}</div> : image ? <>
-      <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
+      <ImagePreview className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
       {dimensions}
       <div className="image-file-actions"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /></div>
       <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>{copyNotice}
@@ -210,7 +210,7 @@ function ResultIcon({ name }: { name: "compare" | "clock" }) {
 function GenerationThumbnail({ jobId, generation, index, active, image, onSelect }: {
   jobId: string; generation: Generation; index: number; active: boolean; image: string; onSelect(): void;
 }) {
-  const button = useRef<HTMLButtonElement>(null);
+  const element = useRef<HTMLDivElement>(null);
   const [thumbnail, setThumbnail] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -225,11 +225,17 @@ function GenerationThumbnail({ jobId, generation, index, active, image, onSelect
         () => { if (!cancelled) setFailed(true); },
       );
     });
-    if (button.current) observer.observe(button.current);
+    if (element.current) observer.observe(element.current);
     return () => { cancelled = true; observer.disconnect(); };
   }, [jobId, generation.id, generation.status, thumbnail, active, image]);
   const status = { running: "生成中", completed: !image && !thumbnail && failed ? "图片不可用" : "已完成", failed: "失败", cancelled: "已取消" }[generation.status];
-  return <button ref={button} className={`result-thumb${active ? " active" : ""}`} onClick={onSelect} aria-pressed={active} aria-label={`查看第 ${index + 1} 条生成记录，${status}`} title={generation.error || generation.stage}>
-    {image || thumbnail ? <img src={image || thumbnail} alt="" /> : generation.status === "running" ? <span className="static-effect thumbnail-loading" aria-hidden="true" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
-  </button>;
+  const className = `result-thumb${active ? " active" : ""}`;
+  return <div ref={element} className="result-thumb-wrap">
+    {image || thumbnail ? <ImagePreviewButton src={image || thumbnail} alt={`第 ${index + 1} 张生成图片`} className={className} showIcon={false} onPreview={onSelect}
+      loadImage={async () => image || (await request<{ image: string }>({ type: "alchemy:generation-image", id: jobId, generationId: generation.id })).image}>
+      <img src={image || thumbnail} alt="" /><span>{index + 1}</span>
+    </ImagePreviewButton> : <button className={className} onClick={onSelect} aria-pressed={active} aria-label={`查看第 ${index + 1} 条生成记录，${status}`} title={generation.error || generation.stage}>
+      {generation.status === "running" ? <span className="static-effect thumbnail-loading" aria-hidden="true" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
+    </button>}
+  </div>;
 }

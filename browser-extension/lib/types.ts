@@ -61,6 +61,10 @@ export type ProjectSummary = {
   cover?: { jobId: string; generationId: string; imageAsset?: string };
   modes: Partial<Record<Mode, { status: string; hasImage: boolean }>>;
 };
+export type ImageThumbnail = {
+  image: string;
+  source?: { kind: "reference" } | { kind: "generation"; jobId: string; generationId: string };
+};
 export type Project = ProjectSummary & { jobs: Job[] };
 export type ProjectPage = { items: ProjectSummary[]; total: number; page: number; pageSize: number; revision: string };
 export type AspectRatio = { width: number; height: number };

@@ -175,6 +175,10 @@ createServer(async (req, res) => {
         if(new URLSearchParams(location.search).get('cli')==='custom')Object.assign(cli,{source:'custom',latestVersion:null,canUpdate:false,updateAvailable:false,command:null,reason:'此安装来源无法安全自动升级，请通过原安装方式更新。'});
         const listeners = new Set();
         globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+          if(['alchemy:project-reference','alchemy:reference','alchemy:generation-image'].includes(message.type)&&document.querySelector('.image-preview-dialog[open]')) {
+            if(previewOptions.get('imagePreview')==='fail')throw new Error('预览：原图读取失败');
+            if(previewOptions.get('imagePreview')==='delay')await new Promise(resolve=>setTimeout(resolve,2500));
+          }
           if(message.type==='alchemy:open-workspace'){sessionStorage.setItem('workspace-draft',JSON.stringify({draft:message.draft,projects,data}));location.href='/workspace.html?state='+state+'&handoff=preview';return {ok:true};}
           if(message.type==='alchemy:workspace-handoff'){sessionStorage.removeItem('workspace-draft');return {ok:true,value:handoff};}
           if(message.type==='alchemy:upload-reference'){if(new URLSearchParams(location.search).get('swap')==='failed')return {error:'互换失败（预览），请重试'};let p=projects.find(p=>(p.image||template)===message.image);if(!p){p={id:crypto.randomUUID(),title:'上传的参考图',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceUrl:'',capture:'original',jobs:[],image:message.image};projects.unshift(p);touch(p);}data.selection={...selection(p),image:message.image};return {ok:true,value:data.selection};}
@@ -198,8 +202,11 @@ createServer(async (req, res) => {
             if(!project)return {error:'项目不存在'};
             return {ok:true,value:message.revision===project.revision?{unchanged:true,revision:project.revision}:structuredClone({...summary(project),jobs:project.jobs})};
           }
-          if(message.type==='alchemy:project-thumbnail')return {ok:true,value:{image:projects.find(p=>p.id===message.id)?.image||(state==='gallery'&&!message.reference?gallery.result:template)}};
-          if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template}};
+          if(message.type==='alchemy:project-thumbnail') {
+            const project=projects.find(p=>p.id===message.id),cover=!message.reference&&summary(project).cover;
+            return {ok:true,value:{image:cover?(state==='gallery'?gallery.result:template):project.image||template,source:cover?{kind:'generation',jobId:cover.jobId,generationId:cover.generationId}:{kind:'reference'}}};
+          }
+          if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template,source:{kind:'generation',jobId:message.id,generationId:message.generationId}}};
           if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?projects.flatMap(p=>p.jobs):message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
