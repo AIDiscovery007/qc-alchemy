@@ -1,20 +1,20 @@
 .image-preview { display: block; position: relative; min-width: 0; }
 .image-preview > img { display: block; width: 100%; }
-.image-preview-trigger { position: absolute; right: 4px; bottom: 4px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; padding: 4px; border: 1px solid #14111150; border-radius: 5px; background: #fffdf8ed; color: var(--ink); cursor: zoom-in; }
+.image-preview-trigger { position: absolute; right: 4px; bottom: 4px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; padding: 4px; border: 0; border-radius: 6px; background: #fffdf8ed; color: var(--ink); cursor: zoom-in; }
 .image-preview-trigger .ui-icon { width: 14px; height: 14px; }
 .image-preview-trigger:hover, .image-preview-trigger:focus-visible { background: var(--yellow); }
 .image-preview-trigger.image-preview-plain { padding: 0; border: 0; background: transparent; }
 .image-preview > .image-preview-surface { inset: 0; width: 100%; height: 100%; border: 0; padding: 0; border-radius: inherit; background: transparent; }
-.image-preview-surface > .ui-icon { position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; padding: 6px; border: 1px solid #14111150; border-radius: 5px; background: #fffdf8ed; }
+.image-preview-surface > .ui-icon { position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; padding: 6px; border-radius: 6px; background: #fffdf8ed; }
 .image-preview-surface:hover > .ui-icon, .image-preview-surface:focus-visible > .ui-icon { background: var(--yellow); }
-.modal.image-preview-dialog { width: min(1050px, calc(100% - 24px)); height: calc(100dvh - 48px); max-width: none; max-height: none; padding: 0; margin: auto; border: 1px solid var(--ink); border-radius: 12px; background: var(--paper); color: var(--ink); box-shadow: 4px 4px 0 var(--ink); overflow: hidden; }
+.modal.image-preview-dialog { width: min(1050px, calc(100% - 24px)); height: calc(100dvh - 48px); max-width: none; max-height: none; padding: 0; margin: auto; border: 0; border-radius: 18px; background: var(--paper); color: var(--ink); box-shadow: var(--shadow-floating); overflow: hidden; }
 .modal.image-preview-dialog[open] { display: flex; flex-direction: column; }
 .modal.image-preview-dialog::backdrop { background: #2b241f66; }
-.image-preview-heading { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ink); flex: none; }
+.image-preview-heading { display: flex; align-items: center; gap: 12px; padding: 16px 20px; flex: none; }
 .image-preview-heading h2 { flex: 1; margin: 0; font-size: 15px; }
 .image-preview-heading .close-btn { border: 0; background: none; font-size: 24px; padding: 0 5px; }
 .image-preview-status { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; margin: 0; text-align: center; overflow-wrap: anywhere; }
-.image-preview-status button { padding: 6px 14px; border: 1px solid var(--ink); border-radius: 5px; background: var(--surface); }
+.image-preview-status button { padding: 7px 15px; border: 0; border-radius: 8px; background: var(--surface-muted); }
 .workspace-image-wrap > .image-preview { width: 100%; height: 100%; }
 .workspace-image-wrap > .image-preview > img { height: 100%; object-fit: contain; }
 .workspace-image-wrap:has(.workspace-image-action) .image-preview-surface > .ui-icon { bottom: auto; top: 6px; }
@@ -31,9 +31,9 @@
 .workspace-app .image-preview-surface > .ui-icon { width: 28px; height: 28px; }
 .workspace-image-wrap .workspace-image-action { z-index: 2; }
 
-.image-rotation-tools { flex: none; padding: 10px 16px; border-top: 1px solid var(--line); }
+.image-rotation-tools { flex: none; padding: 12px 16px; }
 .image-rotation-tools > div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-.image-rotation-tools button { padding: 7px 12px; border: 1px solid var(--ink); border-radius: 6px; background: var(--surface); }
+.image-rotation-tools button { padding: 8px 13px; border: 0; border-radius: 8px; background: var(--surface-muted); }
 .image-rotation-tools .apply-rotation { background: var(--yellow); }
 .image-rotation-tools button:disabled { opacity: .45; cursor: default; }
 .image-rotation-tools p { margin: 6px 0 0; text-align: center; font-size: 11px; color: var(--muted); }

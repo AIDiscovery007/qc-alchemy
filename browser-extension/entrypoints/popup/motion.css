@@ -10,7 +10,6 @@
   }
   .app[data-motion-input="pointer"] :is(.primary, .new-project):active:not(:disabled) {
     transform: translate(1px, 1px) scale(.99);
-    box-shadow: 1px 1px 0 var(--ink);
   }
   .app[data-motion-input="pointer"] .select-control > .ui-icon {
     transition: transform 160ms var(--ease-out);

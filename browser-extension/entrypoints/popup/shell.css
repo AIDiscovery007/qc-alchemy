@@ -15,36 +15,36 @@
 .pick-collect[aria-busy="true"] { cursor: progress; }
 @keyframes collect-breathe { 50% { opacity: .3; } }
 .notice[data-state="saving"] strong::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: currentColor; animation: collect-breathe 1100ms ease-in-out infinite; }
-.panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); display: flex; flex-direction: column; pointer-events: auto; border: 1px solid var(--ink); border-radius: 18px; overflow: hidden; background: var(--paper); box-shadow: 4px 4px 0 var(--ink), 0 12px 40px #14111118; }
-.bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--ink); background: var(--paper); font: 700 13px/1 var(--font); color: var(--ink); }
+.panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); display: flex; flex-direction: column; pointer-events: auto; border: 0; border-radius: 20px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow-floating); }
+.bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 0; background: var(--paper); font: 700 13px/1 var(--font); color: var(--ink); }
 .bar > span { display: flex; align-items: center; gap: 8px; letter-spacing: -.25px; }
 .bar img { width: 24px; height: 24px; }
 .close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: transparent; cursor: pointer; color: var(--ink); font: 22px/1 system-ui; }
 .panel-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c2baab transparent; color: var(--ink); font: 13px/1.6 var(--font); }
 .panel-body .app { min-height: 100%; }
-.notice { position: fixed; inset: auto auto 20px 20px; margin: 0; box-sizing: border-box; display: flex; align-items: center; gap: 14px; max-width: min(380px, calc(100vw - 40px)); padding: 12px 14px; border: 1px solid var(--ink); border-radius: 12px; pointer-events: auto; background: var(--paper); color: var(--ink); box-shadow: var(--hard-shadow); font: 13px/1.6 var(--font); }
+.notice { position: fixed; inset: auto auto 20px 20px; margin: 0; box-sizing: border-box; display: flex; align-items: center; gap: 14px; max-width: min(380px, calc(100vw - 40px)); padding: 12px 14px; border: 0; border-radius: 12px; pointer-events: auto; background: var(--paper); color: var(--ink); box-shadow: var(--shadow-floating); font: 13px/1.6 var(--font); }
 .notice[hidden] { display: none; }
 .notice-copy { min-width: 0; overflow-wrap: anywhere; }
 .notice-copy strong, .notice-copy > span { display: block; }
 .notice-copy > span { margin-top: 2px; font-size: 12px; color: var(--muted); }
 .notice-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
-.notice button { flex: none; padding: 6px 10px; border: 1px solid var(--ink); border-radius: 6px; background: var(--yellow); color: var(--ink); cursor: pointer; font: inherit; white-space: nowrap; }
+.notice button { flex: none; padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; background: var(--yellow); color: var(--ink); cursor: pointer; font: inherit; white-space: nowrap; }
 .notice .dismiss { width: 28px; height: 28px; padding: 0; border-color: transparent; border-radius: 50%; background: transparent; font: 20px/1 system-ui; }
 @media (hover: hover) and (pointer: fine) {
-  .pick-action:hover { background: #ffffff40; }
-  .pick-action:active:not(:focus-visible) { background: #ffffff70; }
-  .notice .dismiss:hover { background: var(--yellow); }
-  .close:hover { background: var(--pink); border-color: var(--ink); }
+ .pick-action:hover { background: #ffffff40; }
+ .pick-action:active:not(:focus-visible) { background: #ffffff70; }
+ .notice .dismiss:hover { background: var(--yellow); }
+ .close:hover { background: var(--pink); border-color: var(--ink); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pick-toggle, .pick-action { transition: none; }
-  .notice[data-state="saving"] strong::before, .pick-collect[data-state="saving"] .pick-wait { animation: none; }
+ .pick-toggle, .pick-action { transition: none; }
+ .notice[data-state="saving"] strong::before, .pick-collect[data-state="saving"] .pick-wait { animation: none; }
 }
 /* Animate the glyphs, leaving the liquid surface and hit targets in place. */
 @media (prefers-reduced-motion: no-preference) {
-  .pick-toggle img, .pick-action svg { transition: transform 120ms var(--ease-out); }
-  .pick-toggle:active:not(:focus-visible) img,
-  .pick-action:active:not(:focus-visible):not([aria-disabled="true"]) svg { transform: scale(.9); }
-  .close:not(:focus-visible), .notice button:not(:focus-visible) { transition: transform 120ms var(--ease-out); }
-  .close:active:not(:focus-visible), .notice button:active:not(:focus-visible) { transform: scale(.94); }
+ .pick-toggle img, .pick-action svg { transition: transform 120ms var(--ease-out); }
+ .pick-toggle:active:not(:focus-visible) img,
+ .pick-action:active:not(:focus-visible):not([aria-disabled="true"]) svg { transform: scale(.9); }
+ .close:not(:focus-visible), .notice button:not(:focus-visible) { transition: transform 120ms var(--ease-out); }
+ .close:active:not(:focus-visible), .notice button:active:not(:focus-visible) { transform: scale(.94); }
 }

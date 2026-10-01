@@ -1,20 +1,20 @@
 /* Result layout and dimensions from the approved wide workspace prototype. */
-.workspace-app .generated-pane{display:flex;flex-direction:column;min-height:0;min-width:0;background:#eee9df}
-.workspace-app .result-toolbar{padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none}
+.workspace-app .generated-pane {display:flex;flex-direction:column;min-height:0;min-width:0;background: #f3f1eb;}
+.workspace-app .result-toolbar {padding: 22px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none}
 .workspace-app .result-toolbar h2{font-size:12px;display:flex;gap:8px;align-items:center}
 .workspace-app .result-toolbar small{font-size:9px;font-weight:400;color:var(--muted)}
-.workspace-app .preview-canvas{flex:1;min-height:150px;margin:0 22px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border:1px solid #cfc7b8;border-radius:10px;background-color:#e7e2d7;background-image:radial-gradient(#c7c0b4 .7px,transparent .7px);background-size:12px 12px}
+.workspace-app .preview-canvas {flex:1;min-height:150px;margin:0 22px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border: 0;border-radius: 16px;background-color: #eeebe4;background-image: none;background-size:12px 12px}
 .workspace-app .preview-canvas>button{border:0;background:none;padding:16px;width:100%;height:100%;min-height:0}
 .workspace-app .preview-canvas>button img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 9px #33271c26)}
-.workspace-app .canvas-tag{position:absolute;left:12px;top:12px;border:1px solid #b4aa98;background:#fffdf8e8;border-radius:5px;padding:3px 7px;font-size:9px}
+.workspace-app .canvas-tag {position:absolute;left:12px;top:12px;border: 0;background:#fffdf8e8;border-radius: 6px;padding:3px 7px;font-size:9px}
 .workspace-app .result-caption{padding:12px 22px 7px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted)}
 .workspace-app .result-caption strong{color:var(--ink);font-weight:500}
 .workspace-app .result-history{display:flex;gap:9px;padding:9px 22px 15px;overflow:auto;flex:none}
-.workspace-app .result-thumb{display:block;position:relative;background:#fff9;border:1px solid var(--line);border-radius:7px;padding:4px;flex:none;width:58px;height:70px}
+.workspace-app .result-thumb {display:block;position:relative;background: var(--surface);border: 2px solid transparent;border-radius:7px;padding: 3px;flex:none;width:58px;height:70px}
 .workspace-app .result-thumb img{width:100%;height:100%;object-fit:cover;border-radius:3px}
-.workspace-app .result-thumb.active{border:2px solid var(--ink);box-shadow:2px 2px 0 var(--ink)}
+.workspace-app .result-thumb.active {border: 2px solid #9a8758;box-shadow: none;}
 .workspace-app .result-thumb span{position:absolute;bottom:3px;right:3px;background:#fffce6;padding:0 3px;font-size:8px}
-.workspace-app .result-bottom{height:var(--workspace-footer-height);display:flex;align-items:center;gap:8px;padding:10px 22px;border-top:1px solid var(--line);background:#f4eee2;flex:none}
+.workspace-app .result-bottom {height:var(--workspace-footer-height);display:flex;align-items:center;gap:8px;padding:10px 22px;border-top: 0;background: transparent;flex:none}
 .workspace-app .result-bottom button{flex:1}
 .workspace-app .compare-images{display:flex;width:100%;height:100%;gap:10px;padding:18px;min-height:0}
 .workspace-app .compare-images figure{flex:1;min-width:0;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:10px}
@@ -34,7 +34,7 @@
 .workspace-app .preview-canvas > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .workspace-app .generated-pane :is(h2,h3,p), .workspace-app .result-dialog :is(h2,h3,p) { margin: 0; }
 .workspace-app .generated-pane :is(.outline-button,.quiet-button), .workspace-app .result-dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.workspace-app .generated-pane :is(.outline-button,.quiet-button) { border: 1px solid var(--line); background: var(--surface); padding: 8px 11px; border-radius: 7px; font-size: 11px; }
+.workspace-app .generated-pane :is(.outline-button,.quiet-button) { border: 1px solid transparent; background: var(--surface); padding: 8px 11px; border-radius: 8px; font-size: 11px; }
 .workspace-app .generated-pane .quiet-button { background: none; border-color: transparent; }
 .workspace-app .generated-pane button svg { width: 16px; height: 16px; flex: none; }
 .workspace-app .generated-pane .result-notice { margin: 0 14px 12px; font-size: 10px; }
@@ -44,20 +44,20 @@
 .workspace-app .generated-pane .error { flex: none; }
 .workspace-app .generated-pane .result-caption { gap: 8px; }
 .workspace-app .generated-pane .result-caption > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-app .result-dialog { width: min(880px, calc(100% - 56px)); height: min(670px, calc(100dvh - 100px)); max-width: none; max-height: none; padding: 0; margin: auto; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: 14px; box-shadow: 6px 6px 0 var(--ink); overflow: hidden; }
+.workspace-app .result-dialog { width: min(880px, calc(100% - 56px)); height: min(670px, calc(100dvh - 100px)); max-width: none; max-height: none; padding: 0; margin: auto; color: var(--ink); background: var(--paper); border: 0; border-radius: 18px; box-shadow: var(--shadow-floating); overflow: hidden; }
 .workspace-app .result-dialog[open] { display: flex; flex-direction: column; }
 .workspace-app .result-dialog::backdrop { background: #2b241f66; }
-.workspace-app .result-dialog .modal-head { padding: 18px 24px; border-bottom: 1px solid var(--ink); display: flex; align-items: center; gap: 10px; flex: none; }
+.workspace-app .result-dialog .modal-head { padding: 18px 24px; border-bottom: 0; display: flex; align-items: center; gap: 10px; flex: none; }
 .workspace-app .result-dialog .modal-head img { width: 25px; }
 .workspace-app .result-dialog .modal-head h2 { font-size: 18px; flex: 1; }
 .workspace-app .result-dialog .close-btn { border: 0; background: none; font-size: 21px; padding: 0 5px; }
 .workspace-app .result-dialog.zoom-modal { width: min(1050px, calc(100% - 56px)); height: calc(100dvh - 100px); }
 .workspace-app .result-dialog .generation-details { padding: 20px 24px; overflow: auto; flex: 1; }
-.workspace-app .result-dialog .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; font-size: 10px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.workspace-app .result-dialog .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; font-size: 10px; border: 0; border-radius: 20px; background: var(--surface-muted); }
 .workspace-app .result-dialog .hint { font-size: 10px; line-height: 1.8; color: var(--muted); margin-top: 10px; }
-.workspace-app .result-dialog .prompt-box { margin-top: 20px; border: 1px solid var(--ink); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.workspace-app .result-dialog .prompt-box { margin-top: 20px; border: 0; border-radius: 10px; overflow: hidden; background: var(--surface-muted); }
 .workspace-app .result-dialog .prompt-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.95; padding: 14px 16px; color: #423a30; }
-.workspace-app .result-dialog .negative { border-top: 1px solid var(--line); padding: 10px 16px; }
+.workspace-app .result-dialog .negative { border-top: 0; padding: 10px 16px; }
 .workspace-app .result-dialog .negative p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; margin: 8px 0; line-height: 1.8; }
 @media (max-width:1100px) { .workspace-app .preview-canvas { margin: 0 14px; } .workspace-app :is(.result-toolbar,.result-caption,.result-history,.result-bottom) { padding-left: 14px; padding-right: 14px; } .workspace-app .result-toolbar { flex-wrap: wrap; } .workspace-app .result-bottom { flex-wrap: wrap; } }
 @media (max-width:650px) { .workspace-app .generated-pane { flex: 1; } .workspace-app .result-bottom { padding: 10px; } .workspace-app .result-dialog, .workspace-app .result-dialog.zoom-modal { width: calc(100% - 24px); height: calc(100dvh - 70px); } .workspace-app .result-dialog .modal-head { padding: 16px; } }

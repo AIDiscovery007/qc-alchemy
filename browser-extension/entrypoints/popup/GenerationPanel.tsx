@@ -1,6 +1,6 @@
 import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
-import ImagePreview, { ImagePreviewButton } from "./ImagePreview";
+import ImagePreview from "./ImagePreview";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { request } from "../../lib/client";
@@ -231,11 +231,8 @@ function GenerationThumbnail({ jobId, generation, index, active, image, onSelect
   const status = { running: "生成中", completed: !image && !thumbnail && failed ? "图片不可用" : "已完成", failed: "失败", cancelled: "已取消" }[generation.status];
   const className = `result-thumb${active ? " active" : ""}`;
   return <div ref={element} className="result-thumb-wrap">
-    {image || thumbnail ? <ImagePreviewButton src={image || thumbnail} alt={`第 ${index + 1} 张生成图片`} className={className} showIcon={false} onPreview={onSelect}
-      loadImage={async () => image || (await request<{ image: string }>({ type: "alchemy:generation-image", id: jobId, generationId: generation.id })).image}>
-      <img src={image || thumbnail} alt="" /><span>{index + 1}</span>
-    </ImagePreviewButton> : <button className={className} onClick={onSelect} aria-pressed={active} aria-label={`查看第 ${index + 1} 条生成记录，${status}`} title={generation.error || generation.stage}>
-      {generation.status === "running" ? <span className="static-effect thumbnail-loading" aria-hidden="true" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
-    </button>}
+    <button className={className} onClick={onSelect} aria-pressed={active} aria-label={`查看第 ${index + 1} 条生成记录，${status}`} title={generation.error || generation.stage}>
+      {image || thumbnail ? <img src={image || thumbnail} alt="" /> : generation.status === "running" ? <span className="static-effect thumbnail-loading" aria-hidden="true" /> : <small>{generation.status === "completed" && !failed ? "读取中" : status}</small>}<span>{index + 1}</span>
+    </button>
   </div>;
 }
