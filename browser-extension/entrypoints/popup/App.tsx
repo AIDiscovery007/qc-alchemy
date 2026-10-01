@@ -646,24 +646,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 {activeJob.mode === "style" && !activeJob.reenact && (
                   <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
                 )}
-                {!workspace && !!result.observations.length && <details>
-                  <summary>视觉观察</summary>
-                  <ul className="observations">
-                    {result.observations.map((text, i) => <li key={i}>{text}</li>)}
-                  </ul>
-                </details>}
-                {!promptDraft && result.negativePrompt && (
-                  <details>
-                    <summary>排除项</summary>
-                    <p>{result.negativePrompt}</p>
-                  </details>
-                )}
-                {!workspace && !!result.uncertainties.length && (
-                  <details>
-                    <summary>观察边界</summary>
-                    <p>{result.uncertainties.join("\n")}</p>
-                  </details>
-                )}
                 {promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
                 </>}
                 {workspace ? resultPane && generationPanel && createPortal(generationPanel, resultPane) : generationPanel}

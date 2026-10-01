@@ -408,13 +408,13 @@ export async function createBridge({
             }
           }
           catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
+          const metadata = await sharp(bytes).metadata().catch(() => { throw bad("图片内容无效，请重新生成"); });
+          if (metadata.format !== generation.extension) throw bad("图片内容与格式不匹配");
           if (fileAction) {
-            const metadata = await sharp(bytes).metadata().catch(() => { throw bad("图片内容无效，请重新生成"); });
-            if (metadata.format !== generation.extension) throw bad("图片内容与格式不匹配");
             try { await imageAction(imagePath, generationMatch[3]); }
             catch (error) { throw bad(error.message, 503); }
             json(200, { ok: true });
-          } else json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath });
+          } else json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath, width: metadata.autoOrient.width, height: metadata.autoOrient.height });
           return;
         }
         if (req.method === "POST" && generationMatch[3] === "cancel") {
@@ -435,10 +435,19 @@ export async function createBridge({
           throw bad("这条提示词仍在生图，请等待完成或取消", 409);
         const body = await readBody(req);
         if (!["zh", "en"].includes(body.language)) throw bad("无效提示词语言");
+        const { aspectRatio } = body;
+        if (aspectRatio !== undefined && (!aspectRatio || typeof aspectRatio !== "object" || Array.isArray(aspectRatio)
+          || Object.keys(aspectRatio).some(key => !["width", "height"].includes(key))
+          || ![aspectRatio.width, aspectRatio.height].every(value => Number.isInteger(value) && value >= 1 && value <= 10000)
+          || aspectRatio.width / aspectRatio.height < 1 / 20 || aspectRatio.width / aspectRatio.height > 20))
+          throw bad("宽高须为 1–10000 的整数，比例须在 1:20 至 20:1 之间");
         if (job.mode === "recreate" && body.subjectImage !== undefined) throw bad("完整复刻使用纯文生图，不接受主体图");
         const { negativePrompt } = job.result;
-        const prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
+        let prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
         if (!prompt?.trim() || /\[SUBJECT\]/i.test(prompt)) throw bad("提示词仍缺少主体，请补充后重新逆向");
+        if (aspectRatio) prompt += body.language === "zh"
+          ? `\n\n用户指定的输出画面宽高比例：${aspectRatio.width}:${aspectRatio.height}（宽:高）。此比例要求优先于原提示词及参考图中的画幅要求。请调整构图和背景以适应该比例，保持主体自然比例，不拉伸或压缩主体。`
+          : `\n\nUser-requested output aspect ratio: ${aspectRatio.width}:${aspectRatio.height} (width:height). This ratio takes priority over framing requirements in the original prompt and reference images. Adapt the composition and background to this ratio while preserving natural subject proportions; do not stretch or compress the subject.`;
         const imagePath = job.mode === "recreate" ? undefined : await storedImage(job, false, true);
         const subject = job.mode !== "recreate" && job.reenact
           ? decodeImage(body.subjectImage !== undefined ? body.subjectImage : await storedImage(job, true)) : undefined;
@@ -450,7 +459,7 @@ export async function createBridge({
         const subjectImagePath = subjectAsset ? images.path(subjectAsset) : undefined;
         const controller = new AbortController();
         controllers.set(id, controller);
-        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}) };
+        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(aspectRatio ? { aspectRatio } : {}), ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}) };
         job.generations ||= [];
         job.generations.push(next);
         try {

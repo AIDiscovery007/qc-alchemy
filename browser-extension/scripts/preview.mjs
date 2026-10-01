@@ -217,7 +217,7 @@ createServer(async (req, res) => {
           if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template}};
           if(message.type==='alchemy:generation-image') {
             if(previewOptions.get('fx')==='image-error')throw new Error('预览：图片读取失败');
-            return {ok:true,value:{image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png'}};
+            return {ok:true,value:{image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png',...(state==='gallery'?{}:{width:320,height:400})}};
           }
           if(message.type==='alchemy:save-prompt') {
             const job=findJob(message.id);
@@ -226,7 +226,7 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
-            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage};
+            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage,aspectRatio:message.aspectRatio};
             saved.generations||=[];saved.generations.push(generation);touch(projects.find(p=>p.id===saved.projectId));
             setTimeout(()=>{if(generation.status==='running'){
               generation.status=previewOptions.get('fx')==='failed'?'failed':'completed';

@@ -1,12 +1,15 @@
 import ImageFileActions from "./ImageFileActions";
 import { createPortal } from "react-dom";
-import { createContext, useContext, useEffect, useRef, useState, type ComponentType } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType } from "react";
 import { request } from "../../lib/client";
 import type { Generation, Job } from "../../lib/types";
 import Icon from "./Icon";
 import AsyncAction from "./AsyncAction";
 import { logo } from "../../lib/brand";
 import SelectField from "./SelectField";
+import "./generation-ratio.css";
+
+const ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 
 export const GenerationEffectContext = createContext<ComponentType<{ running: boolean; image: string; failed: boolean }> | null>(null);
 
@@ -23,7 +26,15 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("");
-  const [asset, setAsset] = useState<{ key: string; image: string; path?: string }>();
+  const [asset, setAsset] = useState<{ key: string; image: string; path?: string; width?: number; height?: number }>();
+  const previousRatio = job.generations?.at(-1)?.aspectRatio;
+  const previousRatioValue = previousRatio ? `${previousRatio.width}:${previousRatio.height}` : "auto";
+  const [ratio, setRatio] = useState(previousRatio ? ratios.includes(previousRatioValue) ? previousRatioValue : "custom" : "auto");
+  const [ratioWidth, setRatioWidth] = useState(String(previousRatio?.width || 1));
+  const [ratioHeight, setRatioHeight] = useState(String(previousRatio?.height || 1));
+  const ratioHintId = useId();
+  const [width = NaN, height = NaN] = ratio === "custom" ? [Number(ratioWidth), Number(ratioHeight)] : ratio.split(":").map(Number);
+  const validRatio = ratio === "auto" || [width, height].every(value => Number.isInteger(value) && value >= 1 && value <= 10000) && width / height >= 1 / 20 && width / height <= 20;
   const [copied, setCopied] = useState("");
   const [copyError, setCopyError] = useState("");
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -45,7 +56,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     setImageError("");
     if (generation?.status !== "completed") return;
     let cancelled = false;
-    void request<{ image: string; path?: string }>({ type: "alchemy:generation-image", id: job.id, generationId: generation.id }).then(
+    void request<{ image: string; path?: string; width?: number; height?: number }>({ type: "alchemy:generation-image", id: job.id, generationId: generation.id }).then(
       (value) => { if (!cancelled) setAsset({ ...value, key: assetKey }); },
       (error) => { if (!cancelled) setImageError(error.message); },
     );
@@ -70,12 +81,14 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     return () => { element.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, [modal]);
   const act = async (cancel = false) => {
+    if (busy || (!cancel && (!validRatio || running))) return;
     if (!cancel && job.mode !== "recreate" && !subjectImage) return;
     setBusy(true);
     setError("");
     try {
       onUpdate(await request<Job>({ type: cancel ? "alchemy:generation-cancel" : "alchemy:generate",
         id: job.id, language: lang, generationId: running?.id,
+        ...(!cancel && ratio !== "auto" ? { aspectRatio: { width, height } } : {}),
         ...(!cancel && job.mode !== "recreate" ? { subjectImage } : {}) }), cancel ? undefined : subjectImage);
       setSelected("");
     } catch (error) { setError((error as Error).message); }
@@ -97,11 +110,28 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     }
   };
 
-  const generateButton = <button className={`primary${workspace ? " generate-button" : ""}`} disabled={disabled || busy || !!running || generic || incomplete || (job.mode !== "recreate" && !subjectImage)} aria-busy={busy || !!running}
+  const ratioControls = <div className="generation-ratio">
+    <div className="generation-ratio-fields">
+      <SelectField label="图片比例" value={ratio} disabled={disabled || busy || !!running} aria-describedby={validRatio ? undefined : ratioHintId} onChange={event => setRatio(event.target.value)}>
+        <option value="auto">自动</option>
+        {ratios.map(value => <option key={value} value={value}>{value}</option>)}
+        <option value="custom">自定义</option>
+      </SelectField>
+      {ratio === "custom" && <div className="custom-ratio">
+        <label>宽<input type="number" inputMode="numeric" min={1} max={10000} step={1} value={ratioWidth} disabled={disabled || busy || !!running} aria-label="比例宽" aria-invalid={!validRatio} aria-describedby={validRatio ? undefined : ratioHintId} onChange={event => setRatioWidth(event.target.value)} /></label>
+        <span aria-hidden="true">:</span>
+        <label>高<input type="number" inputMode="numeric" min={1} max={10000} step={1} value={ratioHeight} disabled={disabled || busy || !!running} aria-label="比例高" aria-invalid={!validRatio} aria-describedby={validRatio ? undefined : ratioHintId} onChange={event => setRatioHeight(event.target.value)} /></label>
+      </div>}
+    </div>
+    {!validRatio && <p id={ratioHintId} className="ratio-hint ratio-error" role="status">宽高请填 1–10000 的整数，比例范围为 1:20–20:1。</p>}
+  </div>;
+  const generateButton = <button className={`primary${workspace ? " generate-button" : ""}`} disabled={disabled || busy || !!running || !validRatio || generic || incomplete || (job.mode !== "recreate" && !subjectImage)} aria-busy={busy || !!running}
     title={`使用${job.mode === "recreate" ? "" : "当前主体图、参考模板与"}${lang === "zh" ? "中文" : "英文"}提示词生成，包含排除项。使用 Codex 生图额度。`} onClick={() => act()}>
     {workspace && !running && !busy && <Icon name="image" />}{running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "生成图片"}{workspace && <Icon name="arrow" />}
   </button>;
-  const action = actionsTarget ? createPortal(generateButton, actionsTarget) : workspace ? generateButton : <AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction>;
+  const generationControls = <>{ratioControls}{generateButton}</>;
+  const action = actionsTarget ? createPortal(generationControls, actionsTarget) : workspace ? generationControls : <>{ratioControls}<AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction></>;
+  const dimensions = image && asset?.width && asset?.height ? <p className="generation-dimensions">{asset.width} × {asset.height} px · {imageRatio(asset.width, asset.height)}</p> : null;
   const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : job.mode !== "recreate" && !subjectImage ? "请先上传可用的主体图。" : "";
   const copyNotice = copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>;
 
@@ -122,6 +152,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     </div> : null}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
       failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} / ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong><span>{generation?.model || job.model || ""}</span></div>
+    {dimensions}
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
     <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button" disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>
@@ -151,10 +182,18 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     {generation?.status === "cancelled" && <p className="fine">图片生成已取消。</p>}
     {generation?.status === "completed" && <>{imageError ? <div className="error" role="alert">{imageError}</div> : image ? <>
       <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
+      {dimensions}
       <div className="image-file-actions"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /></div>
       <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>{copyNotice}
     </> : <p className="fine" role="status">正在读取生成图片…</p>}</>}
   </section>;
+}
+
+function imageRatio(width: number, height: number) {
+  let a = width, b = height;
+  while (b) [a, b] = [b, a % b];
+  if (Math.max(width / a, height / a) <= 20) return `${width / a}:${height / a}`;
+  return width >= height ? `≈${Number((width / height).toFixed(2))}:1` : `≈1:${Number((height / width).toFixed(2))}`;
 }
 
 function ResultIcon({ name }: { name: "compare" | "clock" }) {

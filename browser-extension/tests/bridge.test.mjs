@@ -8,6 +8,7 @@ import { request as httpRequest } from "node:http";
 import { createBridge, decodeImage } from "../bridge/server.mjs";
 import { agentInput, parseResult } from "../bridge/agent.mjs";
 import { generationInput } from "../bridge/generation.mjs";
+import sharp from "sharp";
 
 const image =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=";
@@ -93,12 +94,15 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
   assert.equal(!!calls[0].subjectImagePath, paired);
   if (paired) assert.deepEqual(await readFile(calls[0].subjectImagePath), decodeImage(image).bytes);
   const generated = first.generations[0];
+  assert.equal(generated.aspectRatio, undefined);
+  assert.equal(generated.prompt, finalResult.promptEn);
   assert.equal((await (await request(`${path}/${generated.id}/reference`)).json()).image, image);
   const imagePath = `${path}/${generated.id}/image`;
   assert.equal((await fetch(url + imagePath)).status, 401);
   assert.equal((await request(imagePath, { headers: { Origin: "https://example.com" } })).status, 403);
   const firstAsset = await (await request(imagePath)).json();
   assert.equal(firstAsset.image, image);
+  assert.deepEqual([firstAsset.width, firstAsset.height], [1, 1]);
   assert.equal(firstAsset.path, join(dir, "images", generated.imageAsset));
   assert.deepEqual(await readFile(firstAsset.path), decodeImage(image).bytes);
   assert.equal((await generate("zh")).status, 202);
@@ -122,6 +126,44 @@ for (const mode of ["style", "reenact", "recreate"]) test(`${mode} generates fro
     assert.deepEqual(generationInput(calls[2]).map((item) => item.type), ["text", "skill"]);
   }
   assert.equal(calls.length, paired ? 2 : 3);
+});
+
+test("generation ratios validate before execution and become immutable bilingual prompt snapshots", async (t) => {
+  const finalResult = { ...result, promptZh: "方形画幅，一只猫", promptEn: "Square frame, a cat", negativePrompt: "模糊" };
+  const calls = [];
+  const bytes = await sharp({ create: { width: 120, height: 80, channels: 3, background: "red" } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+  const { request, dir } = await setup(t, async () => finalResult, async (args) => {
+    calls.push(args);
+    return { bytes, extension: "jpeg" };
+  });
+  const created = await (await request("/jobs", submit({ mode: "recreate" }))).json();
+  await waitFor(request, created.id, "completed");
+  const path = `/jobs/${created.id}/generations`;
+  const generate = (aspectRatio, language = "zh") => request(path, { method: "POST", body: JSON.stringify({ language, aspectRatio }) });
+  for (const ratio of [null, "16:9", [], {}, { width: 16 }, { width: "16", height: 9 }, { width: 0, height: 9 },
+    { width: 1.5, height: 1 }, { width: 10001, height: 1000 }, { width: 1, height: 21 }, { width: 21, height: 1 },
+    { width: 16, height: 9, prompt: "override" }]) {
+    assert.equal((await generate(ratio)).status, 400, JSON.stringify(ratio));
+  }
+  assert.equal(calls.length, 0);
+  for (const [index, [aspectRatio, language]] of [[{ width: 16, height: 9 }, "zh"], [{ width: 10000, height: 1000 }, "en"], [{ width: 1, height: 20 }, "zh"], [{ width: 20, height: 1 }, "en"]].entries()) {
+    assert.equal((await generate(aspectRatio, language)).status, 202);
+    const job = await waitGeneration(request, created.id, "completed");
+    const generated = job.generations.at(-1);
+    assert.deepEqual(generated.aspectRatio, aspectRatio);
+    assert.equal(generated.prompt, calls[index].prompt);
+    assert.ok(generated.prompt.startsWith(language === "zh" ? finalResult.promptZh : finalResult.promptEn));
+    assert.ok(generated.prompt.includes(`${aspectRatio.width}:${aspectRatio.height}`));
+    assert.match(generated.prompt, language === "zh" ? /优先于原提示词及参考图/ : /priority over.*original prompt and reference images/);
+    assert.equal(calls[index].aspectRatio, undefined, "ratio is a prompt instruction, not an API parameter");
+    assert.equal(calls[index].negativePrompt, finalResult.negativePrompt);
+    assert.deepEqual(job.result, finalResult, "analysis prompt remains unchanged");
+    const asset = await (await request(`${path}/${generated.id}/image`)).json();
+    assert.deepEqual([asset.width, asset.height], [80, 120], "report actual oriented output dimensions even when ratio is not followed");
+  }
+  const saved = JSON.parse(await readFile(join(dir, "records", `${created.id}.json`)));
+  assert.deepEqual(saved.generations[0].aspectRatio, { width: 16, height: 9 });
+  assert.equal(saved.generations[0].prompt, calls[0].prompt);
 });
 
 test("generation rejects generic prompts, prevents duplicates and preserves cancelled jobs", async (t) => {

@@ -20,7 +20,7 @@
 .pick img { width: 20px; height: 20px; flex: none; }
 .pick[data-compact="true"] { width: 40px; height: 40px; padding: 0; justify-content: center; }
 .pick[data-compact="true"] span { display: none; }
-.pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.pick:focus { outline: none; }
 .panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); display: flex; flex-direction: column; pointer-events: auto; border: 1px solid var(--ink); border-radius: 18px; overflow: hidden; background: var(--paper); box-shadow: 4px 4px 0 var(--ink), 0 12px 40px #14111118; }
 .bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--ink); background: var(--paper); font: 700 13px/1 var(--font); color: var(--ink); }
 .bar > span { display: flex; align-items: center; gap: 8px; letter-spacing: -.25px; }

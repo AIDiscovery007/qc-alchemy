@@ -26,7 +26,7 @@ button, summary { cursor: pointer; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { transition: background-color 120ms ease, transform 120ms var(--ease-out); }
 button:disabled { cursor: not-allowed; color: var(--muted); background: #ece7dc; border-color: #cbc4b6; box-shadow: none; }
-:is(button, input, textarea, select, a, summary):focus-visible, .file-picker:focus-within { outline: 3px solid #1d4ed8; outline-offset: 3px; }
+:focus, :focus-visible { outline: none; }
 .app { min-height: 100vh; display: flex; flex-direction: column; background: var(--paper); }
 .ui-icon { width: 16px; height: 16px; flex-shrink: 0; vertical-align: middle; }
 header { padding: 18px 20px 14px; }

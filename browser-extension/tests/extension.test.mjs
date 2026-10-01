@@ -98,6 +98,26 @@ test("generation messages keep credentials in background and constrain job endpo
   assert.equal(calls.length, 4);
 });
 
+test("generation ratio messages only forward bounded numeric width and height", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ status: "running" }) };
+  });
+  const sender = { id: "test", frameId: 0, url: "https://www.pinterest.com/", tab: { id: 4 } };
+  const id = "00000000-0000-0000-0000-000000000001";
+  const send = aspectRatio => new Promise(resolve => handlers.message({ type: "alchemy:generate", id, language: "zh", aspectRatio }, sender, resolve));
+  for (const ratio of [null, "16:9", [], {}, { width: 16 }, { width: "16", height: 9 }, { width: NaN, height: 9 },
+    { width: Infinity, height: 9 }, { width: 0, height: 1 }, { width: 1.5, height: 1 }, { width: 10001, height: 1000 },
+    { width: 1, height: 21 }, { width: 21, height: 1 }, { width: 16, height: 9, prompt: "override" }]) assert.ok((await send(ratio)).error);
+  assert.equal(calls.length, 0);
+  for (const aspectRatio of [{ width: 16, height: 9 }, { width: 10000, height: 1000 }, { width: 1, height: 20 }, { width: 20, height: 1 }]) {
+    assert.equal((await send(aspectRatio)).ok, true);
+    assert.deepEqual(JSON.parse(calls.at(-1).options.body), { language: "zh", aspectRatio });
+    assert.equal(calls.at(-1).options.headers.Authorization, "Bearer test");
+  }
+});
+
 test("built extension uses a popup without declaring unsupported native side panels", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("manifest.json", build), "utf8"),

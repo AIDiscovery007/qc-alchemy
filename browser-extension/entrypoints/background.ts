@@ -270,9 +270,15 @@ export default defineBackground(() => {
         const path = `/jobs/${message.id}/generations`;
         if (message.type === "alchemy:generate") {
           if (!["zh", "en"].includes(message.language)) throw new Error("无效提示词语言");
+          const { aspectRatio } = message;
+          if (aspectRatio !== undefined && (!aspectRatio || typeof aspectRatio !== "object" || Array.isArray(aspectRatio)
+            || Object.keys(aspectRatio).some(key => !["width", "height"].includes(key))
+            || ![aspectRatio.width, aspectRatio.height].every(value => Number.isInteger(value) && value >= 1 && value <= 10000)
+            || aspectRatio.width / aspectRatio.height < 1 / 20 || aspectRatio.width / aspectRatio.height > 20))
+            throw new Error("宽高须为 1–10000 的整数，比例须在 1:20 至 20:1 之间");
           if (message.subjectImage !== undefined && (typeof message.subjectImage !== "string" || message.subjectImage.length > 3 * 1024 * 1024 || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.subjectImage)))
             throw new Error("请上传有效的主体图");
-          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage });
+          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage, aspectRatio });
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
         if (message.type === "alchemy:generation-file-action") {

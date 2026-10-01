@@ -59,6 +59,7 @@ export type ProjectSummary = {
 };
 export type Project = ProjectSummary & { jobs: Job[] };
 export type ProjectPage = { items: ProjectSummary[]; total: number; page: number; pageSize: number; revision: string };
+export type AspectRatio = { width: number; height: number };
 export type Generation = {
   id: string;
   imageAsset?: string;
@@ -67,6 +68,7 @@ export type Generation = {
   stage: string;
   createdAt: string;
   language: "zh" | "en";
+  aspectRatio?: AspectRatio;
   prompt: string;
   negativePrompt: string;
   threadId?: string;
