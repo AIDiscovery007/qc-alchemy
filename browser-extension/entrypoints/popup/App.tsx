@@ -393,7 +393,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   }} /> : null;
 
   return (
-    <div className={workspace ? "app workspace-app" : "app"}>
+    <div className={workspace ? "app workspace-app" : "app"} data-motion-input="keyboard"
+      onPointerDownCapture={event => { event.currentTarget.dataset.motionInput = "pointer"; }}
+      onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
+      onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}>
       {workspace && <aside className="sidebar" aria-label="工作台导航">
         <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div></div>
         <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
@@ -616,7 +619,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                       </button>
                     </div>
                     <button className="copy-button" data-copied={copied} onClick={copy} aria-live="polite">
-                      <Icon name={copied ? "check" : "copy"} />{copied ? "已复制" : "复制提示词"}
+                      <Icon key={String(copied)} name={copied ? "check" : "copy"} />{copied ? "已复制" : "复制提示词"}
                     </button>
                   </div>
                   {promptDraft ? <div className="prompt-editor">

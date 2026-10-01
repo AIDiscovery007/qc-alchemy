@@ -1,3 +1,4 @@
+@import "./motion.css";
 /* Raft's cream, ink, bright accents and offset shadows, scaled for a narrow tool. */
 :root, :host {
   --paper: #fffaef;
@@ -24,7 +25,6 @@ body { margin: 0; min-width: 280px; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button, summary { cursor: pointer; }
 button, a { -webkit-tap-highlight-color: transparent; }
-button { transition: background-color 120ms ease, transform 120ms var(--ease-out); }
 button:disabled { cursor: not-allowed; color: var(--muted); background: #ece7dc; border-color: #cbc4b6; box-shadow: none; }
 :focus, :focus-visible { outline: none; }
 .app { min-height: 100vh; display: flex; flex-direction: column; background: var(--paper); }
@@ -167,7 +167,6 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
   .icon-button:hover { background: var(--yellow); }
   .text-button:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
   .mode-switch button:not(.active):hover:not(:disabled) { border-color: var(--ink); background: #fff; }
-  :is(.primary, .secondary, .copy-button, .history-item):active:not(:disabled):not(:focus-visible) { transform: translate(1px, 1px); }
 }
 @media (max-width: 360px) {
   main { padding: 16px 14px 24px; }
@@ -208,10 +207,3 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 .project-pagination span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .project-pagination .secondary { width: auto; margin: 0; padding: 8px 14px; }
 .project-page-items[data-loading="true"], .workspace-project-grid[data-loading="true"] { opacity: .6; }
-.project-pagination button:focus-visible, .project-status-filter button:focus-visible { transition: none; transform: none; }
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .project-status-filter button:not(:focus-visible) { transition: transform 120ms var(--ease-out); }
-  .project-status-filter button:active:not(:disabled):not(:focus-visible) { transform: scale(.97); }
-  .project-pagination button:not(:focus-visible) { transition: transform 120ms var(--ease-out), background-color 120ms ease; }
-  .project-pagination button:active:not(:disabled):not(:focus-visible) { transform: scale(.97); }
-}

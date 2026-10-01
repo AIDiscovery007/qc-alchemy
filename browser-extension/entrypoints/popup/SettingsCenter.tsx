@@ -1,3 +1,4 @@
+import { showMotionDialog } from "../../lib/motion-dialog";
 import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
@@ -42,10 +43,7 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
   const updating = cli?.operation?.status === "running";
 
   useEffect(() => {
-    const previous = document.activeElement;
-    const element = dialog.current;
-    element?.showModal();
-    return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return showMotionDialog(dialog.current!);
   }, []);
   useEffect(() => {
     if (!connected) { setCli(undefined); return; }

@@ -1,3 +1,4 @@
+import { showMotionDialog } from "../../lib/motion-dialog";
 import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
@@ -29,9 +30,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
   useEffect(() => {
     alive.current = true;
     const element = dialog.current!;
-    const root = element.getRootNode() as Document | ShadowRoot;
-    const previous = root.activeElement;
-    element.showModal();
+    const closeDialog = showMotionDialog(element);
     element.querySelector<HTMLButtonElement>("button")?.focus();
     let stopped = false;
     let active = true;
@@ -49,8 +48,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
       stopped = true;
       alive.current = false;
       stopPolling();
-      element.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      closeDialog();
     };
   }, []);
 

@@ -1,3 +1,4 @@
+import { showMotionDialog } from "../../lib/motion-dialog";
 import { createPortal } from "react-dom";
 import { logo } from "../../lib/brand";
 import { useEffect, useRef, useState } from "react";
@@ -32,8 +33,10 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
     if (selectAll.current) selectAll.current.indeterminate = checked.length > 0 && checked.length < eligible.length;
   }, [checked.length, eligible.length]);
   useEffect(() => {
-    if (pending.length) { dialog.current?.showModal(); cancel.current?.focus(); }
-    else dialog.current?.close();
+    if (!pending.length) return;
+    const closeDialog = showMotionDialog(dialog.current!);
+    cancel.current?.focus({ preventScroll: true });
+    return closeDialog;
   }, [pending]);
   const confirm = (items: ProjectSummary[]) => { setError(""); setNotice(""); setPending(items); };
   const remove = async () => {

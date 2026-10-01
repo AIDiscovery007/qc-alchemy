@@ -1,3 +1,4 @@
+import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType } from "react";
@@ -76,9 +77,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
   useEffect(() => {
     if (!modal) return;
     const element = zoomDialog.current!;
-    const previous = document.activeElement;
-    element.showModal();
-    return () => { element.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+    return showMotionDialog(element);
   }, [modal]);
   const act = async (cancel = false) => {
     if (busy || (!cancel && (!validRatio || running))) return;
@@ -155,7 +154,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     {dimensions}
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
-    <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button" disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>
+    <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button copy-path-button" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>
       <button className="outline-button" disabled={!generation} onClick={() => generation && setModal({ kind: "info", generation, image })}><ResultIcon name="clock" />生成信息</button></div>
     {modal && <dialog className={`result-dialog modal${modal.kind === "zoom" ? " zoom-modal" : ""}`} ref={zoomDialog} aria-label={modal.kind === "zoom" ? "图片预览" : "本次生成信息"}
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
@@ -184,7 +183,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
       <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
       {dimensions}
       <div className="image-file-actions"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /></div>
-      <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>{copyNotice}
+      <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>{copyNotice}
     </> : <p className="fine" role="status">正在读取生成图片…</p>}</>}
   </section>;
 }
