@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { constrainView, zoomView, type View } from "../../lib/image-view";
 import Icon from "./Icon";
-import "./image-viewer.css";
 
 export default function ImageViewer({ src, alt }: { src: string; alt: string }) {
   const stage = useRef<HTMLDivElement>(null);

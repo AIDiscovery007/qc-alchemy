@@ -22,7 +22,7 @@ export default defineContentScript({
       "all:initial;position:fixed;z-index:2147483647;pointer-events:none;inset:0;";
     const shadow = host.attachShadow({ mode: "closed" });
     shadow.innerHTML = `<div class="pick-control"><div class="pick-liquid" aria-hidden="true"></div><button class="pick-toggle" type="button" aria-label="Reframe 图片操作" title="Reframe 图片操作" aria-haspopup="menu" aria-expanded="false" aria-controls="reframe-image-menu"><img src="${logo}" alt="" draggable="false"></button></div>
-    <div class="pick-menu" id="reframe-image-menu" role="menu" aria-label="图片操作" hidden><button class="pick-action pick-open" type="button" role="menuitem" tabindex="-1" aria-label="立即逆向" title="立即逆向"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m5 18 6-6 3 3 3-4 3 4"/></svg></button><button class="pick-action pick-collect" type="button" role="menuitem" tabindex="-1" aria-label="加入 Reframe" title="加入 Reframe" data-state="idle"><svg class="pick-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="pick-done" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span class="pick-wait" aria-hidden="true"></span></button></div>
+    <div class="pick-menu" id="reframe-image-menu" role="menu" aria-label="图片操作" hidden><button class="pick-action pick-open" type="button" role="menuitem" tabindex="-1" aria-label="立即逆向" title="立即逆向"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m5 18 6-6 3 3 3-4 3 4"/></svg></button><button class="pick-action pick-collect" type="button" role="menuitem" tabindex="-1" aria-label="加入 Reframe" title="加入 Reframe" data-state="idle"><svg class="pick-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="pick-done" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span class="pick-wait" aria-hidden="true"></span></button><button class="pick-action pick-workspace" type="button" role="menuitem" tabindex="-1" aria-label="打开工作台" title="打开工作台"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button></div>
     <section class="panel" role="dialog" aria-label="QC-Reframe 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC-Reframe</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
     <div class="notice" popover="manual" hidden><div class="notice-copy" role="status" aria-live="polite" aria-atomic="true"><strong></strong><span></span></div><div class="notice-actions"><button class="retry" type="button" hidden>重试</button><button class="refresh" type="button" hidden>刷新网页</button><button class="dismiss" type="button" aria-label="关闭收集提示">×</button></div></div>`;
     const styles = document.createElement("style");
@@ -34,15 +34,16 @@ export default defineContentScript({
     const trigger = shadow.querySelector<HTMLButtonElement>(".pick-toggle")!;
     const menu = shadow.querySelector<HTMLElement>(".pick-menu")!;
     const openButton = shadow.querySelector<HTMLButtonElement>(".pick-open")!;
+    const workspaceButton = shadow.querySelector<HTMLButtonElement>(".pick-workspace")!;
     let liquid: ReturnType<typeof mountCollectionLiquid> | undefined;
-    let menuOffsets: MenuOffsets = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+    let menuOffsets: MenuOffsets = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }];
     let menuPointer = false;
     const updateLiquid = (instant = true) => {
       liquid?.update({ offsets: menuOffsets, open: !menu.hidden, instant: instant || reducedMotion.matches });
     };
     let menuTarget: PickedImage | undefined;
     let menuAnimations: Animation[] = [];
-    const actions = [openButton, collectButton];
+    const actions = [openButton, collectButton, workspaceButton];
     let selecting = false;
     const closeMenu = (restoreFocus = false, animate = false) => {
       const wasOpen = !menu.hidden;
@@ -155,7 +156,7 @@ export default defineContentScript({
         if (["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) {
           event.preventDefault();
           const index = actions.indexOf(shadow.activeElement as HTMLButtonElement);
-          const next = key === "Home" ? 0 : key === "End" ? 1 : (index + (key === "ArrowDown" ? 1 : -1) + 2) % 2;
+          const next = key === "Home" ? 0 : key === "End" ? actions.length - 1 : (index + (key === "ArrowDown" ? 1 : -1) + actions.length) % actions.length;
           actions[next]!.focus({ preventScroll: true });
         }
       }
@@ -377,11 +378,24 @@ export default defineContentScript({
       if (menu.hidden) openMenu(event.detail > 0); else closeMenu(true, event.detail > 0);
     });
     trigger.addEventListener("keydown", (event) => {
-      if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); openMenu(false); if (event.key === "ArrowUp") collectButton.focus({ preventScroll: true }); }
+      if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); openMenu(false); if (event.key === "ArrowUp") actions[actions.length - 1]!.focus({ preventScroll: true }); }
     });
     ctx.addEventListener(document, "pointerdown", (event) => { if (!event.composedPath().includes(host)) closeMenu(false, menuPointer); });
     // Wait for the new focus target; focusout can run before activeElement is updated.
     ctx.addEventListener(document, "focusin", (event) => { if (!event.composedPath().includes(host)) closeMenu(); });
+    workspaceButton.addEventListener("click", async (event) => {
+      if (!event.isTrusted || menu.hidden) return;
+      event.preventDefault(); event.stopPropagation();
+      closeMenu(true, event.detail > 0);
+      try {
+        await request({ type: "alchemy:open-workspace" });
+      } catch (error) {
+        if (disposed) return;
+        retryTarget = undefined;
+        feedback("error", false, error instanceof Error ? error.message : String(error), event.detail > 0);
+        notice.querySelector("strong")!.textContent = "打开工作台失败";
+      }
+    });
     openButton.addEventListener("click", async (event) => {
       if (!event.isTrusted || !menuTarget || selecting) return;
       event.preventDefault(); event.stopPropagation();

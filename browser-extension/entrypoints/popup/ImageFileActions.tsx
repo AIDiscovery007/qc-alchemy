@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { request } from "../../lib/client";
 import Icon from "./Icon";
-import "./image-file-actions.css";
 
 export default function ImageFileActions({ jobId, generationId, disabled }: { jobId: string; generationId?: string; disabled: boolean }) {
   const pending = useRef(false);

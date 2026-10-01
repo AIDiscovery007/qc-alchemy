@@ -49,7 +49,7 @@ class ImageElement extends Element {
 
 function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
   const shadow = new Element(), host = new Element(), document = new Element();
-  const selectors = [".pick-collect", ".pick-control", ".pick-toggle", ".pick-liquid", ".pick-menu", ".pick-open", ".panel", ".notice", ".close", ".refresh", ".dismiss", ".retry", ".panel-body"];
+  const selectors = [".pick-collect", ".pick-control", ".pick-toggle", ".pick-liquid", ".pick-menu", ".pick-open", ".pick-workspace", ".panel", ".notice", ".close", ".refresh", ".dismiss", ".retry", ".panel-body"];
   for (const selector of selectors) shadow.children.set(selector, new Element());
   for (const element of shadow.children.values()) element.focus = () => { shadow.activeElement = element; };
   const menu = shadow.querySelector(".pick-menu"), trigger = shadow.querySelector(".pick-toggle"), openButton = shadow.querySelector(".pick-open");
@@ -104,7 +104,7 @@ function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
   return {
     tick() { intervals.forEach(fn => fn()); const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()); },
     liquidStates, get liquidDisposed() { return liquidDisposed; },
-    requests, notice, retry, timers, document, shadow, host, menu, trigger, openButton, collectButton, motion, dispose: () => invalidate(),
+    requests, notice, retry, timers, document, shadow, host, menu, trigger, openButton, collectButton, workspaceButton: shadow.querySelector(".pick-workspace"), motion, dispose: () => invalidate(),
     hover(image) { hit = image; document.emit("pointermove", { composedPath: () => [], clientX: image.bounds.x + 5, clientY: image.bounds.y + 5 }); },
     click(detail = 1) { trigger.emit("click", { detail }); collectButton.emit("click", { detail }); },
     geometry(message) { let value; messageHandler(message, {}, reply => { value = reply; }); return value; },
@@ -112,7 +112,7 @@ function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
 }
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
 
-test("the logo trigger opens both actions without collecting, with Escape restoring focus", t => {
+test("the logo trigger opens all three actions without collecting, with Escape restoring focus", t => {
   const ui = setup(t, { reducedMotion: false });
   ui.hover(new ImageElement("https://example.com/a.png"));
   ui.trigger.emit("click");
@@ -296,15 +296,19 @@ test("liquid actions reverse promptly, skip keyboard motion and dispose with the
 });
 
 
-test("the two menu actions support arrow navigation, Home, End and Escape", t => {
+test("the three menu actions support arrow navigation, Home, End and Escape", t => {
   const ui = setup(t);
   ui.hover(new ImageElement("https://example.com/a.png"));
   ui.trigger.emit("keydown", { key: "ArrowUp" });
-  assert.equal(ui.shadow.activeElement, ui.collectButton);
+  assert.equal(ui.shadow.activeElement, ui.workspaceButton);
   ui.host.emit("keydown", { key: "ArrowDown" });
   assert.equal(ui.shadow.activeElement, ui.openButton);
-  ui.host.emit("keydown", { key: "End" });
+  ui.host.emit("keydown", { key: "ArrowDown" });
   assert.equal(ui.shadow.activeElement, ui.collectButton);
+  ui.host.emit("keydown", { key: "ArrowDown" });
+  assert.equal(ui.shadow.activeElement, ui.workspaceButton);
+  ui.host.emit("keydown", { key: "End" });
+  assert.equal(ui.shadow.activeElement, ui.workspaceButton);
   ui.host.emit("keydown", { key: "Home" });
   assert.equal(ui.shadow.activeElement, ui.openButton);
   ui.host.emit("keydown", { key: "Escape" });
@@ -371,4 +375,35 @@ test("focus transfer to collect does not dismiss the menu before its click", asy
   ui.requests[0].resolve({ projectId: "collected", created: true });
   await settle();
   assert.equal(ui.notice.dataset.state, "saved");
+});
+
+
+test("workspace entry opens without capturing or collecting the hovered image", async t => {
+  const ui = setup(t);
+  ui.hover(new ImageElement("https://example.com/a.png"));
+  ui.trigger.emit("click");
+  ui.workspaceButton.emit("click", { isTrusted: false });
+  assert.equal(ui.requests.length, 0);
+  ui.workspaceButton.emit("click");
+  ui.workspaceButton.emit("click");
+  assert.equal(ui.requests.length, 1, "closed menu rejects duplicate clicks");
+  assert.equal(JSON.stringify(ui.requests[0].message), '{"type":"alchemy:open-workspace"}');
+  assert.equal(ui.menu.hidden, true);
+  assert.equal(ui.shadow.activeElement, ui.trigger);
+  ui.requests[0].resolve();
+  await settle();
+  assert.equal(ui.notice.hidden, true);
+});
+
+test("workspace opening errors show feedback without a collection retry", async t => {
+  const ui = setup(t);
+  ui.hover(new ImageElement("https://example.com/a.png"));
+  ui.trigger.emit("click");
+  ui.workspaceButton.emit("click");
+  ui.requests[0].reject(new Error("无法打开标签页"));
+  await settle();
+  assert.equal(ui.notice.hidden, false);
+  assert.equal(ui.notice.querySelector("strong").textContent, "打开工作台失败");
+  assert.equal(ui.notice.querySelector(".notice-copy > span").textContent, "无法打开标签页");
+  assert.equal(ui.retry.hidden, true);
 });

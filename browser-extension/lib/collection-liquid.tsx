@@ -8,7 +8,7 @@ export const liquidTiming = { duration: 240, ease: "cubic-bezier(.23,1,.32,1)" }
 // Only the surfaces merge. The native controls and their focus stay in content.ts.
 export function CollectionLiquid({ offsets, open, instant }: LiquidState) {
   const transition = instant ? { duration: 0 } : liquidTiming;
-  return <Liquid blur={6} contrast={18} fill="var(--yellow)" shadow="0 2px 6px rgba(20,17,17,.1)" filterPadding={128} aria-hidden="true" style={{ width: 40, height: 40, pointerEvents: "none" }}>
+  return <Liquid blur={6} contrast={18} fill="var(--yellow)" shadow="0 2px 6px rgba(20,17,17,.1)" filterPadding={192} aria-hidden="true" style={{ width: 40, height: 40, pointerEvents: "none" }}>
     {offsets.map(({ x, y }, index) => <Liquid.Item key={index} radius={20} x={open ? x : 0} y={open ? y : 0} scale={open ? 1 : 0} transition={transition} style={{ position: "absolute", width: 40, height: 40 }} />)}
   </Liquid>;
 }

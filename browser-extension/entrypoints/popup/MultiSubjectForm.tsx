@@ -4,7 +4,6 @@ import type { MultiSubject, SubjectInput } from "../../lib/types";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
-import "./multi-subject.css";
 
 export const multiInstruction = "将各主体融合在同一画面中，重演参考模板的画风、构图、姿态与光影，保留每张主体图指定的特征。";
 

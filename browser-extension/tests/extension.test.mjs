@@ -5,6 +5,16 @@ import { runInNewContext } from "node:vm";
 
 const build = new URL("../.output/chrome-mv3/", import.meta.url);
 
+test("shared component styles ship inside the shadow-root bundle instead of the host page", async () => {
+  const content = await readFile(new URL("content-scripts/content.js", build), "utf8");
+  const manifest = JSON.parse(await readFile(new URL("manifest.json", build), "utf8"));
+  const pageStyles = (await Promise.all((manifest.content_scripts || []).flatMap(rule => rule.css || []).map(path => readFile(new URL(path, build), "utf8")))).join("\n");
+  for (const selector of [".multi-subject-form", ".subject-filmstrip", ".image-viewer-stage", ".generation-ratio", ".image-file-actions", ".task-center"]) {
+    assert.ok(content.includes(selector), `${selector} must be in the inline panel stylesheet`);
+    assert.ok(!pageStyles.includes(selector), `${selector} must not leak onto visited pages`);
+  }
+});
+
 test("WebGL generation engine is split out of injected content and initial UI bundles", async () => {
   const content = await readFile(new URL("content-scripts/content.js", build), "utf8");
   assert.ok(!content.includes("THREE.WebGLRenderer"), "every visited page must not load Three.js");

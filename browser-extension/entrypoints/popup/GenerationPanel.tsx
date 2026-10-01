@@ -9,7 +9,6 @@ import Icon from "./Icon";
 import AsyncAction from "./AsyncAction";
 import { logo } from "../../lib/brand";
 import SelectField from "./SelectField";
-import "./generation-ratio.css";
 
 const ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 

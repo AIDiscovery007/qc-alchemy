@@ -1,9 +1,9 @@
 import type { Box } from "./image-action-placement";
 
 export type MenuOffset = { x: number; y: number };
-export type MenuOffsets = [MenuOffset, MenuOffset];
+export type MenuOffsets = [MenuOffset, MenuOffset, MenuOffset];
 
-/** Keep both 40px actions inside the visible image, clear of the trigger and page controls. */
+/** Keep all three 40px actions inside the visible image, clear of the trigger and page controls. */
 export function placeImageMenu(image: Box, viewport: Box, trigger: Box, obstacles: Box[] = [], isClear: (box: Box) => boolean = () => true, previous?: MenuOffsets): MenuOffsets | undefined {
   const bounds = { left: Math.max(image.left, viewport.left) + 8, top: Math.max(image.top, viewport.top) + 8,
     right: Math.min(image.right, viewport.right) - 8, bottom: Math.min(image.bottom, viewport.bottom) - 8 };
@@ -16,14 +16,14 @@ export function placeImageMenu(image: Box, viewport: Box, trigger: Box, obstacle
     .sort((a, b) => Math.cos(b - inward) - Math.cos(a - inward));
   const point = (angle: number, distance: number): MenuOffset => ({ x: Math.round(Math.cos(angle) * distance), y: Math.round(Math.sin(angle) * distance) });
   const valid = (offsets: MenuOffsets) => {
-    const first = box(offsets[0]), second = box(offsets[1]);
-    return fits(first) && fits(second) && !overlaps(first, second) && isClear(first) && isClear(second);
+    const boxes = offsets.map(box);
+    return boxes.every((rect, index) => fits(rect) && isClear(rect) && boxes.slice(index + 1).every(other => !overlaps(rect, other)));
   };
   if (previous && valid(previous)) return previous;
   // Try a small fan first; straight layouts cover narrow/tall or short/wide images.
   for (const fan of [true, false]) for (const direction of directions) {
-    const offsets: MenuOffsets = fan ? [point(direction - Math.PI / 6, 64), point(direction + Math.PI / 6, 64)]
-      : [point(direction, 52), point(direction, 104)];
+    const offsets: MenuOffsets = fan ? [point(direction - Math.PI / 6, 68), point(direction + Math.PI / 6, 68), point(direction, 116)]
+      : [point(direction, 52), point(direction, 104), point(direction, 156)];
     if (valid(offsets)) return offsets;
   }
 }

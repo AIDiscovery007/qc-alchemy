@@ -77,7 +77,8 @@ createServer(async (req, res) => {
     if (path === "/panel-preview") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       // Keep installed top-frame extensions from covering the build under test.
-      res.end('<html><head><meta charset="UTF-8"><title>QC-Reframe · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview?state=projects" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
+      const query = new URL(req.url, "http://127.0.0.1").search || "?state=projects";
+      res.end(`<html><head><meta charset="UTF-8"><title>QC-Reframe · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview${query.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>`);
       return;
     }
     if (path === "/collection-preview") {
@@ -277,7 +278,7 @@ createServer(async (req, res) => {
     }
     if (path === "/content-preview") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(`<html><head><meta charset="UTF-8"><script src="/preview.js"></script><style>body{margin:0;padding:28px;background:#fffaef;color:#141111;font:14px/1.6 system-ui}h1{font-size:22px}select{padding:8px;border:1px solid;border-radius:6px;background:#fffdf8;font:inherit}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:24px;max-width:1000px;margin-top:24px}.card img{display:block;width:100%;height:auto;border-radius:16px}.card p{margin:8px 0}button{font:inherit}</style></head><body><h1>收集参考图 · 交互预览</h1><p>示例数据，不保存真实图片、不调用 Codex。将鼠标移到图片，点击 Reframe logo，展开图片图标（立即逆向）与加号（加入 Reframe）；按钮始终位于图片内。</p><label>模拟结果 <select id="collect-outcome"><option value="success">正常保存</option><option value="slow">慢速保存</option><option value="failed">保存失败</option></select></label><div class="grid">${[image, ...["#27ccf3", "#fe7da8"].map(color => `data:image/svg+xml;base64,${Buffer.from(svg.replaceAll("#5b6f4c", color)).toString("base64")}`)].map((src, index) => `<div class="card"><img width="320" height="400" alt="示例参考图 ${index + 1}" src="${src}"><p>参考图 ${index + 1} · 再次点击可验证去重反馈</p></div>`).join("")}</div><script src="/content-scripts/content.js"></script></body></html>`);
+      res.end(`<html><head><meta charset="UTF-8"><script src="/preview.js"></script><style>body{margin:0;padding:28px;background:#fffaef;color:#141111;font:14px/1.6 system-ui}h1{font-size:22px}select{padding:8px;border:1px solid;border-radius:6px;background:#fffdf8;font:inherit}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:24px;max-width:1000px;margin-top:24px}.card img{display:block;width:100%;height:auto;border-radius:16px}.card p{margin:8px 0}button{font:inherit}</style></head><body><h1>收集参考图 · 交互预览</h1><button type="button" onclick="chrome.runtime.sendMessage({type:'alchemy:select'})">打开示例面板</button><p>示例数据，不保存真实图片、不调用 Codex。将鼠标移到图片，点击 Reframe logo，展开图片图标（立即逆向）、加号（加入 Reframe）与分栏窗口（打开工作台）；按钮始终位于图片内。</p><label>模拟结果 <select id="collect-outcome"><option value="success">正常保存</option><option value="slow">慢速保存</option><option value="failed">保存失败</option></select></label><div class="grid">${[image, ...["#27ccf3", "#fe7da8"].map(color => `data:image/svg+xml;base64,${Buffer.from(svg.replaceAll("#5b6f4c", color)).toString("base64")}`)].map((src, index) => `<div class="card"><img width="320" height="400" alt="示例参考图 ${index + 1}" src="${src}"><p>参考图 ${index + 1} · 再次点击可验证去重反馈</p></div>`).join("")}</div><script src="/content-scripts/content.js"></script></body></html>`);
       return;
     }
     const file = resolve(root, "." + (path === "/" ? "/popup.html" : path));

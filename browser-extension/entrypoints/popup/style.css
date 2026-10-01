@@ -1,4 +1,9 @@
 @import "./motion.css";
+@import "./multi-subject.css";
+@import "./image-file-actions.css";
+@import "./generation-ratio.css";
+@import "./image-viewer.css";
+@import "./task-center.css";
 /* Raft's cream, ink, bright accents and offset shadows, scaled for a narrow tool. */
 :root, :host {
   --paper: #fffaef;

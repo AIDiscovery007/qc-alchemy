@@ -7,14 +7,15 @@ const viewport = rect(0, 0, 900, 800);
 const boxes = (trigger, offsets) => offsets.map(({ x, y }) => rect(trigger.left + x, trigger.top + y, 40, 40));
 const overlaps = (a, b) => a.left < b.right + 6 && a.right > b.left - 6 && a.top < b.bottom + 6 && a.bottom > b.top - 6;
 function verify(image, trigger, offsets, view = viewport) {
-  assert.ok(offsets, 'two actions must fit');
+  assert.ok(offsets, 'three actions must fit');
+  assert.equal(offsets.length, 3);
   const actions = boxes(trigger, offsets);
   for (const action of actions) {
     assert.ok(action.left >= Math.max(image.left, view.left) + 8 && action.right <= Math.min(image.right, view.right) - 8);
     assert.ok(action.top >= Math.max(image.top, view.top) + 8 && action.bottom <= Math.min(image.bottom, view.bottom) - 8);
     assert.ok(!overlaps(action, trigger));
   }
-  assert.ok(!overlaps(...actions));
+  actions.forEach((action, index) => actions.slice(index + 1).forEach(other => assert.ok(!overlaps(action, other))));
 }
 
 test('top, bottom, left and right edge triggers fan inward', () => {
@@ -26,7 +27,7 @@ test('top, bottom, left and right edge triggers fan inward', () => {
   }
 });
 
-test('corner triggers keep both circles inside the image', () => {
+test('corner triggers keep all three circles inside the image', () => {
   const image = rect(20, 20, 300, 400);
   for (const x of [30, 270]) for (const y of [30, 370]) {
     const trigger = rect(x, y, 40, 40);
