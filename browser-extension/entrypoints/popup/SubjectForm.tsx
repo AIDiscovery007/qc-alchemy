@@ -10,7 +10,7 @@ const defaultPrompts = {
   reenact: "以图 1 为主体，以图 2 为风格参考模板，生成基于图 1 的风格转换与主体重演提示词。",
 };
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, instruction, onInstructionChange, status, onCancel, workspace = false }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, onSwap, instruction, onInstructionChange, status, onCancel, workspace = false }: {
   workspace?: boolean;
   status?: string;
   onCancel?: () => void;
@@ -26,6 +26,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   onSubjectChange: (image: string) => void;
   onSubmit: (input: SubjectInput) => void;
   onExtract?: () => void;
+  onSwap: (instruction: string) => void;
 }) {
   const style = mode === "style";
   const defaultPrompt = defaultPrompts[mode];
@@ -64,6 +65,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
 
   return (
     <section className="reenact-form" hidden={!active} aria-label={`${style ? "提取风格" : "主体重演"}输入`}>
+      <div className="swappable-images">
       {workspace ? <div className="workspace-inputs">
         <ImageInput image={subjectImage} label="图 1 · 主体" caption="保留身份与结构" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
         <ImageInput image={selection.image} label="图 2 · 参考" caption={style ? "提取视觉语言" : "重演画面"} alt="图 2：原始参考模板" />
@@ -82,6 +84,8 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
           {selection.capture === "screenshot" && <span className="input-source">屏幕截取</span>}
         </div>
       </div>}
+      <button type="button" className="image-swap" aria-label="互换主体图与参考图" title="互换主体图与参考图" disabled={disabled || uploading || !subjectImage || !selection.image} onClick={() => onSwap(basePrompt)}><Icon name="swap" /></button>
+      </div>
       {error && <div className="error" role="alert">{error}</div>}
       {selection.subjectError && !subjectImage && <p className="fine">{selection.subjectError}</p>}
       <label className="prompt-label" htmlFor={`${mode}-prompt`}>任务指令</label>

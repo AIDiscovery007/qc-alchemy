@@ -63,6 +63,10 @@ p { margin: 8px 0 14px; }
 .mode-switch button:nth-child(3).active { background: var(--cyan); }
 .mode-switch .active small { color: var(--ink); }
 .reenact-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+.swappable-images { display: flex; flex-direction: column; gap: 8px; }
+.swappable-images .reenact-images { margin: 0; }
+.image-swap { order: -1; align-self: flex-end; display: grid; place-items: center; width: 32px; height: 32px; padding: 6px; border: 1px solid var(--ink); border-radius: 8px; background: var(--paper); }
+.image-swap:disabled { opacity: .45; box-shadow: none; }
 .input-image { min-width: 0; padding: 10px; border: 1px solid var(--ink); border-radius: 12px; background: var(--surface); }
 .input-image strong { display: block; font-size: 11px; margin-bottom: 9px; }
 .input-image img, .image-placeholder { display: block; width: 100%; height: 140px; object-fit: contain; background: #f0ece3; border-radius: 4px; }

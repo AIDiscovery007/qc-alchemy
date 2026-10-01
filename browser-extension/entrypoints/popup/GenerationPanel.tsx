@@ -1,5 +1,6 @@
 import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
+import ImageViewer from "./ImageViewer";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { request } from "../../lib/client";
@@ -166,7 +167,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     {modal && <dialog className={`result-dialog modal${modal.kind === "zoom" ? " zoom-modal" : ""}`} ref={zoomDialog} aria-label={modal.kind === "zoom" ? "图片预览" : "本次生成信息"}
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
       <div className="modal-head"><img src={logo} alt="" /><h2>{modal.kind === "zoom" ? "图片预览" : "本次生成信息"}</h2><button className="close-btn" aria-label="关闭窗口" onClick={() => setModal(undefined)}>×</button></div>
-      {modal.kind === "zoom" ? <div className="zoom-image"><img src={modal.image} alt="生成结果大图" /></div> : <div className="generation-details">
+      {modal.kind === "zoom" ? <ImageViewer src={modal.image} alt="生成结果大图" /> : <div className="generation-details">
         <p className="hint">模型：{modal.generation.model || job.model || "未记录"} · 语言：{modal.generation.language === "zh" ? "中文" : "英文"}</p>
         <p className="hint">输入：{job.mode === "recreate" ? "纯文字，不附参考图" : multi ? `${modal.generation.subjects?.length || 0} 张主体图 + 参考模板` : "生成时的主体图 + 参考图"}</p>
         <div className="prompt-box"><div className="prompt-text">{modal.generation.prompt || "此记录未保存提示词快照。"}</div><div className="negative"><p>排除项：{modal.generation.negativePrompt || "无"}</p></div></div>

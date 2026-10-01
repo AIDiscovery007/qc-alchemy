@@ -1,4 +1,5 @@
 const paths = {
+  swap: "M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4",
   compare: "M12 3v18M4 5h4v14H4zM16 5h4v14h-4z",
   grid: "M3 3h6v6H3V3ZM15 3h6v6h-6V3ZM3 15h6v6H3v-6ZM15 15h6v6h-6v-6Z",
   clock: "M12 8v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",

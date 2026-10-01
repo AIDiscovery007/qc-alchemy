@@ -52,6 +52,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [versions, setVersions] = useState<Record<string, string>>({});
   const [references, setReferences] = useState<Record<string, Selection>>({});
   const [multiSubjectDrafts, setMultiSubjectDrafts] = useState<Record<string, MultiSubject[]>>({});
+  const [swappedSubjectId, setSwappedSubjectId] = useState("");
   const [subjectDrafts, setSubjectDrafts] = useState<Record<string, string>>({});
   const [promptDrafts, setPromptDrafts] = useState<Record<string, PromptDraft>>({});
   const [savingPrompt, setSavingPrompt] = useState("");
@@ -78,6 +79,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const modeJobs = (mode: Mode) => activeProject?.jobs.filter((item) => item.mode === mode) || [];
   const modeJob = (mode: Mode) => {
     const jobs = modeJobs(mode);
+    if (versions[`${activeProject?.id}:${mode}`] === "new") return undefined;
     return jobs.find((item) => item.id === versions[`${activeProject?.id}:${mode}`]) || jobs[0];
   };
   const subjectKey = (mode: Mode) => `${selection?.projectId || selection?.id}:${mode}`;
@@ -246,7 +248,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       const next = await request<Selection>({ type: "alchemy:upload-reference", image });
       if (keepComposition && next.projectId) {
         const target = await request<Project>({ type: "alchemy:project", id: next.projectId });
-        const targetJob = target.jobs.find(item => item.id === versions[`${next.projectId}:multi-reenact`] && item.mode === "multi-reenact") || target.jobs.find(item => item.mode === "multi-reenact");
+        const version = versions[`${next.projectId}:multi-reenact`];
+        const targetJob = version === "new" ? undefined : target.jobs.find(item => item.id === version && item.mode === "multi-reenact") || target.jobs.find(item => item.mode === "multi-reenact");
         const key = `${next.projectId}:multi-reenact:${targetJob?.id || "new"}`;
         setMultiSubjectDrafts(items => ({ ...items, [key]: multiSubjects }));
         setInstructions(items => ({ ...items, [key]: multiPrompt }));
@@ -254,6 +257,27 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       selectionRevision.current++;
       setSelection(next); setHistoryOpen(false); setMobilePane("edit"); setNewProjectOpen(false);
     } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const swapImages = async (mode: "style" | "reenact" | "multi-reenact", instruction: string, subjectId?: string) => {
+    const image = mode === "multi-reenact" ? multiSubjects.find(item => item.id === subjectId)?.subjectImage : subjectImage(mode);
+    if (blocked || !selection?.image || !image) return;
+    setBusy(true); setError("");
+    try {
+      const blob = await (await fetch(selection.image)).blob();
+      const subject = blob.size <= 2 * 1024 * 1024 ? selection.image : await normalizeImage(blob, 2 * 1024 * 1024);
+      const next = await request<Selection>({ type: "alchemy:upload-reference", image });
+      const key = `${next.projectId}:${mode}`;
+      setVersions(items => ({ ...items, [key]: "new" }));
+      if (mode === "multi-reenact") {
+        setMultiSubjectDrafts(items => ({ ...items, [`${key}:new`]: multiSubjects.map(item => item.id === subjectId
+          ? { ...item, subjectImage: subject, role: "自动", detail: "" } : item) }));
+        setSwappedSubjectId(subjectId!);
+      } else setSubjectDrafts(items => ({ ...items, [key]: subject }));
+      setInstructions(items => ({ ...items, [mode === "multi-reenact" ? `${key}:new` : key]: instruction }));
+      selectionRevision.current++;
+      setSelection(next); setHistoryOpen(false); setMobilePane("edit");
+    } catch (e) { setError((e as Error).message || "无法互换图片，请重试"); }
     finally { setBusy(false); }
   };
   const updateJob = (updated: Job) => {
@@ -401,8 +425,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     : restoring ? "正在恢复原图…" : loadingProject ? "正在读取模板项目…" : cliBusy ? "Codex 正在升级…"
     : modelBusy ? "正在验证模型…" : busy ? "正在提交…" : undefined;
 
-  const versionSelector = modeJobs(preferences.mode).length > (workspace ? 0 : 1) && <SelectField className={workspace ? "version-select" : undefined} label={workspace ? "" : "提示词版本"} aria-label="提示词版本" value={job?.id} disabled={busy}
+  const newVersion = versions[`${activeProject?.id}:${preferences.mode}`] === "new";
+  const versionSelector = modeJobs(preferences.mode).length > (workspace || newVersion ? 0 : 1) && <SelectField className={workspace ? "version-select" : undefined} label={workspace ? "" : "提示词版本"} aria-label="提示词版本" value={job?.id || "new"} disabled={busy}
               onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
+              {newVersion && <option value="new">待逆向</option>}
               {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>{workspace ? `版本 ${items.length - i}${i === 0 ? " · 最新" : ""}` : `第 ${items.length - i} 次 · ${new Date(item.createdAt).toLocaleString("zh-CN")} · ${laneStatus(item)}`}</option>)}
             </SelectField>;
   const multiPreview = preferences.mode === "multi-reenact" ? <MultiInputPreview image={selection?.image} subjects={multiSubjects} /> : undefined;
@@ -616,16 +642,17 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
+                onSwap={instruction => void swapImages(mode, instruction)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
-            {selection && <MultiSubjectForm key={multiKey} image={selection.image} subjects={multiSubjects} instruction={multiPrompt}
+            {selection && <MultiSubjectForm key={multiKey} image={selection.image} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
               active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
               submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
               onInstruction={value => setInstructions(items => ({ ...items, [multiKey]: value }))}
-              onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} />}
+              onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : preferences.mode === "multi-reenact" ? "提示词待生成" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : preferences.mode === "multi-reenact" ? "提示词待生成" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
               {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 

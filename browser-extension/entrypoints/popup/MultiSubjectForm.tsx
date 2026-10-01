@@ -8,13 +8,14 @@ import "./multi-subject.css";
 
 export const multiInstruction = "将各主体融合在同一画面中，重演参考模板的画风、构图、姿态与光影，保留每张主体图指定的特征。";
 
-export default function MultiSubjectForm({ image, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference }: {
+export default function MultiSubjectForm({ image, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onSwap, initialSelectedId = "" }: {
   image?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
   status?: string; submitting: boolean; hasPrompt: boolean; stale: boolean;
   onChange(subjects: MultiSubject[]): void; onInstruction(value: string): void;
   onSubmit(input: SubjectInput): void; onCancel?: () => void; onReference?: (file: File) => void;
+  onSwap(id: string): void; initialSelectedId?: string;
 }) {
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(initialSelectedId);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const upload = useRef<HTMLInputElement>(null);
@@ -65,6 +66,7 @@ export default function MultiSubjectForm({ image, subjects, instruction, active,
         {item.subjectImage ? <img src={item.subjectImage} alt={`主体 ${i + 1}`} width="88" height="88" /> : <small>{uploading ? "读取中" : "待上传"}</small>}<span>{i + 1}</span>
       </button>)}<button className="add-subject" disabled={locked || subjects.length >= 6} aria-label="添加主体图" title="添加主体图" onClick={() => upload.current?.click()}><Icon name="plus" /><span>添加主体图</span></button></div>
       {current && <div className="selected-subject"><div className="subject-meta"><strong>主体 {index + 1}</strong><div className="subject-actions">
+        <button type="button" aria-label={`互换主体 ${index + 1} 与参考模板`} title="与参考模板互换" disabled={locked || !image || !current.subjectImage} onClick={() => onSwap(current.id)}><Icon name="swap" /></button>
         <button disabled={locked} onClick={() => { replacing.current = current.id; replace.current?.click(); }}>更换</button>
         <button aria-label={`主体 ${index + 1} 前移`} disabled={locked || index === 0} onClick={() => move(-1)}>←</button>
         <button aria-label={`主体 ${index + 1} 后移`} disabled={locked || index === subjects.length - 1} onClick={() => move(1)}>→</button>

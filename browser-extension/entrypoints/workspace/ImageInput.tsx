@@ -2,6 +2,7 @@ import { showMotionDialog } from "../../lib/motion-dialog";
 import { useEffect, useRef, useState } from "react";
 import { logo } from "../../lib/brand";
 import Icon from "../popup/Icon";
+import ImageViewer from "../popup/ImageViewer";
 
 export default function ImageInput({ image, label, caption, alt, disabled, uploading, onUpload }: {
   image?: string; label: string; caption: string; alt: string; disabled?: boolean; uploading?: boolean;
@@ -22,6 +23,6 @@ export default function ImageInput({ image, label, caption, alt, disabled, uploa
       {onUpload && <input ref={file} type="file" hidden accept="image/png,image/jpeg,image/webp" aria-label="上传主体图" onChange={(event) => { onUpload(event.target.files?.[0]); event.target.value = ""; }} />}
     </div>
     <div className="workspace-input-caption"><strong>{label}</strong><span>{caption}</span></div>
-    {expanded && <dialog ref={dialog} className="result-dialog modal zoom-modal" aria-label={`${label}大图`} onCancel={(event) => { event.preventDefault(); setExpanded(false); }}><div className="modal-head"><img src={logo} alt="" /><h2>图片预览</h2><button className="close-btn" aria-label="关闭窗口" autoFocus onClick={() => setExpanded(false)}>×</button></div><div className="zoom-image"><img src={image} alt={alt} /></div></dialog>}
+    {expanded && <dialog ref={dialog} className="result-dialog modal zoom-modal" aria-label={`${label}大图`} onCancel={(event) => { event.preventDefault(); setExpanded(false); }}><div className="modal-head"><img src={logo} alt="" /><h2>图片预览</h2><button className="close-btn" aria-label="关闭窗口" autoFocus onClick={() => setExpanded(false)}>×</button></div><ImageViewer src={image!} alt={alt} /></dialog>}
   </div>;
 }
