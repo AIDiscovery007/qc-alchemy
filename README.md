@@ -12,7 +12,7 @@
 
 | 01 · 你的主体 | 02 · 参考模板 | 03 · Codex 生成 |
 | :---: | :---: | :---: |
-| ![主体原图：黑发人物](browser-extension/docs/gallery/urban-poster/subject.png) | ![参考模板：巨型字形都市海报](browser-extension/docs/gallery/urban-poster/reference.png) | ![主体重演结果：巨型字形都市海报](browser-extension/docs/gallery/urban-poster/result.png) |
+| <img src="browser-extension/docs/gallery/urban-poster/subject.png" width="260" alt="主体原图：黑发人物" /> | <img src="browser-extension/docs/gallery/urban-poster/reference.png" width="260" alt="参考模板：巨型字形都市海报" /> | <img src="browser-extension/docs/gallery/urban-poster/result.png" width="260" alt="主体重演结果：巨型字形都市海报" /> |
 
 **[都市海报 · 查看完整 Prompt →](browser-extension/docs/gallery/urban-poster/README.md)**　插件内逆向，并调用 Codex imagegen 生成。
 
