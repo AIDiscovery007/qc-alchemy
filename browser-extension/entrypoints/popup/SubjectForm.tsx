@@ -72,8 +72,8 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
     <section className="reenact-form" hidden={!active} aria-label={`${style ? "提取风格" : "主体重演"}输入`}>
       <div className="swappable-images">
       {workspace ? <div className="workspace-inputs">
-        <ImageInput image={subjectImage} rotation={subjectRotation} label="图 1 · 主体" caption="保留身份与结构" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
-        <ImageInput image={selection.image} rotation={referenceRotation} label="图 2 · 参考" caption={style ? "提取视觉语言" : "重演画面"} alt="图 2：原始参考模板" />
+        <ImageInput image={subjectImage} rotation={subjectRotation} label="图 1 · 主体" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
+        <ImageInput image={selection.image} rotation={referenceRotation} label="图 2 · 参考" alt="图 2：原始参考模板" />
       </div> : <div className="reenact-images">
         <div className="input-image">
           <strong>图 1 · 主体</strong>

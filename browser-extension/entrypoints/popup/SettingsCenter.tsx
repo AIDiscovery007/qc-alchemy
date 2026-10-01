@@ -96,17 +96,17 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
   return <dialog ref={dialog} className="settings-center" aria-labelledby="settings-center-title" onCancel={(e) => { e.preventDefault(); onClose(); }}>
     <div className="settings-center-heading"><img src={logo} alt="" /><h2 id="settings-center-title">设置中心</h2><button className="settings-close" aria-label="关闭设置" onClick={onClose}>×</button></div>
     <div className="settings-center-body">
-      <nav className="settings-center-nav" aria-label="设置分类"><small>工作环境</small>
+      <nav className="settings-center-nav" aria-label="设置分类">
         {Object.entries(sections).map(([key, label]) => <button key={key} aria-current={section === key ? "page" : undefined} onClick={() => setSection(key as keyof typeof sections)}>{label}</button>)}
       </nav>
       <div className="settings-center-content">
         {section === "cli" && <section aria-labelledby="cli-title">
-          <h3 id="cli-title">本机 Codex</h3><p className="settings-sub">让模型和本机能力保持同步。</p>
+          <h3 id="cli-title">本机 Codex</h3>
           <div className="settings-update-top"><strong>Codex CLI</strong><span className={`settings-chip ${connected && cli?.installed ? "good" : "attention"}`}>{!connected ? "无法检测" : cli ? sources[cli.source] : "检测中"}</span></div>
           <div className="settings-update-card">
             <div className="settings-update-top"><strong>{status}</strong>{cli?.updateAvailable && <span className="settings-chip attention">稳定版</span>}</div>
             {cli?.installed && <div className="settings-version-pair">{cli.updateAvailable && cli.latestVersion ? <><span>{cli.version}</span><span>→</span><strong>{cli.latestVersion}</strong></> : <strong>{cli.version || "版本未知"}</strong>}</div>}
-            <p className="settings-operation-status" role="status">{!connected ? "启动本机服务并连接后，才能检测和管理 Codex。" : !cli ? "正在检测本机安装…" : updating ? `${cli.operation?.stage || "正在升级…"} 关闭设置后仍会继续。` : serviceBusy ? "请等待当前逆向、生图或模型验证完成后升级。" : cli.reason || (cli.source === "app" ? "此 CLI 随桌面 App 更新。请在对应 App 中检查更新。" : !cli.installed ? "安装并登录 Codex CLI 后重新检测。" : cli.operation?.status === "completed" ? "版本检查通过，可前往插件模型刷新列表并验证。" : cli.updateAvailable ? "更新后检查 CLI 可用性，并刷新插件模型列表。" : "插件使用下方安装位置的 Codex CLI。")}</p>
+            <p className="settings-operation-status" role="status">{!connected ? "启动本机服务并连接后，才能检测和管理 Codex。" : !cli ? "正在检测本机安装…" : updating ? `${cli.operation?.stage || "正在升级…"} 关闭设置后仍会继续。` : serviceBusy ? "请等待当前逆向、生图或模型验证完成后升级。" : cli.reason || (cli.source === "app" ? "此 CLI 随桌面 App 更新。请在对应 App 中检查更新。" : !cli.installed ? "安装并登录 Codex CLI 后重新检测。" : cli.operation?.status === "completed" ? "版本检查通过，可前往插件模型刷新列表并验证。" : "")}</p>
             {cli?.updateAvailable && cli.canUpdate && cli.command && <code className="settings-command">{cli.command}</code>}
             {cli?.operation?.status === "failed" && <div className="settings-info settings-error" role="alert">{cli.operation.error || cli.operation.stage}</div>}
             {!connected ? <button className="primary" onClick={() => setSection("connection")}>前往连接</button> : cli?.updateAvailable && cli.canUpdate ? <button className="primary" disabled={blocked || serviceBusy} onClick={() => void act("update")}>{updating || pending === "update" ? "正在升级…" : `一键升级至 ${cli.latestVersion}`}</button> : <button className="primary" disabled={blocked || !cli} onClick={() => void act("check")}>{pending === "check" ? "正在检测…" : updating ? "正在升级…" : "重新检测"}</button>}
@@ -115,16 +115,16 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
             <div className="settings-row"><span className="settings-label">当前使用的安装</span><strong>{sources[cli.source]}</strong></div>
             <div className="settings-row"><span className="settings-label">最近检测安装</span><span>{cli.detectedAt ? new Date(cli.detectedAt).toLocaleString() : "尚未检测"}　<button disabled={blocked} onClick={() => void act("check")}>{pending === "check" ? "正在检测…" : "重新检测"}</button></span></div>
             <div className="settings-row"><span>自动检查更新</span><span className="settings-label">{cli.command ? "每天一次" : "由原安装方式管理"}</span></div>
-            <p className="fine">{cli.command ? `使用设置中心时，每天自动检查一次更新；升级由你手动发起。${cli.checkedAt ? `最近检查：${new Date(cli.checkedAt).toLocaleString()}。` : ""}` : "可重新检测本机安装；此安装方式暂不支持在插件内检查和升级。"}</p>
+            <p className="fine">{cli.command ? (cli.checkedAt ? `最近检查：${new Date(cli.checkedAt).toLocaleString()}` : "") : "可重新检测本机安装；此安装方式暂不支持在插件内检查和升级。"}</p>
             <details className="settings-detail"><summary>安装位置与诊断信息</summary><code>{cli.executable || "未检测到可执行文件"}<br />当前版本 · {cli.version || "未知"}</code></details>
             {cli.checkError && <div className="settings-info settings-error" role="alert">检查更新失败：{cli.checkError}</div>}
           </>}
           <p className="settings-check-notice fine" role="status">{notice}</p>
           {(error || loadError) && <div className="settings-info settings-error" role="alert">{error || loadError}</div>}
         </section>}
-        {section === "models" && <section aria-label="模型设置">{connected ? <ModelSettings wide onCheckCli={() => setSection("cli")} key={cli?.operation?.finishedAt || "initial"} serviceBusy={serviceBusy || updating || !!pending} /> : <><h3>选择创作模型</h3><p className="settings-sub">逆向与生图使用同一模型，仅影响本插件。</p><div className="settings-info">连接本机服务后，可选择并验证模型。</div><button className="primary" onClick={() => setSection("connection")}>前往连接</button></>}</section>}
+        {section === "models" && <section aria-label="模型设置">{connected ? <ModelSettings wide onCheckCli={() => setSection("cli")} key={cli?.operation?.finishedAt || "initial"} serviceBusy={serviceBusy || updating || !!pending} /> : <><h3>选择创作模型</h3><div className="settings-info">连接本机服务后，可选择并验证模型。</div><button className="primary" onClick={() => setSection("connection")}>前往连接</button></>}</section>}
         {section === "connection" && <section aria-labelledby="connection-title">
-          <h3 id="connection-title">连接你的电脑</h3><p className="settings-sub">通过本机服务使用 Codex，图片和项目保存在本地。</p>
+          <h3 id="connection-title">连接你的电脑</h3>
           <span className={`settings-chip ${connected ? "good" : "attention"}`}>{connected ? "本机服务已连接" : "服务未连接"}</span>
           <div className="settings-row settings-service-row"><span className="settings-label">服务地址</span><code>127.0.0.1:43187</code></div>
           <div className="settings-row"><span className="settings-label">Codex 安装</span><span>{!connected ? "连接后检测" : cli?.installed ? `已检测到 ${cli.version || "CLI"}` : "尚未找到可用 CLI"}</span></div>
@@ -133,16 +133,13 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
             <button className="primary" disabled={!!pending || !token.trim()}>{pending === "connect" ? "正在连接…" : "连接 Codex"}</button>
           </form>
           {pairError && <div className="settings-info settings-error" role="alert">{pairError}</div>}
-          <p className="fine">配对码仅用于连接本机服务。</p>
           <details className="settings-detail" open={!connected}><summary>如何启动本机服务？</summary><p className="fine">在插件目录打开终端，启动服务，再获取配对码。</p><code>npm start<br />npm run pair</code></details>
         </section>}
         {section === "storage" && <section aria-labelledby="storage-title">
-          <h3 id="storage-title">本地数据</h3><p className="settings-sub">插件数据统一保存在本机服务目录的 .local 中。</p>
-          <dl className="settings-facts"><div><dt>图片</dt><dd><code>images/</code><span>按内容去重，多任务共享引用。</span></dd></div><div><dt>项目与任务</dt><dd><code>records/</code><span>提示词版本、生图记录与任务状态。</span></dd></div><div><dt>配对与设置</dt><dd><code>config/</code><span>配对信息与插件模型选择。</span></dd></div><div><dt>运行文件</dt><dd><code>logs/ · runtime/</code><span>服务日志与启动锁。</span></dd></div></dl>
-          <p className="settings-info">在项目记录中删除项目后，仅回收不再被引用的插件图片副本；用户原始文件保留。</p>
+          <h3 id="storage-title">本地数据</h3>
+          <dl className="settings-facts"><div><dt>图片</dt><dd><code>.local/images/</code></dd></div><div><dt>项目与任务</dt><dd><code>.local/records/</code></dd></div><div><dt>配对与设置</dt><dd><code>.local/config/</code></dd></div><div><dt>运行文件</dt><dd><code>.local/logs/ · .local/runtime/</code></dd></div></dl>
         </section>}
       </div>
     </div>
-    <div className="settings-center-footer">仅影响后续任务 · 配对信息与插件设置保存在本地</div>
   </dialog>;
 }

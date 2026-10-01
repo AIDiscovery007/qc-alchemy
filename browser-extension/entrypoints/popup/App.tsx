@@ -615,7 +615,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               <section className="empty">
                 <span className="empty-mark"><Icon name="image" /></span>
                 <h1>选择一张参考图</h1>
-                <p>将鼠标移到网页图片上，点击「逆向风格」。</p>
               </section>
             )}
 
@@ -632,7 +631,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 disabled={savingMode || busy}
                 onClick={() => saveMode("style")}
               >
-                提取风格<span>保留主体，换风格</span>{activeProject && <small>{laneStatus(modeJob("style"))}</small>}
+                提取风格{activeProject && <small>{laneStatus(modeJob("style"))}</small>}
               </button>
               <button
                 className={preferences.mode === "recreate" ? "active" : ""}
@@ -640,12 +639,12 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 disabled={savingMode || busy}
                 onClick={() => saveMode("recreate")}
               >
-                完整复刻<span>保留内容与构图</span>{activeProject && <small>{laneStatus(modeJob("recreate"))}</small>}
+                完整复刻{activeProject && <small>{laneStatus(modeJob("recreate"))}</small>}
               </button>
               <button className={preferences.mode === "reenact" ? "active" : ""}
                 aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
                 onClick={() => saveMode("reenact")}>
-                主体重演<span>换主体，演原图</span>{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
+                主体重演{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
               <button className={preferences.mode === "multi-reenact" ? "active" : ""} aria-pressed={preferences.mode === "multi-reenact"} disabled={savingMode || busy} onClick={() => saveMode("multi-reenact")}>
                 多图重演{activeProject && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
@@ -653,7 +652,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             </div>
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection?.image && preferences.mode === "recreate" && (
-              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
+              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} label="风格参考图" alt="本次选择的参考图片" /></div> : <figure className="image-card">
                 <ImagePreview src={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
@@ -713,7 +712,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : preferences.mode === "multi-reenact" ? "提示词待生成" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
               {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 
@@ -756,7 +755,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                       <textarea rows={3} maxLength={20000} disabled={!!savingPrompt} value={promptDraft.negativePrompt}
                         onChange={(e) => setPromptDrafts((items) => ({ ...items, [activeJob.id]: { ...promptDraft, negativePrompt: e.target.value } }))} />
                     </label>
-                    <p className="fine">中英文分别编辑，不会自动翻译。保存后用于后续生图与导出。</p>
                     {(!promptDraft.promptZh.trim() || !promptDraft.promptEn.trim()) && <p className="fine">中英文提示词都不能为空。</p>}
                     <div className="prompt-actions">
                       <button className="secondary" disabled={!connected || !!savingPrompt || !promptDraft.promptZh.trim() || !promptDraft.promptEn.trim()} onClick={savePrompt}>
@@ -786,7 +784,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       </main>
       {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
       </div>
-      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张 · 当前提示词版本"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
+      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
       </div>
       </div>
     </div>

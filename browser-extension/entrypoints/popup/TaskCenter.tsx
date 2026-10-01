@@ -108,10 +108,10 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
       <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>
     <div className="task-list">
-      <p className="hint task-scope" role="status">{loaded ? "任务可跨项目并行执行，关闭此窗口不会取消。显示进行中的任务及最近 30 个逆向版本；更早记录可在项目中查看。" : "正在读取任务…"}</p>
+      {!loaded && <p className="hint task-scope" role="status">正在读取任务…</p>}
       {error && <div className="error" role="alert">{error}</div>}
       {actionError && <div className="error" role="alert">{actionError}</div>}
-      {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>没有任务在排队。</h3><p>回到项目，发起一次逆向或生图。</p></div>}
+      {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>没有任务在排队。</h3></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>
         <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} loadImage={async () => (await request<{ image: string }>({ type: job.projectId ? "alchemy:project-reference" : "alchemy:reference", id: job.projectId || job.id })).image} />
         <div className="task-meta"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>

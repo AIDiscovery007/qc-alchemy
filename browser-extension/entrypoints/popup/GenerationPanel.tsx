@@ -142,7 +142,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   const copyNotice = copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>;
 
   if (workspace) return <section className="generated-pane" aria-label="图片生成">
-    <div className="result-toolbar"><h2>{!generation && inputPreview ? "输入预览" : "生成结果"} <small>{!generation && inputPreview ? `${(subjects?.length || 0) + 1} 张` : `${generations.filter(item => item.status === "completed").length} 张 · 当前提示词版本`}</small></h2>
+    <div className="result-toolbar"><h2>{!generation && inputPreview ? "输入预览" : "生成结果"} <small>{!generation && inputPreview ? `${(subjects?.length || 0) + 1} 张` : `${generations.filter(item => item.status === "completed").length} 张`}</small></h2>
       <div className="result-toolbar-actions"><button className="quiet-button" disabled={!image} aria-pressed={compare} onClick={() => setCompare(!compare)}><ResultIcon name="compare" />{compare ? "退出对照" : "对照原图"}</button>
         {running && <button className="quiet-button" disabled={busy} onClick={() => act(true)} aria-label="取消生图" title="取消生图"><span aria-hidden="true">×</span></button>}</div></div>
     {action}
@@ -177,8 +177,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   return <section className="generation-card" aria-label="图片生成">
     <div className="generation-heading"><h2><Icon name="image" />{generations.length ? "生成结果" : "图片待生成"}</h2></div>
     {(generic || incomplete) && <p className="fine">请先上传主体图，生成专属提示词。</p>}
-    {job.mode === "recreate" && <p className="fine">仅使用提示词生成图片，不附参考图。</p>}
-    {job.mode !== "recreate" && !multi && !generic && !incomplete && <p className="fine">{subjectImage ? "使用当前主体图与当前提示词生图，更换主体后无需重新逆向。" : "请先上传可用的主体图。"}</p>}
+    {job.mode !== "recreate" && !multi && !generic && !incomplete && !subjectImage && <p className="fine">请先上传可用的主体图。</p>}
     {multi && warning && <p className="fine">{warning}</p>}
     {action}
     {error && <div className="error" role="alert">{error}</div>}

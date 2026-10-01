@@ -69,7 +69,6 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   return <section className={`history${workspace ? " workspace-project-library" : ""}`}>
     {workspace ? <h2 ref={heading} className="workspace-library-heading" tabIndex={-1}>项目记录</h2> : <h1 ref={heading} tabIndex={-1}>项目记录</h1>}
     {workspace && <div className="workspace-library-toolbar">
-      <p>每个项目收纳同一张参考图，以及四条路径下的提示词和生成结果。</p>
       <div>{searchTarget ? createPortal(searchInput, searchTarget) : searchInput}
       {!!projects.length && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}</div>
     </div>}
@@ -91,7 +90,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
     </div>}
     <p className="history-notice" role="status">{notice}</p>
     {error && !pending.length && <p className="error" role="alert">{error}</p>}
-    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "还没有待逆向的图片。浏览网页时点击「加入 Reframe」，稍后在这里开始逆向。" : "暂无可见项目。可点击小眼睛查看隐藏项目，或添加参考图。"}</p>}
+    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "暂无待逆向项目。" : "暂无可见项目。"}</p>}
     {!loading && !loadError && !visible.length && !!search.trim() && <p className="muted">{status ? "没有找到匹配的待逆向项目。" : "没有找到匹配的项目。"}</p>}
     <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : `共 ${total} 个${status ? "待逆向" : ""}项目 · 第 ${Math.min(page, pages)} / ${pages} 页`}</div>
     {loadError && <div className="error" role="alert">{loadError}<button className="text-button" onClick={onRetry}>重试</button></div>}

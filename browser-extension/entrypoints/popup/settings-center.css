@@ -9,17 +9,14 @@
 .settings-center .settings-close { border: 0; background: none; font-size: 21px; padding: 0 5px; }
 .settings-center-body { display: flex; flex: 1; min-height: 0; }
 .settings-center-nav { width: 174px; flex: none; padding: 25px 12px; background: var(--surface-muted); display: flex; flex-direction: column; gap: 8px; }
-.settings-center-nav small { font-size: 9px; color: var(--muted); padding: 0 12px 5px; letter-spacing: 1px; }
 .settings-center-nav > button { justify-content: flex-start; border: 1px solid transparent; border-radius: 8px; padding: 12px; background: none; font-size: 12px; text-align: left; }
 .settings-center-nav > button[aria-current] { background: var(--yellow); }
 .settings-center-content { flex: 1; min-width: 0; overflow: auto; padding: 30px; overscroll-behavior: contain; }
-.settings-center-content h3 { font-size: 20px; margin: 0 0 6px; }
-.settings-center-content .settings-sub { font-size: 11px; color: var(--muted); margin-bottom: 24px; }
+.settings-center-content h3 { font-size: 20px; margin: 0 0 24px; }
 .settings-center-content .primary { margin: 15px 0 0; font-size: 12px; }
 .settings-center-content .fine { font-size: 11px; margin: 10px 0; line-height: 1.7; }
 .settings-center-content .select-field { margin: 18px 0; }
 .settings-center-content .select-control select { background: var(--surface); }
-.settings-center-footer { font-size: 10px; color: var(--muted); padding: 10px 22px; flex: none; }
 .settings-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 4px 10px; font-size: 10px; background: var(--surface); white-space: nowrap; }
 .settings-chip.good::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #829949; }
 .settings-chip.attention { background: var(--yellow); }
@@ -50,13 +47,11 @@
 .settings-center .model-settings { margin: 0; padding: 0; border: 0; }
 .settings-center .settings-pair-label { display: grid; gap: 8px; margin-top: 18px; font-size: 11px; }
 .settings-center input[type=password] { padding: 12px; border: 1px solid var(--line); border-radius: 8px; width: 100%; background: var(--surface); }
-.settings-section-title { font-size: 10px; letter-spacing: 1px; color: var(--muted); margin: 28px 0 8px; }
 .settings-facts { margin: 16px 0; }
 .settings-facts > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 18px; padding: 13px 0; }
 .settings-facts dt { color: var(--muted); font-size: 11px; }
 .settings-facts dd { margin: 0; overflow-wrap: anywhere; }
 .settings-facts code { font-size: 10px; }
-.settings-facts dd > span { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
 @media (max-width: 860px) {
   .settings-center-nav { width: 155px; }
   .settings-center-content { padding: 23px; }
@@ -72,11 +67,11 @@
   .settings-update-top, .settings-row { flex-wrap: wrap; }
   .settings-center-content h3 { font-size: 18px; }
   .settings-model-feature { padding: 10px; }
-  .settings-center-content .settings-sub { font-size: 10px; }
   .settings-facts > div { grid-template-columns: 1fr; gap: 6px; }
 }
 
 .settings-operation-status { min-height:3.6em; }
+.settings-operation-status:empty { min-height:0; }
 .settings-check-notice { min-height:1.8em; }
 .model-settings .model-status { min-height:3.4em; }
 .model-settings .model-heading button, .model-settings .settings-row button { min-width:76px; }

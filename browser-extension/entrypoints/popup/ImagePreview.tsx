@@ -85,7 +85,6 @@ function PreviewDialog({ preview, rotation, onClose }: { preview: PreviewRequest
         <button type="button" disabled={!image || !!error || !!processing || rotation.disabled} onClick={() => void rotate(1)}>右转 90°</button>
         <button type="button" className="apply-rotation" disabled={!turned?.turns || !!error || !!processing || rotation.disabled} aria-busy={processing === "saving"} onClick={() => void apply()}>{processing === "saving" ? "正在应用…" : processing === "rotating" ? "正在旋转…" : "应用旋转"}</button>
       </div>
-      <p>应用后用于后续逆向与生图</p>
     </div>}
   </dialog>;
 }

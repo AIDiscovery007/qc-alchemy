@@ -99,7 +99,6 @@
 .workspace-image-wrap .workspace-image-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; position: absolute; right: 6px; bottom: 6px; background: #fffefaf2; border: 0; border-radius: 7px; padding: 5px 7px; font-size: 9px; }
 .workspace-input-caption { padding: 10px 4px; display: flex; align-items: center; justify-content: space-between; gap: 4px; background: var(--paper); }
 .workspace-input-caption strong { font-size: 10px; }
-.workspace-input-caption span { font-size: 9px; color: var(--muted); }
 .workspace-upload-empty { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; flex-direction: column; border: 0; background: var(--surface-muted); color: var(--muted); gap: 5px; font-size: 10px; }
 .workspace-upload-empty .ui-icon { width: 22px; height: 22px; }
 @media(min-width: 1500px) { .workspace-image-wrap { height: 185px; } }
