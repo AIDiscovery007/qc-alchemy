@@ -216,6 +216,7 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
     crypto,
     AbortSignal,
     TextEncoder,
+    URLSearchParams,
     fetch,
     ...globals,
   });
@@ -508,4 +509,97 @@ test("generation comparison references validate both IDs and retain authenticati
       assert.ok((await send({ type: "alchemy:generation-reference", id, generationId, [key]: invalid })).error);
   assert.equal(handlers.message({ type: "alchemy:generation-reference", id, generationId }, { ...sender, id: "other" }, () => assert.fail("untrusted generation reply")), undefined);
   assert.equal(calls.length, 1);
+});
+
+
+test("paged project reads encode filters, retain authentication and reject unbounded requests", async () => {
+  const calls = [];
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ items: [], revision: "revision 2/&" }) };
+  });
+  const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const id = "a".repeat(64);
+  assert.equal((await send({ type: "alchemy:projects", page: 3, limit: 24, q: "水彩 & /token?", token: "forged", path: "/token" })).ok, true);
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/projects");
+  assert.equal(url.searchParams.get("page"), "3");
+  assert.equal(url.searchParams.get("limit"), "24");
+  assert.equal(url.searchParams.get("q"), "水彩 & /token?");
+  assert.equal((await send({ type: "alchemy:project", id, revision: "revision 2/&" })).ok, true);
+  const detail = new URL(calls[1].url);
+  assert.equal(detail.pathname, `/projects/${id}`);
+  assert.equal(detail.searchParams.get("revision"), "revision 2/&");
+  for (const message of [
+    ...[0, -1, 1.5, "1", null, Number.MAX_SAFE_INTEGER + 1].map(page => ({ type: "alchemy:projects", page })),
+    ...[0, -1, 101, 2.5, "24", null].map(limit => ({ type: "alchemy:projects", limit })),
+    ...[null, {}, 42, "x".repeat(201)].map(q => ({ type: "alchemy:projects", q })),
+    ...[null, 42, "../token", "a".repeat(63)].map(id => ({ type: "alchemy:project", id })),
+    ...[null, 42, {}, "x".repeat(101)].map(revision => ({ type: "alchemy:project", id, revision })),
+    { type: "alchemy:query", path: "/projects?page=1&limit=1000000" },
+  ]) assert.ok((await send(message)).error);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(call => call.options.method === "GET" && call.options.headers.Authorization === "Bearer test"));
+  assert.equal(handlers.message({ type: "alchemy:projects" }, { ...sender, id: "other" }, () => assert.fail("untrusted page reply")), undefined);
+  chrome.storage.local.get = async () => ({});
+  assert.match((await send({ type: "alchemy:projects" })).error, /配对码/);
+  assert.equal(calls.length, 2);
+});
+
+test("thumbnail reads constrain project and generation endpoints without exposing credentials", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ image: "thumbnail" }) };
+  });
+  const sender = { id: "test", frameId: 0, url: "https://pinterest.com/", tab: { id: 4 } };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const projectId = "b".repeat(64), id = "00000000-0000-0000-0000-000000000001", generationId = "00000000-0000-0000-0000-000000000002";
+  assert.equal((await send({ type: "alchemy:project-thumbnail", id: projectId })).value.image, "thumbnail");
+  assert.equal((await send({ type: "alchemy:project-thumbnail", id: projectId, reference: true })).ok, true);
+  assert.equal((await send({ type: "alchemy:generation-thumbnail", id, generationId, path: "/token", token: "forged" })).ok, true);
+  assert.deepEqual(calls.map(call => new URL(call.url).pathname + new URL(call.url).search), [
+    `/projects/${projectId}/thumbnail`, `/projects/${projectId}/thumbnail?reference=1`, `/jobs/${id}/generations/${generationId}/thumbnail`,
+  ]);
+  for (const message of [
+    ...[null, "../token", id].map(id => ({ type: "alchemy:project-thumbnail", id })),
+    ...[null, "true", 1].map(reference => ({ type: "alchemy:project-thumbnail", id: projectId, reference })),
+    ...[null, 42, "../token", `${generationId}/image`].flatMap(invalid => [
+      { type: "alchemy:generation-thumbnail", id: invalid, generationId },
+      { type: "alchemy:generation-thumbnail", id, generationId: invalid },
+    ]),
+    { type: "alchemy:query", path: `/projects/${projectId}/thumbnail` },
+  ]) assert.ok((await send(message)).error);
+  assert.ok(calls.every(call => call.options.method === "GET" && call.options.headers.Authorization === "Bearer test"));
+  for (const type of ["alchemy:project-thumbnail", "alchemy:generation-thumbnail"])
+    assert.equal(handlers.message({ type, id: projectId }, { ...sender, id: "other" }, () => assert.fail("untrusted thumbnail reply")), undefined);
+  assert.equal(calls.length, 3);
+});
+
+test("local image actions accept only saved IDs and fixed actions from trusted extension UI", async () => {
+  const calls = [];
+  const { handlers } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ ok: true }) };
+  });
+  const id = "00000000-0000-0000-0000-000000000001";
+  const generationId = "00000000-0000-0000-0000-000000000002";
+  const message = { type: "alchemy:generation-file-action", id, generationId, action: "open", path: "/tmp/ignored.png" };
+  const workspace = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const content = { id: "test", frameId: 0, url: "https://example.com", tab: { id: 4 } };
+  const send = (value, sender = workspace) => new Promise(resolve => handlers.message(value, sender, resolve));
+  assert.equal((await send(message)).ok, true);
+  assert.equal((await send({ ...message, action: "reveal" }, content)).ok, true);
+  assert.deepEqual(calls.map(call => call.url), ["open", "reveal"].map(action => `http://127.0.0.1:43187/jobs/${id}/generations/${generationId}/${action}`));
+  for (const { options } of calls) {
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers.Authorization, "Bearer test");
+    assert.equal(options.body, "{}");
+  }
+  for (const value of [{ id: "../token" }, { generationId: 42 }, { action: "open/../../token" }, { action: "delete" }])
+    assert.ok((await send({ ...message, ...value })).error);
+  for (const sender of [{ ...workspace, id: "other" }, { ...content, frameId: 2 }, { id: "test", url: "https://example.com" }])
+    assert.equal(handlers.message(message, sender, () => assert.fail("untrusted message")), undefined);
+  assert.equal(calls.length, 2);
 });

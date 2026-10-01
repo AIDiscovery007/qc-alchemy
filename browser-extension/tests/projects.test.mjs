@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import { createBridge, decodeImage } from "../bridge/server.mjs";
-import { projectIdFor } from "../bridge/projects.mjs";
+import { createProjectStore, projectIdFor } from "../bridge/projects.mjs";
 
 test("deleting a project removes every lane and owned image, preserves others and stays deleted after restart", async (t) => {
   const { request, dir, restart } = await setup(t);
@@ -277,7 +277,8 @@ test("duplicate registration and restart retain a template with no extraction jo
   assert.equal((await (await request("/projects")).json()).length, 1);
   await restart();
   const restored = await (await request(`/projects/${first.id}`)).json();
-  assert.deepEqual(restored, first);
+  assert.notEqual(restored.revision, first.revision, "restart invalidates client revisions");
+  assert.deepEqual({ ...restored, revision: first.revision }, first);
   assert.deepEqual(await (await request(`/projects/${first.id}/reference`)).json(), { id: first.id, projectId: first.id, image, sourceUrl: first.sourceUrl, capture: "original" });
   assert.deepEqual(await readFile(join(dir, "images", `${first.id}.png`)), decodeImage(image).bytes);
   assert.equal((await (await request("/health")).json()).active, 0);
@@ -420,4 +421,144 @@ for (const mode of ["recreate", "style", "reenact"]) test(`${mode} saves edited 
   assert.equal(calls[1].negativePrompt, "");
   finish();
   await settled(request, job.id);
+});
+
+
+test("project pages search all summaries, use stable order and clamp after deletion", async (t) => {
+  const { request } = await setup(t, {}, async (dir) => {
+    for (let i = 1; i <= 29; i++) {
+      const id = i.toString(16).padStart(64, "0");
+      await writeFile(join(dir, `project-${id}.json`), JSON.stringify({ id, createdAt: "2026-01-01", updatedAt: "2026-01-01", sourceUrl: `https://example.com/${i === 29 ? "Needle" : i}`, capture: "original" }));
+    }
+  });
+  const first = await (await request("/projects?page=1&limit=24")).json();
+  const last = await (await request("/projects?page=2&limit=24")).json();
+  assert.equal(first.total, 29);
+  assert.equal(first.items.length, 24);
+  assert.equal(first.pageSize, 24);
+  assert.equal(last.items.length, 5);
+  assert.deepEqual([...first.items, ...last.items].map(item => item.id), Array.from({ length: 29 }, (_, i) => (i + 1).toString(16).padStart(64, "0")));
+  assert.equal(first.items.some(item => Object.hasOwn(item, "jobs")), false);
+  assert.equal(first.revision, last.revision);
+  const found = await (await request("/projects?page=8&limit=24&q=nEeDle")).json();
+  assert.equal(found.total, 1);
+  assert.equal(found.page, 1);
+  assert.equal(found.items[0].id, last.items.at(-1).id);
+  await request("/projects/delete", post({ ids: last.items.map(item => item.id) }));
+  const clamped = await (await request("/projects?page=2&limit=24")).json();
+  assert.equal(clamped.page, 1);
+  assert.equal(clamped.total, 24);
+  assert.notEqual(clamped.revision, first.revision);
+  const empty = await (await request("/projects?page=9&q=absent")).json();
+  assert.deepEqual({ items: empty.items, total: empty.total, page: empty.page }, { items: [], total: 0, page: 1 });
+});
+
+test("project page and conditional detail queries reject unsupported or ambiguous parameters", async (t) => {
+  const { request } = await setup(t);
+  for (const query of ["page=0", "page=-1", "page=1.5", "page=1e3", "page=9007199254740992", "limit=0", "limit=101", "limit=", "page=1&page=2", "q=a&q=b", "unknown=1", `q=${"a".repeat(201)}`]) {
+    assert.equal((await request(`/projects?${query}`)).status, 400, query);
+  }
+  const project = await (await request("/projects", post({ image }))).json();
+  for (const query of ["revision=", "revision=a&revision=b", "other=1", `revision=${"a".repeat(101)}`]) {
+    assert.equal((await request(`/projects/${project.id}?${query}`)).status, 400, query);
+  }
+});
+
+test("project revisions track saved tasks and progress without resending unrelated history", async (t) => {
+  let report, finish;
+  const { request, restart } = await setup(t, { agent: async ({ onProgress }) => {
+    report = onProgress;
+    return new Promise(resolve => { finish = resolve; });
+  } });
+  const empty = await (await request("/projects", post({ image }))).json();
+  const other = await (await request("/projects", post({ image: otherImage }))).json();
+  const unchanged = () => request(`/projects/${other.id}?revision=${encodeURIComponent(other.revision)}`).then(response => response.json());
+  const initialRevision = (await (await request("/health")).json()).projectsRevision;
+  const job = await (await request("/jobs", post({ image, mode: "recreate" }))).json();
+  const running = await (await request(`/projects/${empty.id}?revision=${encodeURIComponent(empty.revision)}`)).json();
+  assert.equal(running.jobCount, 1, "the new task is indexed before its first save returns");
+  assert.equal(running.busy, true);
+  assert.equal(running.jobs[0].id, job.id);
+  assert.notEqual((await (await request("/health")).json()).projectsRevision, initialRevision);
+  assert.deepEqual(await unchanged(), { unchanged: true, revision: other.revision });
+  report({ stage: "检查构图" });
+  const progressed = await (await request(`/projects/${empty.id}?revision=${encodeURIComponent(running.revision)}`)).json();
+  assert.equal(progressed.jobs[0].stage, "检查构图");
+  const titled = { ...result, title: "缓存更新检索标题" };
+  finish(titled);
+  await settled(request, job.id);
+  const completed = await (await request(`/projects/${empty.id}`)).json();
+  assert.equal(completed.busy, false);
+  assert.equal(completed.title, titled.title);
+  const searched = await (await request(`/projects?q=${encodeURIComponent(titled.title)}`)).json();
+  assert.equal(searched.total, 1);
+  await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
+  const generated = await settled(request, job.id);
+  const cover = (await (await request(`/projects/${empty.id}`)).json()).cover;
+  assert.deepEqual(cover, { jobId: job.id, generationId: generated.generations[0].id, imageAsset: generated.generations[0].imageAsset });
+  const beforeEdit = (await (await request(`/projects/${empty.id}`)).json()).revision;
+  await request(`/jobs/${job.id}/prompt`, post({ promptZh: "修改提示词", promptEn: "edited prompt", negativePrompt: "" }));
+  const edited = await (await request(`/projects/${empty.id}?revision=${encodeURIComponent(beforeEdit)}`)).json();
+  assert.equal(edited.jobs[0].result.promptZh, "修改提示词");
+  await restart();
+  assert.notEqual((await unchanged()).revision, other.revision);
+});
+
+
+test("cached project summaries use their job index and invalidate only the changed project", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "alchemy-project-index-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  let reads = [0, 0];
+  const histories = [image, otherImage].map((source, index) => ({ id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`, createdAt: "2026-01-01", mode: "recreate", status: "completed",
+    get result() { reads[index]++; return { title: `project ${index}` }; },
+  }));
+  const jobs = new Map(histories.map(job => [job.id, job]));
+  const store = await createProjectStore({ dataDir: dir, jobs,
+    readReference: async (id) => decodeImage(id === histories[0].id ? image : otherImage),
+    images: { put: async ({ bytes, extension }) => `${projectIdFor(bytes)}.${extension}` },
+  });
+  jobs.values = () => { throw new Error("summary listing must not scan all jobs"); };
+  const first = store.list();
+  const readCounts = [...reads];
+  assert.strictEqual(store.list(), first);
+  store.get(histories[0].projectId);
+  assert.deepEqual(reads, readCounts);
+  histories[0].status = "running";
+  store.updateJob(histories[0]);
+  const changed = store.list();
+  assert.equal(changed.find(item => item.id === histories[0].projectId).busy, true);
+  assert.equal(reads[1], readCounts[1], "unrelated cached summaries are not rebuilt");
+  assert.ok(reads[0] > readCounts[0]);
+});
+
+test("thumbnail routes preserve source choice, require auth and fall back from missing generated covers", async (t) => {
+  const { default: sharp } = await import("sharp");
+  const source = await sharp({ create: { width: 900, height: 300, channels: 3, background: "red" } }).png().toBuffer();
+  const output = await sharp({ create: { width: 300, height: 900, channels: 3, background: "blue" } }).png().toBuffer();
+  const { request, dir } = await setup(t, { generator: async () => ({ bytes: output, extension: "png" }) });
+  const job = await (await request("/jobs", post({ image: `data:image/png;base64,${source.toString("base64")}`, mode: "recreate" }))).json();
+  await settled(request, job.id);
+  const path = `/projects/${job.projectId}/thumbnail`;
+  assert.equal((await request(path, { headers: { Authorization: "" } })).status, 401);
+  assert.equal((await request(path, { headers: { Origin: "https://example.com" } })).status, 403);
+  for (const query of ["reference=0", "reference=1&reference=1", "path=/etc/passwd"]) assert.equal((await request(`${path}?${query}`)).status, 400);
+  const original = await (await request(`${path}?reference=1`)).json();
+  const dimensions = async (value) => {
+    assert.ok(value.image.startsWith("data:image/webp;base64,"));
+    const { width, height } = await sharp(Buffer.from(value.image.split(",")[1], "base64")).metadata();
+    return [width, height];
+  };
+  assert.deepEqual(await dimensions(original), [480, 160]);
+  await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
+  const generated = await settled(request, job.id);
+  const generation = generated.generations[0];
+  const generationPath = `/jobs/${job.id}/generations/${generation.id}/thumbnail`;
+  assert.equal((await request(generationPath, { headers: { Authorization: "" } })).status, 401);
+  assert.equal((await request(`${generationPath}?path=other`)).status, 400);
+  const cover = await (await request(path)).json();
+  assert.deepEqual(await dimensions(cover), [160, 480]);
+  assert.deepEqual(await (await request(generationPath)).json(), cover);
+  assert.deepEqual(await (await request(`${path}?reference=1`)).json(), original);
+  await rm(join(dir, "images", generation.imageAsset));
+  assert.deepEqual(await (await request(path)).json(), original);
 });

@@ -29,5 +29,6 @@
   .workspace-project-library { padding: 20px 15px; }
   .workspace-project-grid { grid-template-columns: 1fr; }
   .workspace-project-search { width: min(190px, 100%); }
-  .workspace-library-toolbar > div { width: 100%; }
+  .workspace-library-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
+  .workspace-library-toolbar > div { justify-content: flex-end; }
 }

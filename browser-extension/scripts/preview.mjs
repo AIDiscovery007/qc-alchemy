@@ -121,9 +121,36 @@ createServer(async (req, res) => {
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
         const projects=[{id:projectId,title:state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
-        const summary=(project)=>({...project,busy:project.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:project.jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=project.jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))});
+        if(state==='library') {
+          const count=Math.min(1000,Math.max(0,Number(previewOptions.get('count')??61)||0));
+          projects.splice(0,projects.length,...Array.from({length:count},(_,index)=>{
+            const id=(index+1).toString(16).padStart(64,'0'), createdAt=new Date(Date.now()-index*60000).toISOString();
+            const sample={...structuredClone(job),id:'sample-job-'+index,projectId:id,createdAt,result:{...job.result,title:'示例 · '+['水彩静物','几何海报','人物插画'][index%3]+' '+String(index+1).padStart(3,'0')}};
+            if(index%3===0)sample.generations=[{id:'sample-generation-'+index,createdAt,status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
+            return {id,title:sample.result.title,createdAt,updatedAt:createdAt,sourceUrl:'https://example.com/sample/'+index,capture:'original',jobs:index%5===4?[]:[sample]};
+          }));
+        }
+        let projectsRevision=1;
+        projects.forEach(project=>project.revision='preview-1');
+        const touch=(project)=>{projectsRevision++;if(project){project.revision='preview-'+projectsRevision;project.updatedAt=new Date().toISOString();}};
+        const summary=(project)=>{
+          const {jobs,image,...metadata}=project;
+          const completed=jobs.flatMap(job=>(job.generations||[]).filter(g=>g.status==='completed').map(g=>({jobId:job.id,generationId:g.id,createdAt:g.createdAt}))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+          return {...metadata,cover:completed?{jobId:completed.jobId,generationId:completed.generationId}:undefined,busy:jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))};
+        };
+        let failedPage=false;
+        const projectPage=async(message)=>{
+          if(message.limit>12){
+            await new Promise(resolve=>setTimeout(resolve,Math.min(10000,Math.max(0,Number(previewOptions.get('listDelay'))||0))));
+            if(!failedPage&&Number(previewOptions.get('failPage'))===message.page){failedPage=true;throw new Error('示例：项目加载失败，请重试');}
+          }
+          const query=(message.q||'').trim().toLocaleLowerCase();
+          const filtered=projects.filter(p=>[p.title,p.sourceUrl].some(value=>value.toLocaleLowerCase().includes(query))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id));
+          const pageSize=message.limit||24,page=Math.min(Math.max(1,message.page||1),Math.max(1,Math.ceil(filtered.length/pageSize)));
+          return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
+        };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
-        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'?undefined:selection(projects[0])};
+        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
         const handoff = new URLSearchParams(location.search).has('handoff') ? JSON.parse(sessionStorage.getItem('workspace-draft') || 'null') : null;
         if(handoff){projects.splice(0,projects.length,...handoff.projects);Object.assign(data,handoff.data);}
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
@@ -135,7 +162,7 @@ createServer(async (req, res) => {
         globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
           if(message.type==='alchemy:open-workspace'){sessionStorage.setItem('workspace-draft',JSON.stringify({draft:message.draft,projects,data}));location.href='/workspace.html?state='+state+'&handoff=preview';return {ok:true};}
           if(message.type==='alchemy:workspace-handoff'){sessionStorage.removeItem('workspace-draft');return {ok:true,value:handoff};}
-          if(message.type==='alchemy:upload-reference'){const p={id:crypto.randomUUID(),title:'上传的参考图',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceUrl:'',capture:'original',jobs:[],image:message.image};projects.unshift(p);data.selection={...selection(p),image:message.image};return {ok:true,value:data.selection};}
+          if(message.type==='alchemy:upload-reference'){const p={id:crypto.randomUUID(),title:'上传的参考图',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),sourceUrl:'',capture:'original',jobs:[],image:message.image};projects.unshift(p);touch(p);data.selection={...selection(p),image:message.image};return {ok:true,value:data.selection};}
           if(message.type==='alchemy:query'&&message.path==='/cli/status')return {ok:true,value:structuredClone(cli)};
           if(message.type==='alchemy:cli-check'){cli.detectedAt=new Date().toISOString();if(cli.command)cli.checkedAt=cli.detectedAt;return {ok:true,value:structuredClone(cli)};}
           if(message.type==='alchemy:cli-update'){cli.operation={status:'running',stage:'正在升级（预览）'};setTimeout(()=>{cli.version=cli.latestVersion;cli.updateAvailable=false;cli.operation={status:'completed',stage:'升级完成（预览）'};models.selected=null;},2500);return {ok:true,value:structuredClone(cli)};}
@@ -150,12 +177,21 @@ createServer(async (req, res) => {
             },1800);
             return {ok:true,value:structuredClone(models)};
           }
-          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?projects.flatMap(p=>p.jobs):message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?summary(projects.find(p=>p.id===message.path.split('/')[2])):findJob(message.path.split('/')[2]))};
+          if(message.type==='alchemy:projects')return {ok:true,value:await projectPage(message)};
+          if(message.type==='alchemy:project'){
+            const project=projects.find(p=>p.id===message.id);
+            if(!project)return {error:'项目不存在'};
+            return {ok:true,value:message.revision===project.revision?{unchanged:true,revision:project.revision}:structuredClone({...summary(project),jobs:project.jobs})};
+          }
+          if(message.type==='alchemy:project-thumbnail')return {ok:true,value:{image:projects.find(p=>p.id===message.id)?.image||(state==='gallery'&&!message.reference?gallery.result:template)}};
+          if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template}};
+          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?projects.flatMap(p=>p.jobs):message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
             if(projects.some(p=>message.ids.includes(p.id)&&summary(p).busy))return {error:'所选项目仍在逆向或生图'};
             await new Promise(resolve=>setTimeout(resolve,500));
             for(let i=projects.length-1;i>=0;i--)if(message.ids.includes(projects[i].id))projects.splice(i,1);
+            touch();
             if(message.ids.includes(data.selection?.projectId))data.selection=undefined;
             return {ok:true,value:{deletedIds:message.ids}};
           }
@@ -172,11 +208,12 @@ createServer(async (req, res) => {
           if(message.type==='alchemy:start') {
             const project=projects.find(p=>p.id===message.projectId);
             const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',reenact:message.reenact?{basePrompt:message.reenact.basePrompt}:undefined};
-            project.jobs.unshift(next);data.selection=selection(project);
-            setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词'};}},1500);
+            project.jobs.unshift(next);touch(project);data.selection=selection(project);
+            setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词'};touch(project);}},1500);
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
-          if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';return {ok:true,value:structuredClone(saved)};}
+          if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};}
+          if(message.type==='alchemy:generation-file-action')throw new Error('界面预览不会打开本机文件，请在扩展中使用。');
           if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template}};
           if(message.type==='alchemy:generation-image') {
             if(previewOptions.get('fx')==='image-error')throw new Error('预览：图片读取失败');
@@ -184,23 +221,24 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:save-prompt') {
             const job=findJob(message.id);
-            job.result={...job.result,promptZh:message.promptZh,promptEn:message.promptEn,negativePrompt:message.negativePrompt};
+            job.result={...job.result,promptZh:message.promptZh,promptEn:message.promptEn,negativePrompt:message.negativePrompt};touch(projects.find(p=>p.id===job.projectId));
             return {ok:true,value:job};
           }
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage};
-            saved.generations||=[];saved.generations.push(generation);
+            saved.generations||=[];saved.generations.push(generation);touch(projects.find(p=>p.id===saved.projectId));
             setTimeout(()=>{if(generation.status==='running'){
               generation.status=previewOptions.get('fx')==='failed'?'failed':'completed';
               generation.stage=generation.status==='failed'?'预览：生图失败':'图片已生成';
               if(generation.status==='failed')generation.error=generation.stage;
+              touch(projects.find(p=>p.id===saved.projectId));
             }},Math.min(60000,Math.max(1000,Number(previewOptions.get('generationDelay'))||5000)));
             return {ok:true,value:structuredClone(saved)};
           }
           if(message.type==='alchemy:generation-cancel') {
             const saved=findJob(message.id), generation=saved.generations.find(item=>item.id===message.generationId);
-            generation.status='cancelled';generation.stage='已取消';return {ok:true,value:structuredClone(saved)};
+            generation.status='cancelled';generation.stage='已取消';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};
           }
           if(message.type==='alchemy:select'){
             if(state==='invalidated')throw new Error('Extension context invalidated.');

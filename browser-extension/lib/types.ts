@@ -53,9 +53,12 @@ export type ProjectSummary = {
   capture: "original" | "screenshot";
   jobCount: number;
   busy: boolean;
+  revision?: string;
+  cover?: { jobId: string; generationId: string; imageAsset?: string };
   modes: Partial<Record<Mode, { status: string; hasImage: boolean }>>;
 };
 export type Project = ProjectSummary & { jobs: Job[] };
+export type ProjectPage = { items: ProjectSummary[]; total: number; page: number; pageSize: number; revision: string };
 export type Generation = {
   id: string;
   imageAsset?: string;

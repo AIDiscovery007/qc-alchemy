@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { request } from "../../lib/client";
-import type { Mode, ProjectSummary, Selection } from "../../lib/types";
+import type { Mode, ProjectSummary } from "../../lib/types";
 
 export default function RecentProject({ project, active, disabled, onOpen, currentMode }: { currentMode?: Mode; project: ProjectSummary; active: boolean; disabled: boolean; onOpen(): void }) {
   const button = useRef<HTMLButtonElement>(null);
@@ -10,7 +10,7 @@ export default function RecentProject({ project, active, disabled, onOpen, curre
     const observer = new IntersectionObserver(entries => {
       if (!entries.some(entry => entry.isIntersecting)) return;
       observer.disconnect();
-      void request<Selection>({ type: "alchemy:project-reference", id: project.id }).then(value => { if (!stopped) setImage(value.image || ""); }, () => {});
+      void request<{ image: string }>({ type: "alchemy:project-thumbnail", id: project.id, reference: true }).then(value => { if (!stopped) setImage(value.image || ""); }, () => {});
     });
     if (button.current) observer.observe(button.current);
     return () => { stopped = true; observer.disconnect(); };

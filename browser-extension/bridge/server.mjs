@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { readFile, writeFile, readdir, rename } from "node:fs/promises";
+import { readFile, writeFile, readdir, rename, lstat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAgent } from "./agent.mjs";
@@ -9,6 +9,9 @@ import { createProjectStore, projectIdFor, recoverProjectDeletion } from "./proj
 import { createModelStore } from "./models.mjs";
 import { createCliManager } from "./cli.mjs";
 import { createImageStore } from "./images.mjs";
+import { createThumbnailStore } from "./thumbnails.mjs";
+import { openGeneratedImage } from "./image-actions.mjs";
+import sharp from "sharp";
 import { migrateStorage } from "./storage.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,6 +80,7 @@ export async function createBridge({
   generator = runGeneration,
   generationSkillPath = imagegenSkillPath(),
   allowShutdown = false,
+  imageAction = openGeneratedImage,
   models,
   cli,
 } = {}) {
@@ -86,6 +90,7 @@ export async function createBridge({
   await recoverProjectDeletion(paths.records, dataDir);
   const images = await createImageStore(dataDir, paths.records);
   await images.migrate();
+  const thumbnails = await createThumbnailStore({ dataDir, images });
   const tokenPath = paths.token;
   let token;
   try {
@@ -105,6 +110,7 @@ export async function createBridge({
       const path = join(paths.records, `${job.id}.json`);
       await writeFile(`${path}.tmp`, JSON.stringify(job), { mode: 0o600 });
       await rename(`${path}.tmp`, path);
+      projects?.updateJob(job);
       await projects?.touch(job.projectId);
     });
     return saveTail;
@@ -151,6 +157,7 @@ export async function createBridge({
   }
   projects = await createProjectStore({ dataDir: paths.records, legacyDir: dataDir, jobs, images, readReference: async (id) => decodeImage(await storedImage(jobs.get(id))) });
   await images.collect();
+  await thumbnails.collect();
   let mutationTail = Promise.resolve();
   let collectionPending = false;
   const acquireMutation = async () => {
@@ -164,7 +171,7 @@ export async function createBridge({
     if (!collectionPending) return;
     const release = await acquireMutation();
     try {
-      if (!controllers.size) { await images.collect(); collectionPending = false; }
+      if (!controllers.size) { await images.collect(); await thumbnails.collect(); collectionPending = false; }
     }
     catch (error) { console.error("回收图片失败:", error.message); }
     finally { release(); }
@@ -212,7 +219,12 @@ export async function createBridge({
         !timingSafeEqual(supplied, expected)
       )
         throw bad("配对码不正确，请在设置中重新连接", 401);
-      const path = new URL(req.url, "http://127.0.0.1").pathname;
+      const url = new URL(req.url, "http://127.0.0.1");
+      const path = url.pathname;
+      const query = url.searchParams;
+      const validateQuery = (allowed) => {
+        for (const key of query.keys()) if (!allowed.includes(key) || query.getAll(key).length !== 1) throw bad("无效查询参数");
+      };
       // Keep deletion and task setup from writing the same project concurrently.
       if (req.method === "POST") {
         releaseMutation = await acquireMutation();
@@ -229,6 +241,7 @@ export async function createBridge({
         json(200, {
           service: "qc-alchemy",
           version,
+          projectsRevision: projects.revision,
           managed: allowShutdown,
           skill: skill || null,
           ready: Boolean(skill),
@@ -277,7 +290,19 @@ export async function createBridge({
         return;
       }
       if (req.method === "GET" && path === "/projects") {
-        json(200, projects.list());
+        validateQuery(["page", "limit", "q"]);
+        if (!query.size) json(200, projects.list());
+        else {
+          const integer = (key, fallback, maximum) => {
+            const value = query.get(key);
+            if (value === null) return fallback;
+            if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > maximum) throw bad("无效分页参数");
+            return Number(value);
+          };
+          const q = query.get("q") || "";
+          if (q.length > 200) throw bad("搜索词最多 200 字符");
+          json(200, projects.page({ page: integer("page", 1, Number.MAX_SAFE_INTEGER), limit: integer("limit", 24, 100), q }));
+        }
         return;
       }
       if (req.method === "POST" && path === "/projects/delete") {
@@ -290,7 +315,7 @@ export async function createBridge({
           throw bad("所选项目仍在逆向或生图，请完成或取消任务后再删除", 409);
         try {
           const deletedIds = await projects.remove(unique);
-          if (!controllers.size) await images.collect();
+          if (!controllers.size) { await images.collect(); await thumbnails.collect(); }
           else collectionPending = true;
           json(200, { deletedIds });
         }
@@ -304,16 +329,26 @@ export async function createBridge({
         json(200, projects.get(project.id));
         return;
       }
-      const projectMatch = /^\/projects\/([a-f0-9]{64})(\/reference)?$/.exec(path);
+      const projectMatch = /^\/projects\/([a-f0-9]{64})(\/(?:reference|thumbnail))?$/.exec(path);
       if (req.method === "GET" && projectMatch) {
-        const project = projects.get(projectMatch[1]);
+        validateQuery(projectMatch[2] === "/thumbnail" ? ["reference"] : projectMatch[2] ? [] : ["revision"]);
+        if (query.has("reference") && query.get("reference") !== "1") throw bad("无效缩略图参数");
+        if (query.has("revision") && (!query.get("revision") || query.get("revision").length > 100)) throw bad("无效版本参数");
+        const project = projects.summary(projectMatch[1]);
         if (!project) throw bad("项目不存在", 404);
-        if (projectMatch[2]) {
+        if (projectMatch[2] === "/thumbnail") {
+          if (!query.has("reference") && project.cover?.imageAsset) {
+            try { json(200, await thumbnails.read(project.cover.imageAsset)); return; }
+            catch { /* A missing generated cover can still show the source template. */ }
+          }
+          if (!project.imageAsset) throw bad("这个项目的参考模板已不存在，请回到网页重新选择图片。", 404);
+          json(200, await thumbnails.read(project.imageAsset));
+        } else if (projectMatch[2]) {
           const reference = await projects.reference(project.id);
           if (!reference) throw bad("这个项目的参考模板已不存在，请回到网页重新选择图片。", 404);
           decodeImage(reference.image);
           json(200, reference);
-        } else json(200, project);
+        } else json(200, query.get("revision") === project.revision ? { unchanged: true, revision: project.revision } : projects.get(project.id));
         return;
       }
       if (req.method === "GET" && path === "/jobs") {
@@ -340,25 +375,46 @@ export async function createBridge({
         json(200, job);
         return;
       }
-      const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|reference|cancel))?$/.exec(path);
+      const generationMatch = /^\/jobs\/([\da-f-]{36})\/generations(?:\/([\da-f-]{36})\/(image|reference|thumbnail|cancel|open|reveal))?$/.exec(path);
       if (generationMatch) {
         const job = jobs.get(generationMatch[1]);
         if (!job) throw bad("任务不存在", 404);
         const generation = job.generations?.find((item) => item.id === generationMatch[2]);
         if (generationMatch[2] && !generation) throw bad("生图记录不存在", 404);
+        if (req.method === "GET" && generationMatch[3] === "thumbnail") {
+          validateQuery([]);
+          if (generation.status !== "completed") throw bad("图片尚未生成", 409);
+          if (!generation.imageAsset) throw bad("生成图片已不存在，请重新生成", 404);
+          json(200, await thumbnails.read(generation.imageAsset));
+          return;
+        }
         if (req.method === "GET" && generationMatch[3] === "reference") {
           if (job.mode !== "recreate" && !generation.subjectAsset && !generation.subjectExtension) throw bad("此生图记录没有保存主体图快照", 404);
           json(200, { image: await storedImage(job.mode === "recreate" ? job : generation, job.mode !== "recreate") });
           return;
         }
-        if (req.method === "GET" && generationMatch[3] === "image") {
+        const fileAction = req.method === "POST" && ["open", "reveal"].includes(generationMatch[3]);
+        if (fileAction || (req.method === "GET" && generationMatch[3] === "image")) {
+          if (fileAction && Object.keys(await readBody(req)).length) throw bad("图片操作不接受路径或命令参数");
           if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
           const imagePath = generation.imageAsset !== undefined ? images.path(generation.imageAsset)
             : resolve(dataDir, `${generation.id}-generated.${generation.extension}`);
           let bytes;
-          try { bytes = generation.imageAsset !== undefined ? await images.read(generation.imageAsset) : await readFile(imagePath); }
+          try {
+            if (generation.imageAsset !== undefined) bytes = await images.read(generation.imageAsset);
+            else {
+              if (!(await lstat(imagePath)).isFile()) throw bad("图片文件无效");
+              bytes = await readFile(imagePath);
+            }
+          }
           catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
-          json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath });
+          if (fileAction) {
+            const metadata = await sharp(bytes).metadata().catch(() => { throw bad("图片内容无效，请重新生成"); });
+            if (metadata.format !== generation.extension) throw bad("图片内容与格式不匹配");
+            try { await imageAction(imagePath, generationMatch[3]); }
+            catch (error) { throw bad(error.message, 503); }
+            json(200, { ok: true });
+          } else json(200, { image: `data:image/${generation.extension};base64,${bytes.toString("base64")}`, path: imagePath });
           return;
         }
         if (req.method === "POST" && generationMatch[3] === "cancel") {
@@ -409,7 +465,7 @@ export async function createBridge({
           try {
             const output = await generator({ imagePath, subjectImagePath, prompt, negativePrompt: next.negativePrompt,
               skillPath: generationSkillPath, cwd: root, signal: controller.signal, modelSettings,
-              onProgress: (update) => { if (next.status === "running") Object.assign(next, update); },
+              onProgress: (update) => { if (next.status === "running") { Object.assign(next, update); projects.updateJob(job); } },
             });
             if (next.status === "running") {
               if (!["png", "jpeg", "webp"].includes(output.extension)) throw new Error("生图返回了不支持的文件格式");
@@ -545,7 +601,7 @@ export async function createBridge({
             signal: controller.signal,
             modelSettings,
             onProgress: (update) => {
-              if (job.status === "running") Object.assign(job, update);
+              if (job.status === "running") { Object.assign(job, update); projects.updateJob(job); }
             },
           });
           if (job.status === "running")

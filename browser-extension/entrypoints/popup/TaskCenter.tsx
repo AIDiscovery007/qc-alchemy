@@ -1,3 +1,4 @@
+import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
 import type { Generation, Job, Mode } from "../../lib/types";
@@ -33,20 +34,21 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     element.showModal();
     element.querySelector<HTMLButtonElement>("button")?.focus();
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let active = true;
     const refresh = async () => {
       const current = revision.current;
       try {
         const values = await query<Job[]>("/jobs");
-        if (!stopped && current === revision.current) { setJobs(values); setError(""); }
+        if (!stopped && current === revision.current) { setJobs(values); setError(""); active = values.some(job => job.status === "running" || job.generations?.some(item => item.status === "running")); }
       } catch (e) { if (!stopped) setError((e as Error).message); }
-      finally { if (!stopped) { setLoaded(true); timer = setTimeout(refresh, 2000); } }
+      finally { if (!stopped) setLoaded(true); }
+      return active ? 2000 : 10_000;
     };
-    void refresh();
+    const stopPolling = pollWhileVisible(refresh);
     return () => {
       stopped = true;
       alive.current = false;
-      clearTimeout(timer);
+      stopPolling();
       element.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
@@ -81,7 +83,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     const id = job.projectId || job.id;
     if (requestedImages.current.has(id)) return;
     requestedImages.current.add(id);
-    void request<{ image: string }>({ type: job.projectId ? "alchemy:project-reference" : "alchemy:reference", id }).then(
+    void request<{ image: string }>({ type: job.projectId ? "alchemy:project-thumbnail" : "alchemy:reference", id, reference: true }).then(
       value => { if (alive.current) setImages(previous => ({ ...previous, [id]: value.image })); },
       () => {}, // A missing reference must not hide the task or its recovery actions.
     );

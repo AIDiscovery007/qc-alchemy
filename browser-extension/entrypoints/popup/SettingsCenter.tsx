@@ -1,3 +1,4 @@
+import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
 import ModelSettings from "./ModelSettings";
@@ -49,7 +50,6 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
   useEffect(() => {
     if (!connected) { setCli(undefined); return; }
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       const current = revision.current;
       try {
@@ -58,10 +58,10 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
       } catch (e) {
         if (!cancelled && current === revision.current) setLoadError((e as Error).message === "Not found" ? "请更新并重启本机服务，以启用 CLI 管理。" : (e as Error).message);
       }
-      if (!cancelled) timer = setTimeout(poll, 3000);
+      return 3000;
     };
-    void poll();
-    return () => { cancelled = true; clearTimeout(timer); };
+    const stop = pollWhileVisible(poll);
+    return () => { cancelled = true; stop(); };
   }, [connected]);
 
   const act = async (action: "check" | "update") => {

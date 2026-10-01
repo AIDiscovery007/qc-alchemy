@@ -185,6 +185,20 @@ export default defineBackground(() => {
         if (typeof message.path !== "string" || !/^\/(health|models|cli\/status|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
         return bridge(message.path, token);
+      case "alchemy:projects": {
+        const { page = 1, limit = 24, q = "" } = message;
+        if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof q !== "string" || q.length > 200)
+          throw new Error("无效项目查询");
+        return bridge(`/projects?${new URLSearchParams({ page: String(page), limit: String(limit), q })}`, token);
+      }
+      case "alchemy:project": {
+        if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id) ||
+          (message.revision !== undefined && (typeof message.revision !== "string" || message.revision.length > 100))) throw new Error("无效项目查询");
+        return bridge(`/projects/${message.id}${message.revision ? `?revision=${encodeURIComponent(message.revision)}` : ""}`, token);
+      }
+      case "alchemy:project-thumbnail":
+        if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id) || (message.reference !== undefined && typeof message.reference !== "boolean")) throw new Error("无效项目");
+        return bridge(`/projects/${message.id}/thumbnail${message.reference ? "?reference=1" : ""}`, token);
       case "alchemy:models-refresh":
         return bridge("/models/refresh", token, {});
       case "alchemy:model-verify":
@@ -249,6 +263,8 @@ export default defineBackground(() => {
       case "alchemy:generate":
       case "alchemy:generation-cancel":
       case "alchemy:generation-reference":
+      case "alchemy:generation-thumbnail":
+      case "alchemy:generation-file-action":
       case "alchemy:generation-image": {
         if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效任务");
         const path = `/jobs/${message.id}/generations`;
@@ -259,8 +275,14 @@ export default defineBackground(() => {
           return bridge(path, token, { language: message.language, subjectImage: message.subjectImage });
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
+        if (message.type === "alchemy:generation-file-action") {
+          if (!["open", "reveal"].includes(message.action)) throw new Error("无效图片操作");
+          return bridge(`${path}/${message.generationId}/${message.action}`, token, {});
+        }
         return message.type === "alchemy:generation-reference"
           ? bridge(`${path}/${message.generationId}/reference`, token)
+          : message.type === "alchemy:generation-thumbnail"
+          ? bridge(`${path}/${message.generationId}/thumbnail`, token)
           : message.type === "alchemy:generation-image"
           ? bridge(`${path}/${message.generationId}/image`, token)
           : bridge(`${path}/${message.generationId}/cancel`, token, {});
@@ -278,7 +300,7 @@ export default defineBackground(() => {
       uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
       return true;
     }
-    if ((contentSender || extensionSender) && ["alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

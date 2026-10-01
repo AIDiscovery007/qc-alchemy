@@ -3,7 +3,7 @@ import { readFile, readdir, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export const projectIdFor = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
+const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id);
 
 // Finish interrupted deletions before legacy jobs can recreate their projects.
 export async function recoverProjectDeletion(dataDir, legacyDir = dataDir) {
@@ -21,6 +21,32 @@ export async function recoverProjectDeletion(dataDir, legacyDir = dataDir) {
 export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, readReference, images }) {
   const records = new Map();
   const pending = new Map();
+  const indexedJobs = new Map();
+  const jobProjects = new Map();
+  const summaries = new Map();
+  const revisions = new Map();
+  const epoch = randomUUID();
+  let sequence = 0;
+  let ordered;
+  const revision = () => `${epoch}:${sequence}`;
+  const invalidate = (id) => {
+    sequence++;
+    revisions.set(id, revision());
+    summaries.delete(id);
+    ordered = undefined;
+  };
+  const updateJob = (job) => {
+    const previous = jobProjects.get(job.id);
+    if (previous && previous !== job.projectId) {
+      indexedJobs.get(previous)?.delete(job.id);
+      invalidate(previous);
+    }
+    jobs.set(job.id, job);
+    if (!indexedJobs.has(job.projectId)) indexedJobs.set(job.projectId, new Map());
+    indexedJobs.get(job.projectId).set(job.id, job);
+    jobProjects.set(job.id, job.projectId);
+    invalidate(job.projectId);
+  };
   let saveTail = Promise.resolve();
   const save = (project) => {
     saveTail = saveTail.catch(() => {}).then(async () => {
@@ -52,6 +78,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       project.imageAsset = await images.put({ bytes, extension });
       await save(project);
       records.set(id, project);
+      invalidate(id);
       return project;
     })();
     pending.set(id, operation);
@@ -74,22 +101,41 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       job.projectId = project.id;
       await writeFile(join(dataDir, `${job.id}.json`), JSON.stringify(job), { mode: 0o600 });
     }
+    updateJob(job);
   }
 
-  const projectJobs = (id) => [...jobs.values()].filter((job) => job.projectId === id).sort(newestFirst);
-  function summary(project, history = projectJobs(project.id)) {
+  const projectJobs = (id) => [...(indexedJobs.get(id)?.values() || [])].sort(newestFirst);
+  function summary(project) {
+    if (summaries.has(project.id)) return summaries.get(project.id);
+    const history = projectJobs(project.id);
     const modes = {};
+    let cover, coverDate = "";
+    let updatedAt = project.updatedAt;
     for (const job of history) {
       if (["style", "recreate", "reenact"].includes(job.mode) && !modes[job.mode]) {
         modes[job.mode] = { status: job.status, hasImage: Boolean(job.generations?.some((generation) => generation.status === "completed")) };
       }
+      if (job.createdAt > updatedAt) updatedAt = job.createdAt;
+      for (const generation of job.generations || []) {
+        if (generation.createdAt > updatedAt) updatedAt = generation.createdAt;
+        if (generation.status === "completed" && (!cover || generation.createdAt > coverDate ||
+          (generation.createdAt === coverDate && generation.id < cover.generationId))) {
+          cover = { jobId: job.id, generationId: generation.id, ...(generation.imageAsset ? { imageAsset: generation.imageAsset } : {}) };
+          coverDate = generation.createdAt;
+        }
+      }
     }
-    const updatedAt = [project.updatedAt, ...history.flatMap((job) => [job.createdAt, ...(job.generations || []).map((generation) => generation.createdAt).filter(Boolean)])].sort().at(-1);
-    return { id: project.id, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length,
-      busy: history.some((job) => job.status === "running" || job.generations?.some((item) => item.status === "running")), modes };
+    const item = { id: project.id, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length,
+      busy: history.some((job) => job.status === "running" || job.generations?.some((item) => item.status === "running")), modes,
+      revision: revisions.get(project.id) || `${epoch}:0`, ...(project.imageAsset ? { imageAsset: project.imageAsset } : {}), ...(cover ? { cover } : {}) };
+    summaries.set(project.id, item);
+    return item;
   }
+  const list = () => ordered ||= [...records.values()].map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   return {
     register,
+    updateJob,
+    get revision() { return revision(); },
     async remove(ids) {
       const history = ids.flatMap(projectJobs);
       const images = (prefix) => ["png", "jpeg", "webp"].map((extension) => `${prefix}.${extension}`);
@@ -105,16 +151,31 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       await writeFile(`${journal}.tmp`, JSON.stringify(files), { mode: 0o600 });
       await rename(`${journal}.tmp`, journal);
       await recoverProjectDeletion(dataDir, legacyDir);
-      for (const job of history) jobs.delete(job.id);
-      for (const id of ids) records.delete(id);
+      for (const job of history) { jobs.delete(job.id); jobProjects.delete(job.id); }
+      for (const id of ids) {
+        records.delete(id);
+        indexedJobs.delete(id);
+        invalidate(id);
+        revisions.delete(id);
+      }
       return ids;
     },
-    list: () => [...records.values()].map((project) => summary(project)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    list,
+    page({ page = 1, limit = 24, q = "" }) {
+      const query = q.trim().toLocaleLowerCase();
+      const matching = query ? list().filter((item) => `${item.title} ${item.sourceUrl}`.toLocaleLowerCase().includes(query)) : list();
+      page = Math.min(page, Math.max(1, Math.ceil(matching.length / limit)));
+      return { items: matching.slice((page - 1) * limit, page * limit), total: matching.length, page, pageSize: limit, revision: revision() };
+    },
+    summary(id) {
+      const project = records.get(id);
+      return project && summary(project);
+    },
     get(id) {
       const project = records.get(id);
       if (!project) return;
       const history = projectJobs(id);
-      return { ...summary(project, history), jobs: history };
+      return { ...summary(project), jobs: history };
     },
     async reference(id) {
       const project = records.get(id);
@@ -130,6 +191,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       const project = records.get(id);
       if (!project) return;
       project.updatedAt = new Date().toISOString();
+      invalidate(id);
       await save(project);
     },
   };

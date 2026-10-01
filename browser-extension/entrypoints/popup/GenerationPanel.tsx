@@ -1,3 +1,4 @@
+import ImageFileActions from "./ImageFileActions";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useRef, useState, type ComponentType } from "react";
 import { request } from "../../lib/client";
@@ -123,7 +124,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} / ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong><span>{generation?.model || job.model || ""}</span></div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
-    <div className="result-bottom"><button className="outline-button" disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>
+    <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button" disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>
       <button className="outline-button" disabled={!generation} onClick={() => generation && setModal({ kind: "info", generation, image })}><ResultIcon name="clock" />生成信息</button></div>
     {modal && <dialog className={`result-dialog modal${modal.kind === "zoom" ? " zoom-modal" : ""}`} ref={zoomDialog} aria-label={modal.kind === "zoom" ? "图片预览" : "本次生成信息"}
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
@@ -150,7 +151,8 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     {generation?.status === "cancelled" && <p className="fine">图片生成已取消。</p>}
     {generation?.status === "completed" && <>{imageError ? <div className="error" role="alert">{imageError}</div> : image ? <>
       <img className="generated-image" src={image} alt={`${job.result!.title} · 生成结果`} />
-      <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>{copyNotice}
+      <div className="image-file-actions"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /></div>
+      <button className="secondary copy-path-button" onClick={copyPath} title={imagePath} data-copied={copied === assetKey} aria-live="polite"><Icon name={copied === assetKey ? "check" : "copy"} />复制图片路径</button>{copyNotice}
     </> : <p className="fine" role="status">正在读取生成图片…</p>}</>}
   </section>;
 }
@@ -172,7 +174,7 @@ function GenerationThumbnail({ jobId, generation, index, active, image, onSelect
     const observer = new IntersectionObserver(entries => {
       if (!entries.some(entry => entry.isIntersecting)) return;
       observer.disconnect();
-      void request<{ image: string }>({ type: "alchemy:generation-image", id: jobId, generationId: generation.id }).then(
+      void request<{ image: string }>({ type: "alchemy:generation-thumbnail", id: jobId, generationId: generation.id }).then(
         value => { if (!cancelled) setThumbnail(value.image); },
         () => { if (!cancelled) setFailed(true); },
       );

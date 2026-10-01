@@ -1,3 +1,4 @@
+import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useState } from "react";
 import { query, request } from "../../lib/client";
 import type { ModelCatalog } from "../../lib/types";
@@ -25,19 +26,18 @@ export default function ModelSettings({ serviceBusy, wide = false, onCheckCli }:
   useEffect(() => {
     if (!verifying) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
         const value = await query<ModelCatalog>("/models");
-        if (cancelled) return;
+        if (cancelled) return 1500;
         accept(value);
         setError("");
-        if (value.verification?.status !== "running") return;
+
       } catch (e) { if (!cancelled) setError((e as Error).message); }
-      if (!cancelled) timer = setTimeout(poll, 1500);
+      return 1500;
     };
-    timer = setTimeout(poll, 1000);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const stop = pollWhileVisible(poll);
+    return () => { cancelled = true; stop(); };
   }, [verifying]);
   const act = async (type: "alchemy:models-refresh" | "alchemy:model-verify") => {
     setLoading(true);
