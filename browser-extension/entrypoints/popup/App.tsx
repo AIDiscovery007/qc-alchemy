@@ -260,6 +260,22 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
+  const applyReferenceRotation = async (image: string, mode: Mode, instruction?: string) => {
+    if (blocked || !selection?.image) throw new Error("当前无法修改图片，请稍后重试");
+    const revision = selectionRevision.current;
+    setBusy(true);
+    try {
+      const next = await request<Selection>({ type: "alchemy:upload-reference", image });
+      if (revision !== selectionRevision.current) throw new Error("当前图片已切换，请重新打开预览");
+      const key = `${next.projectId}:${mode}`;
+      setVersions(items => ({ ...items, [key]: "new" }));
+      if (mode === "multi-reenact") setMultiSubjectDrafts(items => ({ ...items, [`${key}:new`]: multiSubjects }));
+      else if (mode !== "recreate") setSubjectDrafts(items => ({ ...items, [key]: subjectImage(mode) }));
+      if (instruction !== undefined) setInstructions(items => ({ ...items, [mode === "multi-reenact" ? `${key}:new` : key]: instruction }));
+      selectionRevision.current++;
+      setSelection(next); setError(""); setHistoryOpen(false); setMobilePane("edit");
+    } finally { setBusy(false); }
+  };
   const swapImages = async (mode: "style" | "reenact" | "multi-reenact", instruction: string, subjectId?: string) => {
     const image = mode === "multi-reenact" ? multiSubjects.find(item => item.id === subjectId)?.subjectImage : subjectImage(mode);
     if (blocked || !selection?.image || !image) return;
@@ -595,8 +611,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             </div>
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection?.image && preferences.mode === "recreate" && (
-              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
-                <ImagePreview src={selection.image} alt="本次选择的参考图片" />
+              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
+                <ImagePreview src={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
                   {selection.capture === "screenshot" && <span>屏幕截取</span>}
@@ -643,6 +659,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
+                onReferenceRotate={(image, instruction) => applyReferenceRotation(image, mode, instruction)}
                 onSwap={instruction => void swapImages(mode, instruction)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
@@ -651,6 +668,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
               onInstruction={value => setInstructions(items => ({ ...items, [multiKey]: value }))}
+              onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
               {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : preferences.mode === "multi-reenact" ? "提示词待生成" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}

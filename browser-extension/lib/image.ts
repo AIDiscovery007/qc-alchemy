@@ -24,3 +24,20 @@ export async function normalizeImage(blob: Blob, maxBytes = 4 * 1024 * 1024) {
     bitmap.close();
   }
 }
+
+/** Render quarter turns from the original bytes, never from a previous preview. */
+export async function rotateImage(source: string, quarterTurns: number, maxBytes = 4 * 1024 * 1024) {
+  if (!Number.isInteger(quarterTurns)) throw new Error("旋转角度必须是 90° 的整数倍");
+  const turns = ((quarterTurns % 4) + 4) % 4;
+  if (!turns) return source;
+  const bitmap = await createImageBitmap(await (await fetch(source)).blob());
+  try {
+    const canvas = new OffscreenCanvas(turns % 2 ? bitmap.height : bitmap.width, turns % 2 ? bitmap.width : bitmap.height);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法旋转图片，请重试");
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate(turns * Math.PI / 2);
+    context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    return await canvasDataUrl(canvas, maxBytes);
+  } finally { bitmap.close(); }
+}

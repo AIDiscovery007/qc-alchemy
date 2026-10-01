@@ -30,3 +30,11 @@
 .project-row .project-preview-action { left: 4px; top: calc(50% - 33px); right: auto; bottom: auto; width: 52px; height: 66px; }
 .workspace-app .image-preview-surface > .ui-icon { width: 28px; height: 28px; }
 .workspace-image-wrap .workspace-image-action { z-index: 2; }
+
+.image-rotation-tools { flex: none; padding: 10px 16px; border-top: 1px solid var(--line); }
+.image-rotation-tools > div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.image-rotation-tools button { padding: 7px 12px; border: 1px solid var(--ink); border-radius: 6px; background: var(--surface); }
+.image-rotation-tools .apply-rotation { background: var(--yellow); }
+.image-rotation-tools button:disabled { opacity: .45; cursor: default; }
+.image-rotation-tools p { margin: 6px 0 0; text-align: center; font-size: 11px; color: var(--muted); }
+.image-rotation-tools p[role="alert"] { margin: 0 0 8px; color: #94382d; }
