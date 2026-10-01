@@ -58,6 +58,7 @@
 | `bridge/cli.mjs` | 实际 CLI 来源、版本、每日检查及受限独立版/npm/Homebrew 升级；与模型和任务互斥。 |
 | `bridge/server.mjs`、`bridge/projects.mjs`、`bridge/images.mjs`、`bridge/storage.mjs` | 本机 HTTP 服务、任务与项目持久化、共享图片存储、迁移与回收。 |
 | `bridge/codex-rpc.mjs`、`bridge/agent.mjs` | Codex CLI app-server stdio JSON-RPC、图片与 skill 输入、逆向结果校验。 |
+| `bridge/inspection.mjs` | 逆向专用只读图像工具；仅按当次输入编号裁切、放大和取样，内存返回图像与元信息。 |
 | `bridge/models.mjs`、`bridge/model-context.mjs` | 动态模型目录、真实验证、选择保存与账号/CLI 上下文检查。 |
 | `bridge/generation.mjs` | 按路径以纯文字或双图与 Prompt 调用 imagegen，读取真实图片结果。 |
 | `.agents/skills/alchemy/` | 随仓库分发的运行技能及必要参考文档。修改技能时维护伴随引用，不引入私人案例。 |
@@ -70,6 +71,7 @@
 - CLI 管理只允许固定认证端点，已确认来源的独立版/npm/Homebrew 可更新；独立版校验包元数据与稳定入口，固定执行原 CLI 的 codex update；App/custom 保留原安装方式。检测对应 manager 与运行时，升级与任务/验证互斥，成功后清除模型信任并刷新目录；失败保留错误，不声称升级成功。定时检查只读，手动按钮才执行升级。
 - 独立安装的 Codex CLI 与桌面 App 更新是两回事；检查 `CODEX_BIN` 实际指向。API / 协议变化需核对实际 CLI 能力和官方文档，不根据模型名字推断支持情况。
 - Agent 通过显式图片和技能输入运行，保留只读 sandbox 与不自动批准交互式工具的约束。逆向输出仍需结构校验，不把任意模型文本当成可信控制命令。
+- 逆向注册 `alchemy_inspect_image` 动态工具；只接受本次输入图号与区域参数，不接受路径或 URL，使用 EXIF 校正后的原图像素坐标。工具在内存中裁切、放大和采样，不写文件；仅处理本会话已注册的工具调用，其他交互请求仍拒绝。生图与模型验证不注册此工具。技能的观察验收条件统一维护在 `references/workflow.md`，最终 observations 是摘要，不是分析深度上限。
 - 多图主体字节保存在 bridge 图片库；扩展 local 只保留任务指令与任务引用，避免超过存储配额。未提交草稿的工作台交接仍受 8 MB 会话上限保护。
 - 生图调用用户本机的 imagegen skill 与内置 `image_gen`；只认真实 `imageGeneration` 完成结果，不把聊天中提及的路径当成图片。能力不可用时明确失败，不改用需要 API Key 的生图脚本或其他接口。
 - 只处理用户选中的图片与任务输入，不采集网页正文、cookie 或登录数据。资源读取失败时只在已有规则允许下截取目标图片区域，不把整个网页送去模型。保持输入大小限制和路径校验。

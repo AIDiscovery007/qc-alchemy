@@ -158,6 +158,7 @@ npm run pair
 
 - 不集成模型 API、不保存 API Key；通过 `codex app-server` 的 stdio JSON-RPC 调用本机 Codex，沿用其登录，使用插件单独选择并验证的模型。本机 Agent 仍可能使用云端模型，并非离线推理。
 - 显式发送 `localImage` 和 `skill` 输入。项目真实技能名为 `alchemy`，随仓库提供于 `.agents/skills/alchemy/SKILL.md`；QC-Reframe 是扩展产品名。
+- 逆向先定位整图，再裁切放大关键特征、材质、光影与边缘，回看整图后编写提示词。局部工具仅处理本次输入，直接返回图像；不会修改原件或保存裁切文件。观察摘要的条数不限制细查范围，原图无法分辨的细节会列为限制。
 - Agent 采用只读 sandbox，不自动批准交互式工具操作。逆向输出使用 JSON Schema 约束和本机校验；生图使用内置工具保存并由 bridge 复制结果。
 - 每次逆向创建独立 Codex 会话；未接管当前桌面聊天，也未验证自动在桌面 App 中展示会话。
 
