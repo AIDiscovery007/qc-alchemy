@@ -75,3 +75,8 @@
   .settings-center-content .settings-sub { font-size: 10px; }
   .settings-facts > div { grid-template-columns: 1fr; gap: 6px; }
 }
+
+.settings-operation-status { min-height:3.6em; }
+.settings-check-notice { min-height:1.8em; }
+.model-settings .model-status { min-height:3.4em; }
+.model-settings .model-heading button, .model-settings .settings-row button { min-width:76px; }

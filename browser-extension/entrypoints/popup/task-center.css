@@ -21,8 +21,13 @@
 .task-center .task-item button { font-size: 10px; flex: none; }
 .task-center .outline-button { border: 1px solid var(--line); background: var(--surface); padding: 8px 11px; border-radius: 7px; }
 .task-center .text-link { padding: 0; border: 0; background: none; text-decoration: underline; text-underline-offset: 3px; }
-.task-center .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #14111130; border-top-color: var(--ink); }
 .task-center .empty-canvas { padding: 30px; text-align: center; color: var(--muted); }
 .task-center .empty-canvas h3 { color: var(--ink); font-size: 18px; margin: 0 0 10px; }
 .task-center .empty-canvas p { font-size: 11px; line-height: 1.9; max-width: 250px; margin: auto; }
 @media (max-width: 650px) { .task-center { width: calc(100% - 24px); height: calc(100dvh - 70px); } .task-center .modal-head { padding: 16px; } .task-center .task-list { padding: 15px; } .task-center .task-item { flex-wrap: wrap; } }
+
+.task-scope { min-height:3.6em; }
+.task-meta .task-stage { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.task-item .task-cancel { min-width:60px; }
+.task-item .outline-button { min-width:84px; }
+.task-status-dot { display:inline-block;width:6px;height:6px; }

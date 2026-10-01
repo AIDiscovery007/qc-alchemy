@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ComponentT
 import { request } from "../../lib/client";
 import type { Generation, Job } from "../../lib/types";
 import Icon from "./Icon";
+import AsyncAction from "./AsyncAction";
 import { logo } from "../../lib/brand";
 import SelectField from "./SelectField";
 
@@ -97,9 +98,9 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
 
   const generateButton = <button className={`primary${workspace ? " generate-button" : ""}`} disabled={disabled || busy || !!running || generic || incomplete || (job.mode !== "recreate" && !subjectImage)} aria-busy={busy || !!running}
     title={`使用${job.mode === "recreate" ? "" : "当前主体图、参考模板与"}${lang === "zh" ? "中文" : "英文"}提示词生成，包含排除项。使用 Codex 生图额度。`} onClick={() => act()}>
-    {workspace && !running && !busy && <Icon name="image" />}{running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "用 Codex 生成图片"}{workspace && <Icon name="arrow" />}
+    {workspace && !running && !busy && <Icon name="image" />}{running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "生成图片"}{workspace && <Icon name="arrow" />}
   </button>;
-  const action = actionsTarget ? createPortal(generateButton, actionsTarget) : generateButton;
+  const action = actionsTarget ? createPortal(generateButton, actionsTarget) : workspace ? generateButton : <AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction>;
   const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : job.mode !== "recreate" && !subjectImage ? "请先上传可用的主体图。" : "";
   const copyNotice = copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>;
 
@@ -113,11 +114,11 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     <div className="preview-canvas">{image ? compare ? <div className="compare-images">
       <figure>{original?.key === assetKey ? <img src={original.image} alt="本次生成的原始输入" /> : <p role="status">{comparisonError || "正在读取原图…"}</p>}<figcaption>{job.mode === "recreate" ? "逆向参考图（未发送生图）" : "本次主体图"}</figcaption></figure>
       <figure><img src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <><button onClick={() => generation && setModal({ kind: "zoom", generation, image })} aria-label="放大生成结果"><img src={image} alt={`${job.result!.title} · 生成结果`} /></button><span className="canvas-tag">生成结果</span></> : <div className="empty-canvas">
-      {!(generation?.status === "running" || (generation?.status === "completed" && !imageError)) && <><Icon name="image" />
-      <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : imageError ? "图片暂不可用" : "留一点空间，给想象。"}</h3>
-      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : generation?.status === "cancelled" ? "可以重新生成，或查看其他生成记录。" : "准备图片，逆向提示词，再让新的画面在这里发生。")}</p></>}
-    </div>}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
+    </div> : <><button onClick={() => generation && setModal({ kind: "zoom", generation, image })} aria-label="放大生成结果"><img src={image} alt={`${job.result!.title} · 生成结果`} /></button><span className="canvas-tag">生成结果</span></> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
+      <Icon name="image" />
+      <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
+      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
+    </div> : null}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
       failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} / ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong><span>{generation?.model || job.model || ""}</span></div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
@@ -141,7 +142,6 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, onU
     {job.mode === "recreate" && <p className="fine">仅使用提示词生成图片，不附参考图。</p>}
     {job.mode !== "recreate" && !generic && !incomplete && <p className="fine">{subjectImage ? "使用当前主体图与当前提示词生图，更换主体后无需重新逆向。" : "请先上传可用的主体图。"}</p>}
     {action}
-    {running && <div className="progress" role="status"><span className="spinner" /><strong>{running.stage}</strong><button className="text-button" disabled={busy} onClick={() => act(true)}>取消</button></div>}
     {error && <div className="error" role="alert">{error}</div>}
     {generations.length > 1 && <SelectField label="生成记录" value={generation?.id} onChange={(event) => setSelected(event.target.value)}>
       {[...generations].reverse().map((item, index) => <option key={item.id} value={item.id}>第 {generations.length - index} 次 · {item.language === "zh" ? "中文" : "英文"} · {item.stage}</option>)}

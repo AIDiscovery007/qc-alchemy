@@ -103,19 +103,18 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     <div className="modal-head"><img src={logo} alt="" /><h2 id="task-center-title">任务中心 · {running} 项执行中</h2>
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>
     <div className="task-list">
-      <p className="hint task-scope">任务可跨项目并行执行，关闭此窗口不会取消。显示进行中的任务及最近 30 个逆向版本；更早记录可在项目中查看。</p>
+      <p className="hint task-scope" role="status">{loaded ? "任务可跨项目并行执行，关闭此窗口不会取消。显示进行中的任务及最近 30 个逆向版本；更早记录可在项目中查看。" : "正在读取任务…"}</p>
       {error && <div className="error" role="alert">{error}</div>}
       {actionError && <div className="error" role="alert">{actionError}</div>}
-      {!loaded && <p className="hint" role="status">正在读取任务…</p>}
       {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>没有任务在排队。</h3><p>回到项目，发起一次逆向或生图。</p></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>
         <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} />
         <div className="task-meta"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>
-          <small title={timestamp === null ? "时间未知" : new Date(timestamp).toLocaleString("zh-CN")}>{generation ? "生成图片" : "逆向提示词"} / {task.status === "running" && <i className="spinner" />} {statuses[task.status]}</small>
-          {task.status === "running" && <small role="status">{task.stage}</small>}
+          <small title={timestamp === null ? "时间未知" : new Date(timestamp).toLocaleString("zh-CN")}>{generation ? "生成图片" : "逆向提示词"} / <i className={task.status === "running" ? "activity-dot" : "task-status-dot"} aria-hidden="true" /> {statuses[task.status]}</small>
+          <small className="task-stage" role="status" title={task.status === "running" ? task.stage : undefined}>{task.status === "running" ? task.stage : statuses[task.status]}</small>
           {task.error && <small className="task-error">{task.error}</small>}
         </div>
-        {task.status === "running" && <button type="button" className="text-link" disabled={pending.includes(task.id)} onClick={() => void cancel(job, generation)}>{pending.includes(task.id) ? "正在取消…" : "取消"}</button>}
+        <button type="button" className="text-link task-cancel" style={{ visibility: task.status === "running" ? "visible" : "hidden" }} disabled={pending.includes(task.id)} onClick={() => void cancel(job, generation)}>{pending.includes(task.id) ? "正在取消…" : "取消"}</button>
         {job.projectId && <button type="button" className="outline-button" title={`打开逆向版本 ${job.id}`} disabled={!!opening} onClick={() => void open(job)}>{opening === job.id ? "正在打开…" : "查看项目"}</button>}
       </li>)}</ul>
     </div>

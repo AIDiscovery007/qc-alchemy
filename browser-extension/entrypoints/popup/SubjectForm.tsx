@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import AsyncAction from "./AsyncAction";
 import ImageInput from "../workspace/ImageInput";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
@@ -9,8 +10,10 @@ const defaultPrompts = {
   reenact: "以图 1 为主体，以图 2 为风格参考模板，生成基于图 1 的风格转换与主体重演提示词。",
 };
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, instruction, onInstructionChange, workspace = false }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, instruction, onInstructionChange, status, onCancel, workspace = false }: {
   workspace?: boolean;
+  status?: string;
+  onCancel?: () => void;
   instruction?: string;
   onInstructionChange?: (value: string) => void;
   mode: "style" | "reenact";
@@ -86,11 +89,13 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
         placeholder="描述你想怎样结合两张图，例如：保留图 1 的姿势，只迁移图 2 的配色与笔触。"
         onChange={(e) => { promptEdited.current = true; setBasePrompt(e.target.value); onInstructionChange?.(e.target.value); }} />
       <div className={workspace ? "button-row" : undefined}>
+      <AsyncAction status={status} onCancel={onCancel} cancelling={submitting}>
       <button className={workspace ? "outline-button" : "primary"} disabled={disabled || uploading || !selection.image || !subjectImage || !basePrompt.trim()} aria-busy={submitting}
         onClick={() => onSubmit({ subjectImage, basePrompt })}>
         {workspace && !submitting && job?.status !== "running" && <Icon name="edit" />}
         {submitting ? "正在提交…" : job?.status === "running" ? "正在生成提示词…" : workspace ? job?.result ? "重新逆向提示词" : "逆向提示词" : `生成${style ? "风格转换" : "主体重演"}提示词`}
       </button>
+      </AsyncAction>
       {onExtract && <button className={workspace ? "text-link" : "secondary"} disabled={disabled} onClick={onExtract}
         title="仅分析参考图，不使用主体图和任务指令">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
       </div>

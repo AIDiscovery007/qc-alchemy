@@ -108,11 +108,9 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
           <div className="settings-update-card">
             <div className="settings-update-top"><strong>{status}</strong>{cli?.updateAvailable && <span className="settings-chip attention">稳定版</span>}</div>
             {cli?.installed && <div className="settings-version-pair">{cli.updateAvailable && cli.latestVersion ? <><span>{cli.version}</span><span>→</span><strong>{cli.latestVersion}</strong></> : <strong>{cli.version || "版本未知"}</strong>}</div>}
-            <p>{!connected ? "启动本机服务并连接后，才能检测和管理 Codex。" : !cli ? "正在检测本机安装…" : updating ? cli.operation?.stage : cli.reason || (cli.source === "app" ? "此 CLI 随桌面 App 更新。请在对应 App 中检查更新。" : !cli.installed ? "安装并登录 Codex CLI 后重新检测。" : cli.operation?.status === "completed" ? "版本检查通过，可前往插件模型刷新列表并验证。" : cli.updateAvailable ? "更新后检查 CLI 可用性，并刷新插件模型列表。" : "插件使用下方安装位置的 Codex CLI。")}</p>
+            <p className="settings-operation-status" role="status">{!connected ? "启动本机服务并连接后，才能检测和管理 Codex。" : !cli ? "正在检测本机安装…" : updating ? `${cli.operation?.stage || "正在升级…"} 关闭设置后仍会继续。` : serviceBusy ? "请等待当前逆向、生图或模型验证完成后升级。" : cli.reason || (cli.source === "app" ? "此 CLI 随桌面 App 更新。请在对应 App 中检查更新。" : !cli.installed ? "安装并登录 Codex CLI 后重新检测。" : cli.operation?.status === "completed" ? "版本检查通过，可前往插件模型刷新列表并验证。" : cli.updateAvailable ? "更新后检查 CLI 可用性，并刷新插件模型列表。" : "插件使用下方安装位置的 Codex CLI。")}</p>
             {cli?.updateAvailable && cli.canUpdate && cli.command && <code className="settings-command">{cli.command}</code>}
-            {serviceBusy && !updating && <div className="settings-info">请等待当前逆向、生图或模型验证完成后升级。</div>}
             {cli?.operation?.status === "failed" && <div className="settings-info settings-error" role="alert">{cli.operation.error || cli.operation.stage}</div>}
-            {updating && <div className="settings-info" role="status">关闭设置后，升级仍会在本机继续。</div>}
             {!connected ? <button className="primary" onClick={() => setSection("connection")}>前往连接</button> : cli?.updateAvailable && cli.canUpdate ? <button className="primary" disabled={blocked || serviceBusy} onClick={() => void act("update")}>{updating || pending === "update" ? "正在升级…" : `一键升级至 ${cli.latestVersion}`}</button> : <button className="primary" disabled={blocked || !cli} onClick={() => void act("check")}>{pending === "check" ? "正在检测…" : updating ? "正在升级…" : "重新检测"}</button>}
           </div>
           {cli && <>
@@ -123,7 +121,7 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
             <details className="settings-detail"><summary>安装位置与诊断信息</summary><code>{cli.executable || "未检测到可执行文件"}<br />当前版本 · {cli.version || "未知"}</code></details>
             {cli.checkError && <div className="settings-info settings-error" role="alert">检查更新失败：{cli.checkError}</div>}
           </>}
-          {notice && <div className="settings-info" role="status">{notice}</div>}
+          <p className="settings-check-notice fine" role="status">{notice}</p>
           {(error || loadError) && <div className="settings-info settings-error" role="alert">{error || loadError}</div>}
         </section>}
         {section === "models" && <section aria-label="模型设置">{connected ? <ModelSettings wide onCheckCli={() => setSection("cli")} key={cli?.operation?.finishedAt || "initial"} serviceBusy={serviceBusy || updating || !!pending} /> : <><h3>选择创作模型</h3><p className="settings-sub">逆向与生图使用同一模型，仅影响本插件。</p><div className="settings-info">连接本机服务后，可选择并验证模型。</div><button className="primary" onClick={() => setSection("connection")}>前往连接</button></>}</section>}

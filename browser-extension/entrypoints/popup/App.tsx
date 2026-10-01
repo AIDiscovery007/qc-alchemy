@@ -11,6 +11,7 @@ import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from "../../lib/types";
 import ProjectHistory from "./ProjectHistory";
 import SubjectForm from "./SubjectForm";
+import AsyncAction from "./AsyncAction";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
@@ -363,6 +364,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const reverseStatus = reading ? selection?.stage || "正在读取图片…" : running ? job?.stage || "正在逆向提示词…"
+    : restoring ? "正在恢复原图…" : loadingProject ? "正在读取模板项目…" : cliBusy ? "Codex 正在升级…"
+    : modelBusy ? "正在验证模型…" : busy ? "正在提交…" : undefined;
+
   const versionSelector = modeJobs(preferences.mode).length > (workspace ? 0 : 1) && <SelectField className={workspace ? "version-select" : undefined} label={workspace ? "" : "提示词版本"} aria-label="提示词版本" value={job?.id} disabled={busy}
               onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
               {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>{workspace ? `版本 ${items.length - i}${i === 0 ? " · 最新" : ""}` : `第 ${items.length - i} 次 · ${new Date(item.createdAt).toLocaleString("zh-CN")} · ${laneStatus(item)}`}</option>)}
@@ -473,7 +478,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
         await saveMode(mode);
       }} />}
-      {cliBusy && <p className="error" role="status">Codex 正在升级，完成后可继续提交任务。</p>}
       {workspace && !historyOpen && <div className="workspace-mobile-tabs"><button aria-pressed={mobilePane === "edit"} onClick={() => setMobilePane("edit")}>画面与提示词</button><button aria-pressed={mobilePane === "result"} onClick={() => setMobilePane("result")}>生成结果</button></div>}
       <div className={workspace ? "workspace-body" : undefined} data-pane={mobilePane} data-history={historyOpen}>
       <div className={workspace ? "workspace-editor" : undefined}>
@@ -491,7 +495,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             )}
 
             {!workspace && activeProject && <div className="project-heading"><h1>{activeProject.title}</h1></div>}
-            {restoring && <p className="fine" role="status">正在恢复这条路径的主体图…</p>}
             {referenceError && <div className="error" role="alert">{referenceError}
               <button className="text-button" disabled={!connected} onClick={() => setReferenceErrors((items) => {
                 const next = { ...items }; delete next[job!.id]; return next;
@@ -520,10 +523,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 主体重演<span>换主体，演原图</span>{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
             </div>
-            {modelBusy && <p className="fine" role="status">正在验证模型，请完成后再提交。</p>}
-            {serviceBusy && !cliBusy && !modelBusy && !running && !job?.generations?.some((item) => item.status === "running") &&
-              <p className="fine" role="status">其他任务正在后台运行，可继续提交。</p>}
-            {loadingProject && selection?.image && <p className="fine" role="status">正在读取模板项目…</p>}
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>准备画面</h2></div>}
             {selection?.image && preferences.mode === "recreate" && (
               workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
@@ -537,30 +536,15 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             {!workspace && versionSelector}
             {(selection || result) && (
               <>
-                {(reading || running) && (
-                  <div className="progress" role="status">
-                    <span className="spinner" />
-                    <div>
-                      <strong>{reading ? selection?.stage : job?.stage}</strong>
-                    </div>
-                    {running && (
-                      <button className="text-button" onClick={cancel}>
-                        取消
-                      </button>
-                    )}
-                  </div>
-                )}
                 {(selection?.error || job?.error) && (
                   <div className="error" role="alert">
                     {job?.error || selection?.error}
                   </div>
                 )}
-                {job?.status === "cancelled" && (
-                  <p className="muted">任务已取消，可重新开始。</p>
-                )}
                 {selection && preferences.mode === "recreate" && (
+                  <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={busy}>
                   <button
-                    className={workspace ? "outline-button workspace-reverse" : "primary"}
+                    className={workspace ? "outline-button" : "primary"}
                     disabled={blocked || !selection.image}
                     onClick={() => start()}
                     aria-busy={busy || running}
@@ -574,6 +558,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                           ? `正在${modeName(preferences.mode)}…`
                           : workspace ? result ? "重新逆向提示词" : "逆向提示词" : "生成复刻提示词"}
                   </button>
+                  </AsyncAction>
                 )}
               </>
             )}
@@ -586,12 +571,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 instruction={instructions[subjectKey(mode)]} onInstructionChange={(value) => setInstructions(items => ({ ...items, [subjectKey(mode)]: value }))}
                 subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
+                status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : "提示词待生成"}</h2>}
-              {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />用 Codex 生成图片<Icon name="arrow" /></button></div>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 
             {result && activeJob && (
@@ -679,9 +665,9 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           </>
         )}
       </main>
-      {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />用 Codex 生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
+      {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
       </div>
-      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>生成结果 <small>0 张 · 当前提示词版本</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas"><div className="empty-canvas"><Icon name="image" /><h3>留一点空间，给想象。</h3><p>准备图片，逆向提示词，再让新的画面在这里发生。</p></div></div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
+      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>生成结果 <small>0 张 · 当前提示词版本</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas" /><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
       </div>
       </div>
     </div>

@@ -98,11 +98,6 @@ p { margin: 8px 0 14px; }
 .image-card { margin: 18px 0; border: 1px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .image-card img { display: block; width: 100%; height: 220px; object-fit: contain; background: #f0ece3; }
 .image-card figcaption { display: flex; justify-content: space-between; padding: 10px 12px; font-size: 11px; }
-.progress { display: flex; gap: 10px; align-items: center; padding: 16px 0; }
-.progress strong { font-size: 12px; font-weight: 500; }
-.progress .text-button { margin-left: auto; flex-shrink: 0; }
-.spinner { width: 16px; height: 16px; border: 2px solid #ded8cb; border-top-color: var(--ink); border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .result, .lane-empty { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--ink); }
 .prompt-card { border: 1px solid var(--ink); border-radius: 12px; background: #fff; overflow: hidden; }
 .prompt-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
@@ -190,3 +185,14 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 .compact-main { display: contents; }
 .compact-main > .error { margin: 16px 20px 0; }
 .workspace-entry { white-space: nowrap; }
+
+/* Keep asynchronous feedback in the space already occupied by its action. */
+.async-action { position:relative;min-width:0;margin-top:12px; }
+.async-action-controls > button { width:100%;margin-top:0; }
+.async-action[data-pending="true"] > .async-action-controls { visibility:hidden; }
+.async-action-status { position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--ink);border-radius:8px;background:#fff3c4; }
+.async-action-label { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px; }
+.async-action-status .async-action-cancel { flex:none;border:0;background:none;padding:6px 0 6px 8px;font-size:11px;color:var(--ink); }
+.activity-dot { display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;animation:activity-pulse 1.4s ease-in-out infinite; }
+@keyframes activity-pulse { 50% { opacity:.3; } }
+@media(prefers-reduced-motion:reduce) { .activity-dot { animation:none; } }
