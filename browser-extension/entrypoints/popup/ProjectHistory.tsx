@@ -5,8 +5,9 @@ import type { ProjectSummary } from "../../lib/types";
 import ProjectItem from "./ProjectItem";
 import Icon from "./Icon";
 
-export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, loading, loadError, onPage, onSearch, onRetry }: {
+export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, status, loading, loadError, onPage, onSearch, onStatus, onRetry }: {
   page: number; total: number; pageSize: number; search: string; loading: boolean; loadError: string;
+  status?: "unstarted"; onStatus(value: "unstarted" | undefined): void;
   onPage(page: number): void; onSearch(value: string): void; onRetry(): void;
   projects: ProjectSummary[]; busy: boolean; onOpen(project: ProjectSummary): void;
   onDelete(ids: string[]): Promise<void>;
@@ -24,7 +25,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   const visible = projects;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const unavailable = busy || loading || !!loadError;
-  useEffect(() => { setSelected([]); }, [page, search]);
+  useEffect(() => { setSelected([]); setNotice(""); }, [page, search, status]);
   const eligible = visible.filter((project) => !project.busy);
   const checked = eligible.filter((project) => selected.includes(project.id));
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   const items = visible.map((project) => <ProjectItem key={project.id} project={project} workspace={workspace} selectable={!workspace || managing} disabled={unavailable} selected={checked.some((item) => item.id === project.id)}
     onSelect={() => setSelected((ids) => ids.includes(project.id) ? ids.filter((id) => id !== project.id) : [...ids, project.id])}
     onOpen={() => onOpen(project)} onDelete={() => confirm([project])} />);
-  const searchInput = <input className="workspace-project-search" aria-label="搜索项目" type="search" value={search} maxLength={200} placeholder="搜索全部项目" disabled={busy}
+  const searchInput = <input className="workspace-project-search" aria-label="搜索项目" type="search" value={search} maxLength={200} placeholder={status ? "搜索待逆向项目" : "搜索全部项目"} disabled={busy}
         onChange={(event) => { onSearch(event.target.value); setSelected([]); }} />;
   return <section className={`history${workspace ? " workspace-project-library" : ""}`}>
     {workspace ? <h2 ref={heading} className="workspace-library-heading" tabIndex={-1}>项目记录</h2> : <h1 ref={heading} tabIndex={-1}>项目记录</h1>}
@@ -58,6 +59,10 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
       {!!projects.length && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}</div>
     </div>}
     {!workspace && <div className="history-search">{searchInput}</div>}
+    <div className="project-status-filter" role="group" aria-label="项目状态筛选">
+      <button type="button" aria-pressed={!status} disabled={busy} onClick={() => onStatus(undefined)}>全部</button>
+      <button type="button" aria-pressed={status === "unstarted"} disabled={busy} onClick={() => onStatus("unstarted")}>待逆向</button>
+    </div>
     {!!projects.length && (!workspace || managing) && <div className="history-toolbar">
       <label><input ref={selectAll} className="project-checkbox" type="checkbox" checked={!!eligible.length && checked.length === eligible.length}
         disabled={unavailable || !eligible.length} onChange={(event) => setSelected(event.target.checked ? eligible.map((project) => project.id) : [])} />选择本页</label>
@@ -66,9 +71,9 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
       </button>
     </div>}
     <p className="history-notice" role="status">{notice}</p>
-    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">还没有项目。从网页选择一张参考图开始。</p>}
-    {!loading && !loadError && !visible.length && !!search.trim() && <p className="muted">没有找到匹配的项目。</p>}
-    <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : `共 ${total} 个项目 · 第 ${Math.min(page, pages)} / ${pages} 页`}</div>
+    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "还没有待逆向的图片。浏览网页时点击「加入 Reframe」，稍后在这里开始逆向。" : "还没有项目。从网页选择一张参考图开始。"}</p>}
+    {!loading && !loadError && !visible.length && !!search.trim() && <p className="muted">{status ? "没有找到匹配的待逆向项目。" : "没有找到匹配的项目。"}</p>}
+    <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : `共 ${total} 个${status ? "待逆向" : ""}项目 · 第 ${Math.min(page, pages)} / ${pages} 页`}</div>
     {loadError && <div className="error" role="alert">{loadError}<button className="text-button" onClick={onRetry}>重试</button></div>}
     <nav className="project-pagination" aria-label="项目分页">
       <button className="secondary" disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>上一页</button>

@@ -493,7 +493,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       <div className={workspace ? "workspace-editor" : undefined}>
       <main>
         {historyOpen ? (
-          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
+          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
         ) : (
           <>
             {!selection && (

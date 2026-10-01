@@ -78,7 +78,9 @@ export type Generation = {
   revisedPrompt?: string;
   error?: string;
 };
+export type CollectionResult = { projectId: string; created: boolean };
 export type ImageTarget = {
+  captureId?: string;
   src: string;
   rect?: {
     x: number;

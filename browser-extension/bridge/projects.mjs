@@ -161,9 +161,10 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       return ids;
     },
     list,
-    page({ page = 1, limit = 24, q = "" }) {
+    page({ page = 1, limit = 24, q = "", status }) {
       const query = q.trim().toLocaleLowerCase();
-      const matching = query ? list().filter((item) => `${item.title} ${item.sourceUrl}`.toLocaleLowerCase().includes(query)) : list();
+      const matching = list().filter((item) => (status !== "unstarted" || item.jobCount === 0) &&
+        (!query || `${item.title} ${item.sourceUrl}`.toLocaleLowerCase().includes(query)));
       page = Math.min(page, Math.max(1, Math.ceil(matching.length / limit)));
       return { items: matching.slice((page - 1) * limit, page * limit), total: matching.length, page, pageSize: limit, revision: revision() };
     },

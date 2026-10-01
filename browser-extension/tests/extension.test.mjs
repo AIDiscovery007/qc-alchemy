@@ -541,12 +541,13 @@ test("paged project reads encode filters, retain authentication and reject unbou
   const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
   const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
   const id = "a".repeat(64);
-  assert.equal((await send({ type: "alchemy:projects", page: 3, limit: 24, q: "水彩 & /token?", token: "forged", path: "/token" })).ok, true);
+  assert.equal((await send({ type: "alchemy:projects", page: 3, limit: 24, q: "水彩 & /token?", status: "unstarted", token: "forged", path: "/token" })).ok, true);
   const url = new URL(calls[0].url);
   assert.equal(url.pathname, "/projects");
   assert.equal(url.searchParams.get("page"), "3");
   assert.equal(url.searchParams.get("limit"), "24");
   assert.equal(url.searchParams.get("q"), "水彩 & /token?");
+  assert.equal(url.searchParams.get("status"), "unstarted");
   assert.equal((await send({ type: "alchemy:project", id, revision: "revision 2/&" })).ok, true);
   const detail = new URL(calls[1].url);
   assert.equal(detail.pathname, `/projects/${id}`);
@@ -555,6 +556,7 @@ test("paged project reads encode filters, retain authentication and reject unbou
     ...[0, -1, 1.5, "1", null, Number.MAX_SAFE_INTEGER + 1].map(page => ({ type: "alchemy:projects", page })),
     ...[0, -1, 101, 2.5, "24", null].map(limit => ({ type: "alchemy:projects", limit })),
     ...[null, {}, 42, "x".repeat(201)].map(q => ({ type: "alchemy:projects", q })),
+    ...[null, "", "started", 42, {}].map(status => ({ type: "alchemy:projects", status })),
     ...[null, 42, "../token", "a".repeat(63)].map(id => ({ type: "alchemy:project", id })),
     ...[null, 42, {}, "x".repeat(101)].map(revision => ({ type: "alchemy:project", id, revision })),
     { type: "alchemy:query", path: "/projects?page=1&limit=1000000" },
@@ -622,4 +624,122 @@ test("local image actions accept only saved IDs and fixed actions from trusted e
   for (const sender of [{ ...workspace, id: "other" }, { ...content, frameId: 2 }, { id: "test", url: "https://example.com" }])
     assert.equal(handlers.message(message, sender, () => assert.fail("untrusted message")), undefined);
   assert.equal(calls.length, 2);
+});
+
+
+test("collecting images persists projects without replacing the current selection or opening UI", async () => {
+  const calls = [];
+  let created = true, fail = false;
+  const { handlers, chrome, messages, tabs } = await background(async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith("/projects")) return { ok: !fail, json: async () => fail ? { error: "保存失败" } : { id: "a".repeat(64), created } };
+    return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
+  }, {
+    Blob, Uint8Array, btoa,
+    createImageBitmap: async () => ({ width: 320, height: 400, close() {} }),
+    OffscreenCanvas: class {
+      getContext() { return { drawImage() {} }; }
+      async convertToBlob() { return new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }); }
+    },
+  });
+  const storage = { preferences: { token: "test" }, selection: { id: "previous", projectId: "b".repeat(64), jobId: "active" } };
+  chrome.storage.local.get = async () => storage;
+  chrome.storage.local.set = async () => assert.fail("collect must not change current UI state");
+  const sender = { id: "test", frameId: 0, tab: { id: 4, windowId: 1, url: "https://example.com" } };
+  const message = { type: "alchemy:collect", target: { src: "https://example.com/template.png" } };
+  const send = () => new Promise(resolve => handlers.message(message, sender, resolve));
+  assert.equal((await send()).value.created, true);
+  created = false;
+  assert.equal((await send()).value.created, false);
+  const parallel = await Promise.all([send(), send(), send()]);
+  assert.ok(parallel.every(reply => reply.ok && reply.value.projectId === "a".repeat(64)), "independent collection requests must not share the selection lock");
+  fail = true;
+  const failed = await send();
+  assert.match(failed.error, /保存失败/);
+  assert.equal(failed.ok, undefined);
+  const count = calls.length;
+  storage.preferences.token = "";
+  assert.match((await send()).error, /连接本机服务/);
+  assert.equal(calls.length, count, "unpaired collection must not read the image or claim success");
+  assert.equal(storage.selection.id, "previous");
+  assert.equal(messages.length, 0);
+  assert.equal(tabs.length, 0);
+  assert.ok(calls.filter(call => call.options?.method === "POST").every(call => call.url.endsWith("/projects")));
+  for (const untrusted of [{ ...sender, id: "other" }, { ...sender, frameId: 1 }, { id: "test", url: "chrome-extension://test/popup.html" }])
+    assert.equal(handlers.message(message, untrusted, () => assert.fail("untrusted collection reply")), undefined);
+  storage.preferences.token = "test";
+  const feedback = [];
+  let finish;
+  chrome.tabs.sendMessage = async (_, message) => { feedback.push(message); if (message.state === "error") finish(); };
+  await new Promise(resolve => { finish = resolve; handlers.menu({ menuItemId: "alchemy-collect", srcUrl: message.target.src }, sender.tab); });
+  assert.deepEqual(feedback.map(message => message.state), ["saving", "error"]);
+  assert.match(feedback[1].error, /保存失败/);
+  fail = false;
+  chrome.tabs.sendMessage = async (_, message) => { feedback.push(message); if (message.state === "saved") finish(); };
+  await new Promise(resolve => { finish = resolve; handlers.menu({ menuItemId: "alchemy-collect", srcUrl: message.target.src }, sender.tab); });
+  assert.equal(feedback.at(-1).created, false);
+  assert.ok(feedback.every(message => message.type === "alchemy:collect-feedback"));
+  assert.equal(tabs.length, 0);
+});
+
+for (const scenario of ["saved", "moved", "screenshot-error"]) test(`collection screenshot fallback preserves capture identity and UI state: ${scenario}`, async () => {
+  const calls = [], events = [], draws = [];
+  let closed = false, rectangleReads = 0;
+  const captureId = "capture-selected-element";
+  const bounds = { x: 20, y: 30, width: 200, height: 300, viewportWidth: 800, viewportHeight: 600 };
+  const { handlers, chrome, tabs } = await background(async (url, options) => {
+    calls.push({ url, options });
+    if (url === "https://example.com/private.png") throw new Error("resource needs site credentials");
+    if (url.endsWith("/projects")) return { ok: true, json: async () => ({ id: "c".repeat(64), created: true }) };
+    return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } });
+  }, {
+    Blob, Uint8Array, btoa,
+    createImageBitmap: async () => ({ width: 1600, height: 1200, close() { closed = true; } }),
+    OffscreenCanvas: class {
+      constructor(width, height) { this.width = width; this.height = height; }
+      getContext() { return { drawImage: (...args) => draws.push(args.slice(1)) }; }
+      async convertToBlob() { return new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }); }
+    },
+  });
+  chrome.storage.local.set = async () => assert.fail("screenshot collection must not replace selection");
+  chrome.tabs.query = async () => [{ id: 4 }];
+  chrome.tabs.sendMessage = async (tabId, message) => {
+    assert.equal(tabId, 4);
+    events.push(message);
+    if (message.type === "alchemy:rect") {
+      assert.equal(message.captureId, captureId);
+      assert.equal(message.src, "https://example.com/private.png");
+      rectangleReads++;
+      return { ...bounds, x: bounds.x + (scenario === "moved" && rectangleReads === 2 ? 20 : 0) };
+    }
+  };
+  chrome.tabs.captureVisibleTab = async (windowId) => {
+    assert.equal(windowId, 1);
+    const visibility = events.filter(message => message.type === "alchemy:capture-visibility");
+    assert.equal(visibility.at(-1)?.hidden, true, "the overlay must be hidden before taking a screenshot");
+    assert.equal(visibility.at(-1)?.captureId, captureId);
+    if (scenario === "screenshot-error") throw new Error("screenshot permission denied");
+    return "data:image/png;base64,iVBORw==";
+  };
+  const sender = { id: "test", frameId: 0, tab: { id: 4, windowId: 1, url: "https://example.com/" } };
+  const reply = await new Promise(resolve => handlers.message({ type: "alchemy:collect", target: { src: "https://example.com/private.png", captureId, rect: bounds } }, sender, resolve));
+  const visibility = events.filter(message => message.type === "alchemy:capture-visibility");
+  assert.deepEqual(visibility.map(message => message.hidden), [true, false], "every screenshot attempt must restore overlay visibility");
+  assert.ok(visibility.every(message => message.captureId === captureId));
+  assert.equal(rectangleReads, scenario === "screenshot-error" ? 1 : 2);
+  assert.equal(tabs.length, 0);
+  assert.ok(events.every(message => ["alchemy:rect", "alchemy:capture-visibility"].includes(message.type)), "collection must not open or close the panel");
+  const posts = calls.filter(call => call.options?.method === "POST");
+  if (scenario === "saved") {
+    assert.equal(reply.ok, true);
+    assert.equal(posts.length, 1);
+    assert.equal(JSON.parse(posts[0].options.body).capture, "screenshot");
+    assert.deepEqual(draws, [[40, 60, 400, 600, 0, 0, 400, 600]], "only the target region is saved");
+    assert.equal(closed, true);
+  } else {
+    assert.equal(reply.ok, undefined);
+    assert.match(reply.error, scenario === "moved" ? /位置发生变化/ : /screenshot permission denied/);
+    assert.equal(posts.length, 0, "changed or failed screenshots must not be registered");
+    assert.equal(draws.length, 0);
+  }
 });

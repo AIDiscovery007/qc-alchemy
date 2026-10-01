@@ -79,6 +79,12 @@ createServer(async (req, res) => {
       res.end('<html><head><meta charset="UTF-8"><title>QC-Reframe · 浮层预览</title></head><body style="margin:0"><iframe title="插件浮层示例" src="/content-preview?state=projects" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
       return;
     }
+    if (path === "/collection-preview") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      const query = new URL(req.url, "http://127.0.0.1").search.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+      res.end(`<html><head><meta charset="UTF-8"><title>Reframe · 收集交互预览</title></head><body style="margin:0"><iframe title="收集交互示例" src="/content-preview${query}" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>`);
+      return;
+    }
     if (path === "/preview.js") {
       res.setHeader("Content-Type", "text/javascript; charset=utf-8");
       res.end(`
@@ -138,6 +144,7 @@ createServer(async (req, res) => {
           const completed=jobs.flatMap(job=>(job.generations||[]).filter(g=>g.status==='completed').map(g=>({jobId:job.id,generationId:g.id,createdAt:g.createdAt}))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
           return {...metadata,cover:completed?{jobId:completed.jobId,generationId:completed.generationId}:undefined,busy:jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))};
         };
+        const collected=new Map();
         let failedPage=false;
         const projectPage=async(message)=>{
           if(message.limit>12){
@@ -145,7 +152,7 @@ createServer(async (req, res) => {
             if(!failedPage&&Number(previewOptions.get('failPage'))===message.page){failedPage=true;throw new Error('示例：项目加载失败，请重试');}
           }
           const query=(message.q||'').trim().toLocaleLowerCase();
-          const filtered=projects.filter(p=>[p.title,p.sourceUrl].some(value=>value.toLocaleLowerCase().includes(query))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id));
+          const filtered=projects.filter(p=>(message.status!=='unstarted'||!p.jobs.length)&&[p.title,p.sourceUrl].some(value=>value.toLocaleLowerCase().includes(query))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id));
           const pageSize=message.limit||24,page=Math.min(Math.max(1,message.page||1),Math.max(1,Math.ceil(filtered.length/pageSize)));
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
@@ -240,6 +247,18 @@ createServer(async (req, res) => {
             const saved=findJob(message.id), generation=saved.generations.find(item=>item.id===message.generationId);
             generation.status='cancelled';generation.stage='已取消';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};
           }
+          if(message.type==='alchemy:collect'){
+            if(state==='invalidated')throw new Error('Extension context invalidated.');
+            const outcome=document.querySelector('#collect-outcome')?.value||previewOptions.get('collect')||'success';
+            await new Promise(resolve=>setTimeout(resolve,outcome==='slow'?4500:800));
+            if(outcome==='failed')return {error:'示例：图片读取失败，请重试'};
+            const existing=collected.get(message.target.src);
+            if(existing)return {ok:true,value:{projectId:existing,created:false}};
+            const id=String(projects.length+1).padStart(64,'0'),createdAt=new Date().toISOString();
+            const project={id,title:'已收集的示例图片',createdAt,updatedAt:createdAt,sourceUrl:'https://example.com/collected',capture:'original',jobs:[],image:message.target.src};
+            projects.unshift(project);touch(project);collected.set(message.target.src,id);
+            return {ok:true,value:{projectId:id,created:true}};
+          }
           if(message.type==='alchemy:select'){
             if(state==='invalidated')throw new Error('Extension context invalidated.');
             listeners.forEach(fn=>fn({type:'alchemy:show'},{},()=>{}));return {ok:true};
@@ -251,7 +270,7 @@ createServer(async (req, res) => {
     }
     if (path === "/content-preview") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(`<html><head><meta charset="UTF-8"><script src="/preview.js"></script></head><body style="padding:40px;background:#eee;font:16px system-ui"><h1>网页浮层验收</h1><p>示例数据 · 不执行逆向 · 将鼠标移到图片并点击逆向风格</p><img width="320" height="400" alt="预览参考图" src="${image}"><script src="/content-scripts/content.js"></script></body></html>`);
+      res.end(`<html><head><meta charset="UTF-8"><script src="/preview.js"></script><style>body{margin:0;padding:28px;background:#fffaef;color:#141111;font:14px/1.6 system-ui}h1{font-size:22px}select{padding:8px;border:1px solid;border-radius:6px;background:#fffdf8;font:inherit}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:24px;max-width:1000px;margin-top:24px}.card img{display:block;width:100%;height:auto;border-radius:16px}.card p{margin:8px 0}button{font:inherit}</style></head><body><h1>收集参考图 · 交互预览</h1><p>示例数据，不保存真实图片、不调用 Codex。将鼠标移到图片，点击 Reframe logo，展开图片图标（立即逆向）与加号（加入 Reframe）；按钮始终位于图片内。</p><label>模拟结果 <select id="collect-outcome"><option value="success">正常保存</option><option value="slow">慢速保存</option><option value="failed">保存失败</option></select></label><div class="grid">${[image, ...["#27ccf3", "#fe7da8"].map(color => `data:image/svg+xml;base64,${Buffer.from(svg.replaceAll("#5b6f4c", color)).toString("base64")}`)].map((src, index) => `<div class="card"><img width="320" height="400" alt="示例参考图 ${index + 1}" src="${src}"><p>参考图 ${index + 1} · 再次点击可验证去重反馈</p></div>`).join("")}</div><script src="/content-scripts/content.js"></script></body></html>`);
       return;
     }
     const file = resolve(root, "." + (path === "/" ? "/popup.html" : path));

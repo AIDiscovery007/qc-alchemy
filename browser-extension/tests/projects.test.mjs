@@ -254,6 +254,7 @@ test("registering templates validates images and authentication without invoking
   assert.equal(project.id, projectIdFor(decodeImage(image).bytes));
   assert.equal(project.sourceUrl, "https://pinterest.com/pin/1");
   assert.equal(project.capture, "screenshot");
+  assert.equal(project.created, true);
   assert.equal(project.jobCount, 0);
   assert.deepEqual(project.jobs, []);
   assert.deepEqual(project.modes, {});
@@ -274,6 +275,9 @@ test("duplicate registration and restart retain a template with no extraction jo
   ]);
   const [first, second] = await Promise.all(responses.map((response) => response.json()));
   assert.equal(first.id, second.id);
+  assert.deepEqual([first.created, second.created].sort(), [false, true]);
+  delete first.created;
+  delete second.created;
   assert.equal((await (await request("/projects")).json()).length, 1);
   await restart();
   const restored = await (await request(`/projects/${first.id}`)).json();
@@ -455,7 +459,7 @@ test("project pages search all summaries, use stable order and clamp after delet
 
 test("project page and conditional detail queries reject unsupported or ambiguous parameters", async (t) => {
   const { request } = await setup(t);
-  for (const query of ["page=0", "page=-1", "page=1.5", "page=1e3", "page=9007199254740992", "limit=0", "limit=101", "limit=", "page=1&page=2", "q=a&q=b", "unknown=1", `q=${"a".repeat(201)}`]) {
+  for (const query of ["page=0", "page=-1", "page=1.5", "page=1e3", "page=9007199254740992", "limit=0", "limit=101", "limit=", "page=1&page=2", "q=a&q=b", "status=", "status=started", "status=unstarted&status=unstarted", "unknown=1", `q=${"a".repeat(201)}`]) {
     assert.equal((await request(`/projects?${query}`)).status, 400, query);
   }
   const project = await (await request("/projects", post({ image }))).json();
@@ -561,4 +565,27 @@ test("thumbnail routes preserve source choice, require auth and fall back from m
   assert.deepEqual(await (await request(`${path}?reference=1`)).json(), original);
   await rm(join(dir, "images", generation.imageAsset));
   assert.deepEqual(await (await request(path)).json(), original);
+});
+
+
+test("unstarted projects filter before paging and search, and leave the inbox when extraction starts", async (t) => {
+  const { request } = await setup(t);
+  const inputs = Array.from({ length: 4 }, (_, i) => `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.from([i])]).toString("base64")}`);
+  const projects = [];
+  for (const [i, image] of inputs.entries()) projects.push(await (await request("/projects", post({ image, sourceUrl: `https://example.com/needle-${i}` }))).json());
+  const job = await (await request("/jobs", post({ image: inputs[3], mode: "recreate" }))).json();
+  const first = await (await request("/projects?status=unstarted&page=1&limit=2")).json();
+  const second = await (await request("/projects?status=unstarted&page=2&limit=2")).json();
+  assert.equal(first.total, 3);
+  assert.equal(first.items.length, 2);
+  assert.equal(second.items.length, 1);
+  assert.deepEqual(new Set([...first.items, ...second.items].map(item => item.id)), new Set(projects.slice(0, 3).map(item => item.id)));
+  const found = await (await request("/projects?status=unstarted&q=NEEDLE-1&page=9&limit=1")).json();
+  assert.equal(found.total, 1);
+  assert.equal(found.page, 1);
+  assert.equal(found.items[0].id, projects[1].id);
+  assert.equal((await (await request("/projects?status=unstarted&q=needle-3")).json()).total, 0);
+  await settled(request, job.id);
+  assert.equal((await (await request("/projects?status=unstarted")).json()).total, 3);
+  assert.equal((await (await request("/projects")).json()).length, 4);
 });

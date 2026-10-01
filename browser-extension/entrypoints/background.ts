@@ -3,6 +3,7 @@ import { bridge } from "../lib/bridge";
 import { captureImage } from "../lib/capture";
 import type {
   ImageTarget,
+  CollectionResult,
   Job,
   Mode,
   Preferences,
@@ -25,14 +26,16 @@ export default defineBackground(() => {
       });
     }
   };
-  browser.runtime.onInstalled.addListener(() => {
-    browser.contextMenus.removeAll().then(() =>
+  browser.runtime.onInstalled.addListener(async () => {
+    try {
+      await browser.contextMenus.removeAll();
       browser.contextMenus.create({
         id: "alchemy-image",
         title: "用 QC-Reframe 逆向图片风格",
         contexts: ["image"],
-      }),
-    );
+      });
+      browser.contextMenus.create({ id: "alchemy-collect", title: "加入 Reframe", contexts: ["image"] });
+    } catch (error) { console.error("无法创建 Reframe 图片菜单", error); }
   });
   let selecting = false;
   const select = async (
@@ -75,6 +78,16 @@ export default defineBackground(() => {
       // Open after capture so the floating UI cannot cover the selected image.
       await openResult(tab.id);
     }
+  };
+  const collect = async (target: ImageTarget, tab: { id: number; windowId: number; url?: string }): Promise<CollectionResult> => {
+    if (!target || typeof target.src !== "string") throw new Error("请选择有效图片");
+    const { preferences } = await browser.storage.local.get("preferences") as { preferences?: Preferences };
+    if (!preferences?.token) throw new Error("请先在设置中连接本机服务，再加入图片");
+    const captured = await captureImage(target, tab.id, tab.windowId);
+    const project = await bridge<Project & { created?: boolean }>("/projects", preferences.token, {
+      ...captured, sourceUrl: tab.url || "",
+    });
+    return { projectId: project.id, created: project.created ?? true };
   };
   const reference = async (id: string, token: string) => {
     if (typeof id !== "string" || !/^[\da-f-]{36}$/.test(id)) throw new Error("无效任务");
@@ -186,10 +199,10 @@ export default defineBackground(() => {
           throw new Error("无效请求");
         return bridge(message.path, token);
       case "alchemy:projects": {
-        const { page = 1, limit = 24, q = "" } = message;
-        if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof q !== "string" || q.length > 200)
+        const { page = 1, limit = 24, q = "", status } = message;
+        if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof q !== "string" || q.length > 200 || (status !== undefined && status !== "unstarted"))
           throw new Error("无效项目查询");
-        return bridge(`/projects?${new URLSearchParams({ page: String(page), limit: String(limit), q })}`, token);
+        return bridge(`/projects?${new URLSearchParams({ page: String(page), limit: String(limit), q, ...(status ? { status } : {}) })}`, token);
       }
       case "alchemy:project": {
         if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id) ||
@@ -313,20 +326,31 @@ export default defineBackground(() => {
       );
       return true;
     }
-    if (message?.type !== "alchemy:select" || !contentSender) return;
+    if (!["alchemy:select", "alchemy:collect"].includes(message?.type) || !contentSender) return;
     const tab = sender.tab;
-    select(message.target, {
-      id: tab!.id!,
-      windowId: tab!.windowId,
-      url: tab!.url,
-    }).then(
-      () => reply({ ok: true }),
-      (error) => reply({ error: error.message }),
-    );
+    void (async () => {
+      try {
+        const value = await (message.type === "alchemy:collect" ? collect : select)(message.target, {
+          id: tab!.id!, windowId: tab!.windowId, url: tab!.url,
+        });
+        reply({ ok: true, value });
+      } catch (error) { reply({ error: error instanceof Error ? error.message : String(error) }); }
+    })();
     return true;
   });
   browser.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== "alchemy-image" || !info.srcUrl || !tab?.id) return;
+    if (!["alchemy-image", "alchemy-collect"].includes(String(info.menuItemId)) || !info.srcUrl || !tab?.id) return;
+    if (info.menuItemId === "alchemy-collect") {
+      const feedback = (value: Record<string, unknown>) => browser.tabs.sendMessage(tab.id!, { type: "alchemy:collect-feedback", ...value }).catch(() => {});
+      void (async () => {
+        await feedback({ state: "saving" });
+        try {
+          const result = await collect({ src: info.srcUrl! }, { id: tab.id!, windowId: tab.windowId, url: tab.url });
+          await feedback({ state: "saved", ...result });
+        } catch (error) { await feedback({ state: "error", error: error instanceof Error ? error.message : String(error) }); }
+      })();
+      return;
+    }
     void select(
       { src: info.srcUrl },
       { id: tab.id, windowId: tab.windowId, url: tab.url },

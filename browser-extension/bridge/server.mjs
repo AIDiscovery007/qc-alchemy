@@ -290,7 +290,7 @@ export async function createBridge({
         return;
       }
       if (req.method === "GET" && path === "/projects") {
-        validateQuery(["page", "limit", "q"]);
+        validateQuery(["page", "limit", "q", "status"]);
         if (!query.size) json(200, projects.list());
         else {
           const integer = (key, fallback, maximum) => {
@@ -299,9 +299,11 @@ export async function createBridge({
             if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > maximum) throw bad("无效分页参数");
             return Number(value);
           };
+          const status = query.get("status");
+          if (status !== null && status !== "unstarted") throw bad("无效项目状态");
           const q = query.get("q") || "";
           if (q.length > 200) throw bad("搜索词最多 200 字符");
-          json(200, projects.page({ page: integer("page", 1, Number.MAX_SAFE_INTEGER), limit: integer("limit", 24, 100), q }));
+          json(200, projects.page({ page: integer("page", 1, Number.MAX_SAFE_INTEGER), limit: integer("limit", 24, 100), q, status }));
         }
         return;
       }
@@ -325,8 +327,9 @@ export async function createBridge({
       if (req.method === "POST" && path === "/projects") {
         const body = await readBody(req);
         const decoded = decodeImage(body.image);
+        const created = !projects.summary(projectIdFor(decoded.bytes));
         const project = await projects.register(decoded, { sourceUrl: sourceUrlFor(body.sourceUrl), capture: body.capture });
-        json(200, projects.get(project.id));
+        json(200, { ...projects.get(project.id), created });
         return;
       }
       const projectMatch = /^\/projects\/([a-f0-9]{64})(\/(?:reference|thumbnail))?$/.exec(path);

@@ -200,13 +200,18 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 /* Pagination changes immediately; only pointer presses use the existing short feedback. */
 .history-search { margin-bottom: 12px; }
 .history-search input { width: 100%; }
+.project-status-filter { display: flex; gap: 8px; margin-bottom: 16px; }
+.project-status-filter button { padding: 6px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-weight: 600; transition: none; }
+.project-status-filter button[aria-pressed="true"] { border-color: var(--ink); background: var(--yellow); }
 .project-page-status { min-height: 24px; color: var(--muted); font-size: 12px; }
 .project-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 20px; }
 .project-pagination span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .project-pagination .secondary { width: auto; margin: 0; padding: 8px 14px; }
 .project-page-items[data-loading="true"], .workspace-project-grid[data-loading="true"] { opacity: .6; }
-.project-pagination button:focus-visible { transition: none; transform: none; }
+.project-pagination button:focus-visible, .project-status-filter button:focus-visible { transition: none; transform: none; }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .project-status-filter button:not(:focus-visible) { transition: transform 120ms var(--ease-out); }
+  .project-status-filter button:active:not(:disabled):not(:focus-visible) { transform: scale(.97); }
   .project-pagination button:not(:focus-visible) { transition: transform 120ms var(--ease-out), background-color 120ms ease; }
   .project-pagination button:active:not(:disabled):not(:focus-visible) { transform: scale(.97); }
 }

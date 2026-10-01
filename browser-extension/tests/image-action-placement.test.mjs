@@ -6,6 +6,17 @@ const rect = (x, y, width, height) => ({ left: x, top: y, right: x + width, bott
 const viewport = rect(0, 0, 900, 800), image = rect(100, 100, 300, 500), size = { width: 120, height: 42 };
 const overlaps = (a, b, gap = 0) => a.left < b.right + gap && a.right > b.left - gap && a.top < b.bottom + gap && a.bottom > b.top - gap;
 
+test('the round trigger fits narrow images and avoids website buttons', () => {
+  const size = { width: 40, height: 40 };
+  const narrow = rect(20, 20, 80, 180);
+  const compact = placeImageAction(narrow, viewport, size, []);
+  assert.equal(compact.right - compact.left, 40);
+  assert.equal(compact.compact, false);
+  const save = rect(300, 110, 90, 48);
+  const action = placeImageAction(image, viewport, size, [save]);
+  assert.ok(action && !overlaps(action, save, 10));
+});
+
 test('image action sits beside a save button with a shadow-safe gap', () => {
   const save = rect(310, 110, 80, 48);
   const action = placeImageAction(image, viewport, size, [save]);

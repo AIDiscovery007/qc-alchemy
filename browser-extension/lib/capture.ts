@@ -42,6 +42,7 @@ export async function captureImage(
       ? ((await browser.tabs.sendMessage(tabId, {
           type: "alchemy:rect",
           src: target.src,
+          captureId: target.captureId,
         })) as ImageTarget["rect"])
       : undefined;
     if (
@@ -59,15 +60,20 @@ export async function captureImage(
     }
     const [active] = await browser.tabs.query({ active: true, windowId });
     if (active?.id !== tabId) throw new Error("请回到图片所在标签页后重试");
-    const screenshot = await browser.tabs.captureVisibleTab(windowId, {
-      format: "png",
-    });
+    let screenshot: string;
+    try {
+      await browser.tabs.sendMessage(tabId, { type: "alchemy:capture-visibility", captureId: target.captureId, hidden: true });
+      screenshot = await browser.tabs.captureVisibleTab(windowId, { format: "png" });
+    } finally {
+      await browser.tabs.sendMessage(tabId, { type: "alchemy:capture-visibility", captureId: target.captureId, hidden: false }).catch(() => {});
+    }
     const [stillActive] = await browser.tabs.query({ active: true, windowId });
     if (stillActive?.id !== tabId)
       throw new Error("截图时切换了标签页，请回到图片页面后重试");
     const current = await browser.tabs.sendMessage(tabId, {
       type: "alchemy:rect",
       src: target.src,
+      captureId: target.captureId,
     });
     if (
       !current ||
