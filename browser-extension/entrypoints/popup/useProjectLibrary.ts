@@ -10,7 +10,7 @@ async function readPage(page: number, limit: number, q = "", status?: "unstarted
   return value;
 }
 
-export default function useProjectLibrary(paired: boolean, open: boolean, workspace: boolean, revision: string) {
+export default function useProjectLibrary(paired: boolean, open: boolean, workspace: boolean, revision: string, showHidden: boolean) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"unstarted" | undefined>();
@@ -19,6 +19,7 @@ export default function useProjectLibrary(paired: boolean, open: boolean, worksp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  useEffect(() => { setPage(1); }, [showHidden]);
   useEffect(() => {
     if (!paired || !workspace) return;
     let cancelled = false;
@@ -27,7 +28,7 @@ export default function useProjectLibrary(paired: boolean, open: boolean, worksp
       () => { /* The project library exposes retryable connection errors. */ },
     );
     return () => { cancelled = true; };
-  }, [paired, workspace, revision, retry]);
+  }, [paired, workspace, revision, retry, showHidden]);
   useEffect(() => {
     if (!paired || !open) return;
     let cancelled = false;
@@ -41,7 +42,7 @@ export default function useProjectLibrary(paired: boolean, open: boolean, worksp
       }, reason => { if (!cancelled) setError(reason.message); }).finally(() => { if (!cancelled) setLoading(false); });
     }, search ? 180 : 0);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [paired, open, page, search, status, revision, retry]);
+  }, [paired, open, page, search, status, revision, retry, showHidden]);
   return { data, recent, page, search, status, loading, error, setPage,
     setSearch: (value: string) => { setSearch(value); setPage(1); },
     setStatus: (value: "unstarted" | undefined) => { setStatus(value); setPage(1); },

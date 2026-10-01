@@ -1,4 +1,6 @@
 const paths = {
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  eyeClosed: "M3 8c2 4 5 6 9 6s7-2 9-6M5 11l-2 3m6-1-1 4m7-4 1 4m3-6 2 3",
   swap: "M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4",
   compare: "M12 3v18M4 5h4v14H4zM16 5h4v14h-4z",
   grid: "M3 3h6v6H3V3ZM15 3h6v6h-6V3ZM3 15h6v6H3v-6ZM15 15h6v6h-6v-6Z",

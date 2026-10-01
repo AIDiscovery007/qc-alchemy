@@ -9,6 +9,7 @@ import ImageInput from "../workspace/ImageInput";
 import ImagePreview from "./ImagePreview";
 import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
+import HiddenProjectsToggle from "./HiddenProjectsToggle";
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection, MultiSubject } from "../../lib/types";
@@ -44,7 +45,11 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [cliBusy, setCliBusy] = useState(false);
   const [preferences, setPreferences] = useState(defaults);
   const [tokenDraft, setTokenDraft] = useState("");
-  const [selection, setSelection] = useState<Selection>();
+  const [storedSelection, setSelection] = useState<Selection>();
+  const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>([]);
+  const showHidden = !!preferences.showHiddenProjects;
+  const visibilityRevision = useRef(0);
+  const selection = !showHidden && storedSelection?.projectId && hiddenProjectIds.includes(storedSelection.projectId) ? undefined : storedSelection;
   const [project, setProject] = useState<Project>();
   const projectSnapshot = useRef<Project | undefined>(undefined);
   projectSnapshot.current = project;
@@ -65,7 +70,9 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const deletingProjects = useRef(false);
   const [settings, setSettings] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const library = useProjectLibrary(preferences.paired, historyOpen, workspace, dataRevision);
+  const library = useProjectLibrary(preferences.paired, historyOpen, workspace, dataRevision, showHidden);
+  const visibleProject = (item: ProjectSummary) => showHidden || (!item.hidden && !hiddenProjectIds.includes(item.id));
+  const recentProjects = library.recent.items.filter(visibleProject);
   const [connected, setConnected] = useState(false);
   const [connectionText, setConnectionText] = useState("尚未连接");
   const [serviceBusy, setServiceBusy] = useState(false);
@@ -123,11 +130,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     const refresh = async () => {
       try {
         const revision = modeRevision.current;
+        const visibility = visibilityRevision.current;
         const snapshotRevision = selectionRevision.current;
         const value = await readState(previous?.image ? previous.id : undefined, previous?.jobId);
         if (cancelled) return 1500;
         setPreferences((previous) => ({ ...value.preferences,
           mode: revision === modeRevision.current && revision % 2 === 0 ? value.preferences.mode : previous.mode,
+          showHiddenProjects: visibility === visibilityRevision.current ? value.preferences.showHiddenProjects : previous.showHiddenProjects,
         }));
         const firstRefresh = !initialized;
         if (firstRefresh) setSettings(!value.preferences.paired);
@@ -189,11 +198,14 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       const revision = projectRevision.current;
       let delay = 10_000;
       try {
-        const health = await query<{ ready: boolean; skill: string; active: number; projectsRevision?: string; modelBusy?: boolean; cliBusy?: boolean; model?: string }>("/health");
+        const health = await query<{ ready: boolean; skill: string; active: number; visibleActive?: number; hiddenProjectIds?: string[]; projectsRevision?: string; modelBusy?: boolean; cliBusy?: boolean; model?: string }>("/health");
         if (cancelled) return delay;
         setConnected(health.ready);
         setServiceBusy(health.active > 0);
-        setActiveCount(health.active);
+        if (revision === projectRevision.current) {
+          setActiveCount(health.visibleActive ?? health.active);
+          setHiddenProjectIds(health.hiddenProjectIds || []);
+        }
         setCliBusy(!!health.cliBusy);
         setModelBusy(!!health.modelBusy);
         setSelectedModel(health.model || null);
@@ -217,7 +229,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       return delay;
     });
     return () => { cancelled = true; stop(); };
-  }, [preferences.paired, selection?.projectId, refreshNonce]);
+  }, [preferences.paired, selection?.projectId, refreshNonce, showHidden]);
 
   useEffect(() => {
     if (!job?.reenact || references[job.id] || referenceErrors[job.id]) return;
@@ -391,6 +403,34 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       setReferenceErrors((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
     } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
   };
+  const setProjectsHidden = async (ids: string[], hidden: boolean) => {
+    setBusy(true);
+    selectionRevision.current++;
+    projectRevision.current++;
+    deletingProjects.current = true;
+    try {
+      const { updatedIds } = await request<{ updatedIds: string[] }>({ type: "alchemy:set-project-hidden", ids, hidden });
+      setHiddenProjectIds(previous => hidden ? [...new Set([...previous, ...updatedIds])] : previous.filter(id => !updatedIds.includes(id)));
+      if (project && updatedIds.includes(project.id)) setProject({ ...project, hidden });
+      if (hidden && !showHidden && selection?.projectId && updatedIds.includes(selection.projectId)) { setSelection(undefined); setProject(undefined); }
+      library.refresh();
+      setRefreshNonce(value => value + 1);
+    } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
+  };
+  const toggleHiddenProjects = async () => {
+    setBusy(true); setError("");
+    visibilityRevision.current++;
+    projectRevision.current++;
+    try {
+      const shown = await request<boolean>({ type: "alchemy:show-hidden-projects", show: !showHidden });
+      visibilityRevision.current++;
+      setPreferences(previous => ({ ...previous, showHiddenProjects: shown }));
+      if (!shown && (project?.hidden || (selection?.projectId && hiddenProjectIds.includes(selection.projectId)))) {
+        selectionRevision.current++; setSelection(undefined); setProject(undefined); setHistoryOpen(true);
+      }
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
   const cancel = async () => {
     if (!job) return;
     try { updateJob(await request<Job>({ type: "alchemy:cancel", id: job.id })); }
@@ -473,14 +513,15 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
         <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{library.recent.total}</span></button>
         <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span><span className="count">{activeCount}</span></button>
-        <div className="sidebar-label">最近项目 <span>{library.recent.items.length}</span></div>
-        <div className="project-nav">{library.recent.items.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
+        <div className="sidebar-label">最近项目 <span>{recentProjects.length}</span></div>
+        <div className="project-nav">{recentProjects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
         <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span><span className="count">↑</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"} · 本地存储</div></div>
       </aside>}
       <div className={workspace ? "workspace-main" : "compact-main"}>
       {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "所有灵感，都在这里。" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
         {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><button className="quiet-button" aria-label="导出提示词" disabled={!result || !!promptDraft} onClick={exportResult}><Icon name="download" /><span>导出提示词</span></button></>}
+        <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
         <button className="outline-button" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" />{activeCount ? `${activeCount} 项执行中` : "任务中心"}</button>
       </div></header>}
       {!workspace && !embedded && <header>
@@ -498,6 +539,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           <Icon name={historyOpen ? "back" : "history"} />
           {historyOpen ? "返回项目" : "项目记录"}
         </button>
+        <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
         <button className="text-button workspace-entry" onClick={openWorkspace} title="在新标签页打开宽版工作台"><Icon name="expand" />工作台</button>
         <button
           className="icon-button"
@@ -555,7 +597,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
 
       {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
       {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
-      {workspace && tasksOpen && <TaskCenter onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId) => {
+      {workspace && tasksOpen && <TaskCenter showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId) => {
         const next = await request<Selection>({ type: "alchemy:open-project", id: projectId });
         selectionRevision.current++; setSelection(next); setHistoryOpen(false); setMobilePane("edit");
         setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
@@ -566,7 +608,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       <div className={workspace ? "workspace-editor" : undefined}>
       <main>
         {historyOpen ? (
-          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} />
+          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} />
         ) : (
           <>
             {!selection && (

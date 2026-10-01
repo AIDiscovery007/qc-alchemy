@@ -253,6 +253,11 @@ export async function createBridge({
       const validateQuery = (allowed) => {
         for (const key of query.keys()) if (!allowed.includes(key) || query.getAll(key).length !== 1) throw bad("无效查询参数");
       };
+      const includeHidden = () => {
+        const value = query.get("includeHidden");
+        if (value !== null && value !== "true" && value !== "false") throw bad("无效隐藏项目参数");
+        return value === "true";
+      };
       // Keep deletion and task setup from writing the same project concurrently.
       if (req.method === "POST") {
         releaseMutation = await acquireMutation();
@@ -260,6 +265,8 @@ export async function createBridge({
         if (deletionFailed) throw bad("项目清理未完成，请重启本机服务后重试", 503);
       }
       if (req.method === "GET" && path === "/health") {
+        validateQuery(["includeHidden"]);
+        const showHidden = includeHidden();
         let skill;
         try {
           skill = (await readFile(skillPath, "utf8"))
@@ -274,6 +281,8 @@ export async function createBridge({
           skill: skill || null,
           ready: Boolean(skill),
           active: controllers.size + Number(models.busy) + Number(cliBusy()),
+          visibleActive: [...controllers.values()].filter((controller) => showHidden || !projects.isHidden(controller.projectId)).length + Number(models.busy) + Number(cliBusy()),
+          hiddenProjectIds: projects.hiddenProjectIds,
           cliBusy: cliBusy(),
           modelBusy: models.busy,
           model: models.selectedModel,
@@ -318,8 +327,9 @@ export async function createBridge({
         return;
       }
       if (req.method === "GET" && path === "/projects") {
-        validateQuery(["page", "limit", "q", "status"]);
-        if (!query.size) json(200, projects.list());
+        validateQuery(["page", "limit", "q", "status", "includeHidden"]);
+        const showHidden = includeHidden();
+        if (!["page", "limit", "q", "status"].some((key) => query.has(key))) json(200, projects.list({ includeHidden: showHidden }));
         else {
           const integer = (key, fallback, maximum) => {
             const value = query.get(key);
@@ -331,8 +341,18 @@ export async function createBridge({
           if (status !== null && status !== "unstarted") throw bad("无效项目状态");
           const q = query.get("q") || "";
           if (q.length > 200) throw bad("搜索词最多 200 字符");
-          json(200, projects.page({ page: integer("page", 1, Number.MAX_SAFE_INTEGER), limit: integer("limit", 24, 100), q, status }));
+          json(200, projects.page({ page: integer("page", 1, Number.MAX_SAFE_INTEGER), limit: integer("limit", 24, 100), q, status, includeHidden: showHidden }));
         }
+        return;
+      }
+      if (req.method === "POST" && path === "/projects/visibility") {
+        const { ids, hidden } = await readBody(req);
+        if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || ids.some((id) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) || typeof hidden !== "boolean")
+          throw bad("请选择有效项目和隐藏状态");
+        const unique = [...new Set(ids)];
+        if (unique.some((id) => !projects.summary(id))) throw bad("项目不存在，请刷新后重试", 404);
+        const updatedIds = await projects.setHidden(unique, hidden);
+        json(200, { updatedIds, hidden, revision: projects.revision });
         return;
       }
       if (req.method === "POST" && path === "/projects/delete") {
@@ -386,8 +406,10 @@ export async function createBridge({
         return;
       }
       if (req.method === "GET" && path === "/jobs") {
+        validateQuery(["includeHidden"]);
+        const showHidden = includeHidden();
         const activity = (job) => [job.createdAt, ...(job.generations || []).map(item => item.createdAt)].filter(value => typeof value === "string").sort().at(-1) || "";
-        const recent = [...jobs.values()].sort((a, b) => activity(b).localeCompare(activity(a)));
+        const recent = [...jobs.values()].filter((job) => showHidden || !projects.isHidden(job.projectId)).sort((a, b) => activity(b).localeCompare(activity(a)));
         let completed = 0;
         json(200, recent.filter(job => job.status === "running" || job.generations?.some(item => item.status === "running") || completed++ < 30));
         return;
@@ -502,6 +524,7 @@ export async function createBridge({
         const subjects = multi ? await saveSubjects(decodedSubjects) : undefined;
         const subjectImagePaths = subjects?.map((item) => images.path(item.subjectAsset));
         const controller = new AbortController();
+        controller.projectId = job.projectId;
         controllers.set(id, controller);
         const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(aspectRatio ? { aspectRatio } : {}), ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}), ...(subjects ? { subjects } : {}) };
         job.generations ||= [];
@@ -632,6 +655,7 @@ export async function createBridge({
       if (multi) reenact.subjects = await saveSubjects(decodedSubjects);
       const id = randomUUID();
       const controller = new AbortController();
+      controller.projectId = project.id;
       controllers.set(id, controller);
       const imagePath = images.path(project.imageAsset);
       const subjectImagePath = subjectAsset ? images.path(subjectAsset) : undefined;

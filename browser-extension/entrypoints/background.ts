@@ -54,6 +54,10 @@ export default defineBackground(() => {
     } catch (error) { console.error("无法创建 Reframe 图片菜单", error); }
   });
   let selecting = false;
+  const showsHiddenProjects = async () => (await browser.storage.session.get("showHiddenProjects")).showHiddenProjects === true;
+  const requireVisibleProject = async (project: Project) => {
+    if (project.hidden && !await showsHiddenProjects()) throw new Error("该项目已隐藏，请先点击小眼睛显示隐藏项目");
+  };
   const select = async (
     target: ImageTarget,
     tab: { id: number; windowId: number; url?: string },
@@ -83,6 +87,10 @@ export default defineBackground(() => {
           sourceUrl: selection.sourceUrl,
           capture: selection.capture,
         });
+        if (project.hidden && !await showsHiddenProjects()) {
+          selection = { id: selection.id, sourceUrl: "" };
+          throw new Error("该项目已隐藏，请先点击小眼睛显示隐藏项目");
+        }
         selection.projectId = project.id;
         selection.stage = "参考模板已就绪，请选择路径生成提示词";
       }
@@ -160,6 +168,7 @@ export default defineBackground(() => {
       "preferences", "selection",
     ])) as { preferences?: Preferences; selection?: Selection };
     const token = preferences?.token || "";
+    const showHiddenProjects = await showsHiddenProjects();
     switch (message.type) {
       case "alchemy:open-workspace": {
         const id = crypto.randomUUID();
@@ -189,6 +198,7 @@ export default defineBackground(() => {
         selecting = true;
         try {
           const project = await bridge<Project>("/projects", token, { image: message.image, sourceUrl: "", capture: "original" });
+          await requireVisibleProject(project);
           const next: Selection = { id: crypto.randomUUID(), projectId: project.id, image: message.image, sourceUrl: "", capture: "original" };
           await browser.storage.local.set({ selection: next });
           return next;
@@ -198,13 +208,26 @@ export default defineBackground(() => {
         return bridge("/cli/check", token, {});
       case "alchemy:cli-update":
         return bridge("/cli/update", token, {});
-      case "alchemy:state":
+      case "alchemy:state": {
+        let visibleSelection = selection;
+        if (selection && !showHiddenProjects && (selection.projectId || /^[\da-f-]{36}$/.test(selection.jobId || ""))) {
+          try {
+            const projectId = selection.projectId || (await bridge<Job>(`/jobs/${selection.jobId}`, token)).projectId;
+            const health = await bridge<{ hiddenProjectIds?: string[] }>("/health", token);
+            if (projectId && health.hiddenProjectIds?.includes(projectId)) visibleSelection = undefined;
+          } catch { visibleSelection = undefined; }
+        }
         return {
-          preferences: { paired: !!token, mode: preferences?.mode || "style" },
+          preferences: { paired: !!token, mode: preferences?.mode || "style", showHiddenProjects },
           // The panel already holds this image; avoid resending megabytes each poll.
-          selection: selection && selection.id === message.selectionId && selection.jobId === message.selectionJobId
-            ? { ...selection, image: undefined, reenact: undefined, generationSubjectImage: undefined, generationSubjects: undefined } : selection,
+          selection: visibleSelection && visibleSelection.id === message.selectionId && visibleSelection.jobId === message.selectionJobId
+            ? { ...visibleSelection, image: undefined, reenact: undefined, generationSubjectImage: undefined, generationSubjects: undefined } : visibleSelection,
         };
+      }
+      case "alchemy:show-hidden-projects":
+        if (typeof message.show !== "boolean") throw new Error("无效显示设置");
+        await browser.storage.session.set({ showHiddenProjects: message.show });
+        return message.show;
       case "alchemy:connect": {
         if (typeof message.token !== "string") throw new Error("无效配对码");
         const health = await bridge<{ ready: boolean; skill: string }>("/health", message.token);
@@ -219,12 +242,12 @@ export default defineBackground(() => {
       case "alchemy:query":
         if (typeof message.path !== "string" || !/^\/(health|models|cli\/status|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
-        return bridge(message.path, token);
+        return bridge(`${message.path}${showHiddenProjects && ["/projects", "/jobs", "/health"].includes(message.path) ? "?includeHidden=true" : ""}`, token);
       case "alchemy:projects": {
         const { page = 1, limit = 24, q = "", status } = message;
         if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof q !== "string" || q.length > 200 || (status !== undefined && status !== "unstarted"))
           throw new Error("无效项目查询");
-        return bridge(`/projects?${new URLSearchParams({ page: String(page), limit: String(limit), q, ...(status ? { status } : {}) })}`, token);
+        return bridge(`/projects?${new URLSearchParams({ page: String(page), limit: String(limit), q, ...(status ? { status } : {}), ...(showHiddenProjects ? { includeHidden: "true" } : {}) })}`, token);
       }
       case "alchemy:project": {
         if (typeof message.id !== "string" || !/^[\da-f]{64}$/.test(message.id) ||
@@ -246,6 +269,11 @@ export default defineBackground(() => {
         return reference(message.id, token);
       case "alchemy:project-reference":
         return projectReference(message.id, token);
+      case "alchemy:set-project-hidden": {
+        if (!Array.isArray(message.ids) || !message.ids.length || message.ids.length > 1000 || message.ids.some((id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) || typeof message.hidden !== "boolean")
+          throw new Error("请选择有效项目和隐藏状态");
+        return bridge("/projects/visibility", token, { ids: message.ids, hidden: message.hidden });
+      }
       case "alchemy:delete-projects": {
         if (!Array.isArray(message.ids) || !message.ids.length || message.ids.length > 1000 || message.ids.some((id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)))
           throw new Error("请选择有效项目");
@@ -265,6 +293,7 @@ export default defineBackground(() => {
         selecting = true;
         try {
           const project = await bridge<Project>(`/projects/${message.id}`, token);
+          await requireVisibleProject(project);
           let next: Selection;
           try { next = await projectReference(message.id, token); }
           catch (error) { next = { id: project.id, projectId: project.id, sourceUrl: project.sourceUrl, capture: project.capture, error: (error as Error).message }; }
@@ -280,6 +309,8 @@ export default defineBackground(() => {
           const project = await bridge<Project>("/projects", token, { image: selection.image, sourceUrl: selection.sourceUrl, capture: selection.capture });
           const latest = await browser.storage.local.get("selection") as { selection?: Selection };
           if (latest.selection?.id !== selection.id) throw new Error("所选图片已变化，请重试");
+          try { await requireVisibleProject(project); }
+          catch (error) { await browser.storage.local.remove("selection"); throw error; }
           const next = { ...selection, projectId: project.id };
           await browser.storage.local.set({ selection: next });
           return next;
@@ -344,7 +375,7 @@ export default defineBackground(() => {
       uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
       return true;
     }
-    if ((contentSender || extensionSender) && ["alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

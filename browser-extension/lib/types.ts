@@ -50,6 +50,7 @@ export type Job = {
 };
 export type ProjectSummary = {
   id: string;
+  hidden?: boolean;
   title: string;
   createdAt: string;
   updatedAt: string;

@@ -6,12 +6,13 @@ import type { ProjectSummary } from "../../lib/types";
 import ProjectItem from "./ProjectItem";
 import Icon from "./Icon";
 
-export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, status, loading, loadError, onPage, onSearch, onStatus, onRetry }: {
+export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, status, loading, loadError, onPage, onSearch, onStatus, onRetry, showHidden, onSetHidden }: {
   page: number; total: number; pageSize: number; search: string; loading: boolean; loadError: string;
   status?: "unstarted"; onStatus(value: "unstarted" | undefined): void;
   onPage(page: number): void; onSearch(value: string): void; onRetry(): void;
   projects: ProjectSummary[]; busy: boolean; onOpen(project: ProjectSummary): void;
   onDelete(ids: string[]): Promise<void>;
+  showHidden: boolean; onSetHidden(ids: string[], hidden: boolean): Promise<void>;
   workspace?: boolean; searchTarget?: HTMLElement | null;
 }) {
   const [managing, setManaging] = useState(false);
@@ -19,6 +20,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   const [pending, setPending] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [visibilityAction, setVisibilityAction] = useState<boolean>();
   const dialog = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const selectAll = useRef<HTMLInputElement>(null);
@@ -26,8 +28,8 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   const visible = projects;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const unavailable = busy || loading || !!loadError;
-  useEffect(() => { setSelected([]); setNotice(""); }, [page, search, status]);
-  const eligible = visible.filter((project) => !project.busy);
+  useEffect(() => { setSelected([]); setNotice(""); }, [page, search, status, showHidden]);
+  const eligible = visible;
   const checked = eligible.filter((project) => selected.includes(project.id));
   useEffect(() => {
     if (selectAll.current) selectAll.current.indeterminate = checked.length > 0 && checked.length < eligible.length;
@@ -49,6 +51,16 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
       heading.current?.focus();
     } catch (error) { setError((error as Error).message); }
   };
+  const setHidden = async (hidden: boolean) => {
+    setError(""); setNotice("");
+    setVisibilityAction(hidden);
+    const ids = checked.filter(project => !!project.hidden !== hidden).map(project => project.id);
+    try {
+      await onSetHidden(ids, hidden);
+      setSelected([]);
+    } catch (error) { setError((error as Error).message); }
+    finally { setVisibilityAction(undefined); }
+  };
   const items = visible.map((project) => <ProjectItem key={project.id} project={project} workspace={workspace} selectable={!workspace || managing} disabled={unavailable} selected={checked.some((item) => item.id === project.id)}
     onSelect={() => setSelected((ids) => ids.includes(project.id) ? ids.filter((id) => id !== project.id) : [...ids, project.id])}
     onOpen={() => onOpen(project)} onDelete={() => confirm([project])} />);
@@ -69,12 +81,17 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
     {!!projects.length && (!workspace || managing) && <div className="history-toolbar">
       <label><input ref={selectAll} className="project-checkbox" type="checkbox" checked={!!eligible.length && checked.length === eligible.length}
         disabled={unavailable || !eligible.length} onChange={(event) => setSelected(event.target.checked ? eligible.map((project) => project.id) : [])} />选择本页</label>
-      <button className="text-button danger" disabled={unavailable || !checked.length} onClick={() => confirm(checked)}>
+      <div className="history-management-actions">
+      <button className="icon-button" aria-label="隐藏所选" aria-busy={visibilityAction === true || undefined} disabled={unavailable || !checked.some(project => !project.hidden)} onClick={() => void setHidden(true)}><Icon name="eyeClosed" /></button>
+      {showHidden && <button className="icon-button" aria-label="取消隐藏" aria-busy={visibilityAction === false || undefined} disabled={unavailable || !checked.some(project => project.hidden)} onClick={() => void setHidden(false)}><Icon name="eye" /></button>}
+      <button className="text-button danger" disabled={unavailable || !checked.length || checked.some(project => project.busy)} onClick={() => confirm(checked)}>
         <Icon name="trash" />删除所选{checked.length ? ` (${checked.length})` : ""}
       </button>
+      </div>
     </div>}
     <p className="history-notice" role="status">{notice}</p>
-    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "还没有待逆向的图片。浏览网页时点击「加入 Reframe」，稍后在这里开始逆向。" : "还没有项目。从网页选择一张参考图开始。"}</p>}
+    {error && !pending.length && <p className="error" role="alert">{error}</p>}
+    {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "还没有待逆向的图片。浏览网页时点击「加入 Reframe」，稍后在这里开始逆向。" : "暂无可见项目。可点击小眼睛查看隐藏项目，或添加参考图。"}</p>}
     {!loading && !loadError && !visible.length && !!search.trim() && <p className="muted">{status ? "没有找到匹配的待逆向项目。" : "没有找到匹配的项目。"}</p>}
     <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : `共 ${total} 个${status ? "待逆向" : ""}项目 · 第 ${Math.min(page, pages)} / ${pages} 页`}</div>
     {loadError && <div className="error" role="alert">{loadError}<button className="text-button" onClick={onRetry}>重试</button></div>}

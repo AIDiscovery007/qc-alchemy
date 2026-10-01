@@ -144,6 +144,9 @@ createServer(async (req, res) => {
             return {id,title:sample.result.title,createdAt,updatedAt:createdAt,sourceUrl:'https://example.com/sample/'+index,capture:'original',jobs:index%5===4?[]:[sample]};
           }));
         }
+        let showHiddenProjects=false;
+        if(previewOptions.has('hidden')) projects.slice(0,Number(previewOptions.get('hidden'))||1).forEach(p=>p.hidden=true);
+        const visibleProjects=()=>projects.filter(p=>showHiddenProjects||!p.hidden);
         let projectsRevision=1;
         projects.forEach(project=>project.revision='preview-1');
         const touch=(project)=>{projectsRevision++;if(project){project.revision='preview-'+projectsRevision;project.updatedAt=new Date().toISOString();}};
@@ -160,7 +163,7 @@ createServer(async (req, res) => {
             if(!failedPage&&Number(previewOptions.get('failPage'))===message.page){failedPage=true;throw new Error('示例：项目加载失败，请重试');}
           }
           const query=(message.q||'').trim().toLocaleLowerCase();
-          const filtered=projects.filter(p=>(message.status!=='unstarted'||!p.jobs.length)&&[p.title,p.sourceUrl].some(value=>value.toLocaleLowerCase().includes(query))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id));
+          const filtered=visibleProjects().filter(p=>(message.status!=='unstarted'||!p.jobs.length)&&[p.title,p.sourceUrl].some(value=>value.toLocaleLowerCase().includes(query))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id));
           const pageSize=message.limit||24,page=Math.min(Math.max(1,message.page||1),Math.max(1,Math.ceil(filtered.length/pageSize)));
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
@@ -186,7 +189,7 @@ createServer(async (req, res) => {
           if(message.type==='alchemy:cli-check'){cli.detectedAt=new Date().toISOString();if(cli.command)cli.checkedAt=cli.detectedAt;return {ok:true,value:structuredClone(cli)};}
           if(message.type==='alchemy:cli-update'){cli.operation={status:'running',stage:'正在升级（预览）'};setTimeout(()=>{cli.version=cli.latestVersion;cli.updateAvailable=false;cli.operation={status:'completed',stage:'升级完成（预览）'};models.selected=null;},2500);return {ok:true,value:structuredClone(cli)};}
           if(message.type==='alchemy:connect'){data.preferences.token='preview';return {ok:true,value:{ready:true}};}
-          if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode},selection:data.selection})};
+          if(message.type==='alchemy:state')return {ok:true,value:structuredClone({preferences:{paired:!!data.preferences.token,mode:data.preferences.mode,showHiddenProjects},selection:!showHiddenProjects&&projects.find(p=>p.id===data.selection?.projectId)?.hidden?undefined:data.selection})};
           if(message.type==='alchemy:models-refresh'||(message.type==='alchemy:query'&&message.path==='/models'))return {ok:true,value:structuredClone(models)};
           if(message.type==='alchemy:model-verify'){
             models.verification={model:message.model,status:'running'};
@@ -195,6 +198,12 @@ createServer(async (req, res) => {
               else {models.selected=message.model;models.models[0].status='verified';models.verification={model:message.model,status:'completed'};}
             },1800);
             return {ok:true,value:structuredClone(models)};
+          }
+          if(message.type==='alchemy:show-hidden-projects'){showHiddenProjects=message.show;return {ok:true,value:showHiddenProjects};}
+          if(message.type==='alchemy:set-project-hidden'){
+            if(previewOptions.get('visibility')==='failed')return {error:'示例：隐藏状态保存失败，请重试'};
+            projects.filter(p=>message.ids.includes(p.id)).forEach(p=>{p.hidden=message.hidden;touch(p);});
+            return {ok:true,value:{updatedIds:message.ids,hidden:message.hidden,revision:'preview-'+projectsRevision}};
           }
           if(message.type==='alchemy:projects')return {ok:true,value:await projectPage(message)};
           if(message.type==='alchemy:project'){
@@ -207,7 +216,7 @@ createServer(async (req, res) => {
             return {ok:true,value:{image:cover?(state==='gallery'?gallery.result:template):project.image||template,source:cover?{kind:'generation',jobId:cover.jobId,generationId:cover.generationId}:{kind:'reference'}}};
           }
           if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template,source:{kind:'generation',jobId:message.id,generationId:message.generationId}}};
-          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?projects.flatMap(p=>p.jobs):message.path==='/projects'?projects.map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
+          if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,hiddenProjectIds:projects.filter(p=>p.hidden).map(p=>p.id),visibleActive:visibleProjects().flatMap(p=>p.jobs).reduce((n,j)=>n+Number(j.status==='running')+(j.generations||[]).filter(g=>g.status==='running').length,0),projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?visibleProjects().flatMap(p=>p.jobs):message.path==='/projects'?visibleProjects().map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
             if(projects.some(p=>message.ids.includes(p.id)&&summary(p).busy))return {error:'所选项目仍在逆向或生图'};

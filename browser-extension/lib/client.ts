@@ -2,7 +2,7 @@ import { browser } from "wxt/browser";
 import type { Mode, Selection } from "./types";
 
 export type UiState = {
-  preferences: { paired: boolean; mode: Mode };
+  preferences: { paired: boolean; mode: Mode; showHiddenProjects?: boolean };
   selection?: Selection;
 };
 

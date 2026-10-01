@@ -1,0 +1,183 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+
+const compiled = ts.transpileModule(await readFile(new URL("../entrypoints/background.ts", import.meta.url), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const projectId = "a".repeat(64), image = "data:image/png;base64,AAAA";
+const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+const contentSender = { id: "test", frameId: 0, tab: { id: 1, windowId: 1, url: "https://example.com/" } };
+
+function background(local = { preferences: { token: "private-token" } }) {
+  const session = {}, calls = [], tabMessages = [];
+  let listener, hidden = false, offline = false;
+  const area = data => ({
+    get: async () => structuredClone(data),
+    set: async value => Object.assign(data, structuredClone(value)),
+    remove: async key => { delete data[key]; },
+    setAccessLevel: async () => {},
+  });
+  const browser = {
+    storage: { local: area(local), session: area(session) },
+    runtime: { id: "test", getURL: path => `chrome-extension://test${path}`, onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
+    contextMenus: { onClicked: { addListener() {} } },
+    tabs: { sendMessage: async (_, message) => tabMessages.push(message), create: async () => {} },
+  };
+  const bridge = async (path, token, body) => {
+    calls.push({ path, token, body: structuredClone(body) });
+    if (offline) throw new Error("offline");
+    if (path === "/projects/visibility") { hidden = body.hidden; return { updatedIds: body.ids, hidden, revision: "new" }; }
+    if (path.startsWith("/health")) return { hiddenProjectIds: hidden ? [projectId] : [] };
+    if (path.startsWith("/jobs/")) return { projectId };
+    const projectPath = /^\/projects\/([a-f0-9]{64})(\/reference)?$/.exec(path);
+    if (projectPath?.[2]) return { id: "reference", projectId: projectPath[1], image, sourceUrl: "" };
+    if (projectPath) return { id: projectPath[1], hidden: projectPath[1] === projectId && hidden };
+    if (path === "/projects" && body) return { id: projectId, hidden, created: false };
+    return [];
+  };
+  runInNewContext(compiled, {
+    exports: {}, defineBackground: fn => fn(), crypto, URLSearchParams, TextEncoder, console,
+    require: name => ({
+      "wxt/browser": { browser }, "../lib/bridge": { bridge },
+      "../lib/capture": { captureImage: async () => ({ image, capture: "original" }) },
+    })[name],
+  });
+  return {
+    local, session, calls, tabMessages,
+    set hidden(value) { hidden = value; }, set offline(value) { offline = value; },
+    send(message, from = sender) { return new Promise(resolve => { if (listener(message, from, resolve) !== true) resolve(undefined); }); },
+  };
+}
+
+test("hidden project visibility defaults off, reaches every list, and survives only the browser session", async () => {
+  const bg = background();
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.preferences.showHiddenProjects, false);
+  assert.equal((await bg.send({ type: "alchemy:show-hidden-projects", show: true })).value, true);
+  for (const path of ["/projects", "/jobs", "/health"])
+    await bg.send({ type: "alchemy:query", path });
+  await bg.send({ type: "alchemy:projects", page: 2, q: "模板", status: "unstarted" });
+  assert.ok(bg.calls.every(call => new URL(call.path, "http://local").searchParams.get("includeHidden") === "true"));
+  const query = new URL(bg.calls.at(-1).path, "http://local").searchParams;
+  assert.equal(query.get("page"), "2");
+  assert.equal(query.get("status"), "unstarted");
+  assert.equal(query.get("q"), "模板");
+  assert.equal(bg.local.preferences.showHiddenProjects, undefined);
+  assert.equal((await background(bg.local).send({ type: "alchemy:state" })).value.preferences.showHiddenProjects, false);
+  await bg.send({ type: "alchemy:show-hidden-projects", show: false });
+  await bg.send({ type: "alchemy:query", path: "/jobs" });
+  assert.equal(bg.calls.at(-1).path, "/jobs");
+});
+
+test("visibility messages reject malformed or untrusted input before any bridge write", async () => {
+  const bg = background();
+  for (const message of [
+    { type: "alchemy:show-hidden-projects", show: "true" },
+    { type: "alchemy:set-project-hidden", ids: [], hidden: true },
+    { type: "alchemy:set-project-hidden", ids: ["../secret"], hidden: true },
+    { type: "alchemy:set-project-hidden", ids: [projectId], hidden: 1 },
+    { type: "alchemy:query", path: "/jobs?includeHidden=true" },
+  ]) assert.match((await bg.send(message)).error, /无效|有效/);
+  const message = { type: "alchemy:set-project-hidden", ids: [projectId], hidden: true };
+  assert.equal(await bg.send(message, { ...sender, id: "foreign" }), undefined);
+  assert.equal(await bg.send(message, { ...contentSender, frameId: 1 }), undefined);
+  assert.equal(bg.calls.length, 0);
+  assert.equal((await bg.send(message, contentSender)).value.hidden, true);
+  assert.equal(bg.calls[0].path, "/projects/visibility");
+  assert.equal(bg.calls[0].token, "private-token");
+});
+
+test("hiding conceals the selected project without deleting the selection and showing restores it", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "selected", projectId, image } });
+  await bg.send({ type: "alchemy:set-project-hidden", ids: ["b".repeat(64)], hidden: true });
+  assert.equal(bg.local.selection.projectId, projectId);
+  await bg.send({ type: "alchemy:set-project-hidden", ids: [projectId], hidden: true });
+  assert.equal(bg.local.selection.projectId, projectId);
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection, undefined);
+  await bg.send({ type: "alchemy:show-hidden-projects", show: true });
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.projectId, projectId);
+  await bg.send({ type: "alchemy:show-hidden-projects", show: false });
+  assert.equal(bg.local.selection.projectId, projectId);
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection, undefined);
+});
+
+test("hiding a project cannot erase a different project opened concurrently", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "selected", projectId, image } });
+  const otherId = "b".repeat(64);
+  const [hidden, opened] = await Promise.all([
+    bg.send({ type: "alchemy:set-project-hidden", ids: [projectId], hidden: true }),
+    bg.send({ type: "alchemy:open-project", id: otherId }),
+  ]);
+  assert.equal(hidden.value.hidden, true);
+  assert.equal(opened.value.projectId, otherId);
+  assert.equal(bg.local.selection.projectId, otherId);
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.projectId, otherId);
+});
+
+test("closing the hidden-project toggle preserves a concurrently opened visible project", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "selected", projectId, image } });
+  bg.hidden = true;
+  await bg.send({ type: "alchemy:show-hidden-projects", show: true });
+  const otherId = "b".repeat(64);
+  await Promise.all([
+    bg.send({ type: "alchemy:show-hidden-projects", show: false }),
+    bg.send({ type: "alchemy:open-project", id: otherId }),
+  ]);
+  assert.equal(bg.local.selection.projectId, otherId);
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.projectId, otherId);
+});
+
+test("restored selections follow server-side visibility changes and remain concealed while offline", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "selected", projectId, image } });
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.image, image);
+  bg.hidden = true;
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection, undefined);
+  await bg.send({ type: "alchemy:show-hidden-projects", show: true });
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.image, image);
+  await bg.send({ type: "alchemy:show-hidden-projects", show: false });
+  bg.offline = true;
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection, undefined);
+  bg.offline = false;
+  bg.hidden = false;
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection.image, image);
+});
+
+test("opening or uploading the same hidden reference cannot bypass the eye toggle", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "old", image } });
+  bg.hidden = true;
+  for (const message of [
+    { type: "alchemy:open-project", id: projectId },
+    { type: "alchemy:upload-reference", image },
+  ]) {
+    assert.match((await bg.send(message)).error, /已隐藏/);
+    assert.equal(bg.local.selection.id, "old");
+  }
+  assert.match((await bg.send({ type: "alchemy:ensure-project", id: "old" })).error, /已隐藏/);
+  assert.equal(bg.local.selection, undefined, "pairing a previously captured hidden image must conceal that selection");
+  await bg.send({ type: "alchemy:show-hidden-projects", show: true });
+  assert.equal((await bg.send({ type: "alchemy:open-project", id: projectId })).value.image, image);
+});
+
+test("legacy selections without project ids are checked through their migrated job", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "legacy", jobId: "00000000-0000-0000-0000-000000000001", image } });
+  bg.hidden = true;
+  assert.equal((await bg.send({ type: "alchemy:state" })).value.selection, undefined);
+  assert.equal(bg.calls[0].path, "/jobs/00000000-0000-0000-0000-000000000001");
+});
+
+test("web selection conceals a duplicate hidden image and collecting it preserves the current project", async () => {
+  const bg = background({ preferences: { token: "private-token" }, selection: { id: "old", projectId: "b".repeat(64), image } });
+  bg.hidden = true;
+  const target = { src: "https://example.com/image.png" };
+  assert.equal((await bg.send({ type: "alchemy:collect", target }, contentSender)).value.created, false);
+  assert.equal(bg.local.selection.id, "old");
+  assert.equal(bg.tabMessages.length, 0);
+  await bg.send({ type: "alchemy:select", target }, contentSender);
+  assert.match(bg.local.selection.error, /已隐藏/);
+  assert.equal(bg.local.selection.image, undefined);
+  assert.equal(bg.local.selection.projectId, undefined);
+  assert.equal(bg.session.showHiddenProjects, undefined);
+  assert.ok(!bg.calls.some(call => call.path === "/projects/visibility"));
+});

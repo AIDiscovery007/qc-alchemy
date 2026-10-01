@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
 import type { Generation, Job, Mode } from "../../lib/types";
 import Icon from "./Icon";
+import HiddenProjectsToggle from "./HiddenProjectsToggle";
 import ImagePreview from "./ImagePreview";
 import { logo } from "../../lib/brand";
 
 const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
 const statuses = { running: "进行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
 
-export default function TaskCenter({ onClose, onOpen, onUpdate }: {
+export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hiddenProjectIds, busy, onToggleHidden }: {
+  showHidden: boolean; hiddenProjectIds: string[]; busy: boolean; onToggleHidden(): void;
   onClose(): void;
   onOpen(projectId: string, mode: Mode, jobId: string): Promise<void>;
   onUpdate?(job: Job): void;
@@ -32,6 +34,10 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     const element = dialog.current!;
     const closeDialog = showMotionDialog(element);
     element.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => { alive.current = false; closeDialog(); };
+  }, []);
+
+  useEffect(() => {
     let stopped = false;
     let active = true;
     const refresh = async () => {
@@ -46,11 +52,9 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     const stopPolling = pollWhileVisible(refresh);
     return () => {
       stopped = true;
-      alive.current = false;
       stopPolling();
-      closeDialog();
     };
-  }, []);
+  }, [showHidden]);
 
   const cancel = async (job: Job, generation?: Generation) => {
     const id = generation?.id || job.id;
@@ -87,7 +91,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     );
   };
 
-  const tasks = jobs.flatMap((job) => [
+  const tasks = jobs.filter(job => showHidden || !hiddenProjectIds.includes(job.projectId || "")).flatMap((job) => [
     { job, task: job, generation: undefined as Generation | undefined },
     ...(job.generations || []).map((generation) => ({ job, task: generation, generation })),
   ]).map((item) => {
@@ -101,6 +105,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate }: {
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}
     onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="modal-head"><img src={logo} alt="" /><h2 id="task-center-title">任务中心 · {running} 项执行中</h2>
+      <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>
     <div className="task-list">
       <p className="hint task-scope" role="status">{loaded ? "任务可跨项目并行执行，关闭此窗口不会取消。显示进行中的任务及最近 30 个逆向版本；更早记录可在项目中查看。" : "正在读取任务…"}</p>

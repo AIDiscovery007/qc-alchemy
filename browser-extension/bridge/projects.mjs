@@ -28,12 +28,14 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
   const epoch = randomUUID();
   let sequence = 0;
   let ordered;
+  let visibleOrdered;
   const revision = () => `${epoch}:${sequence}`;
   const invalidate = (id) => {
     sequence++;
     revisions.set(id, revision());
     summaries.delete(id);
     ordered = undefined;
+    visibleOrdered = undefined;
   };
   const updateJob = (job) => {
     const previous = jobProjects.get(job.id);
@@ -62,7 +64,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
     if (!match) continue;
     try {
       const project = JSON.parse(await readFile(join(dataDir, file), "utf8"));
-      if (project.id === match[1] && typeof project.createdAt === "string" && typeof project.updatedAt === "string") records.set(project.id, project);
+      if (project.id === match[1] && typeof project.createdAt === "string" && typeof project.updatedAt === "string") records.set(project.id, { ...project, hidden: project.hidden === true });
     } catch { /* A damaged project must not hide its recoverable job records. */ }
   }
 
@@ -72,7 +74,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
     const operation = (async () => {
       const existing = records.get(id);
       const createdAt = meta.createdAt || new Date().toISOString();
-      const project = existing || { id, createdAt, updatedAt: createdAt, sourceUrl: meta.sourceUrl || "", capture: meta.capture === "screenshot" ? "screenshot" : "original" };
+      const project = existing || { id, hidden: false, createdAt, updatedAt: createdAt, sourceUrl: meta.sourceUrl || "", capture: meta.capture === "screenshot" ? "screenshot" : "original" };
       if (createdAt < project.createdAt) project.createdAt = createdAt;
       project.extension = extension;
       project.imageAsset = await images.put({ bytes, extension });
@@ -93,7 +95,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       // Preserve incomplete legacy records even when their source image was removed.
       const id = /^[a-f0-9]{64}$/.test(job.projectId || "") && records.has(job.projectId)
         ? job.projectId : projectIdFor(`missing-reference:${job.id}`);
-      project = records.get(id) || { id, createdAt: job.createdAt, updatedAt: job.createdAt, sourceUrl: job.sourceUrl || "", capture: job.capture === "screenshot" ? "screenshot" : "original" };
+      project = records.get(id) || { id, hidden: false, createdAt: job.createdAt, updatedAt: job.createdAt, sourceUrl: job.sourceUrl || "", capture: job.capture === "screenshot" ? "screenshot" : "original" };
       await save(project);
       records.set(id, project);
     }
@@ -125,17 +127,32 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
         }
       }
     }
-    const item = { id: project.id, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length,
+    const item = { id: project.id, hidden: project.hidden, title: history.find((job) => job.result?.title)?.result.title || "未命名模板项目", createdAt: project.createdAt, updatedAt, sourceUrl: project.sourceUrl, capture: project.capture, jobCount: history.length,
       busy: history.some((job) => job.status === "running" || job.generations?.some((item) => item.status === "running")), modes,
       revision: revisions.get(project.id) || `${epoch}:0`, ...(project.imageAsset ? { imageAsset: project.imageAsset } : {}), ...(cover ? { cover } : {}) };
     summaries.set(project.id, item);
     return item;
   }
-  const list = () => ordered ||= [...records.values()].map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  const list = ({ includeHidden = false } = {}) => {
+    ordered ||= [...records.values()].map(summary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+    return includeHidden ? ordered : visibleOrdered ||= ordered.filter((item) => !item.hidden);
+  };
   return {
     register,
     updateJob,
     get revision() { return revision(); },
+    isHidden(id) { return records.get(id)?.hidden === true; },
+    get hiddenProjectIds() { return [...records.values()].filter((project) => project.hidden).map((project) => project.id); },
+    async setHidden(ids, hidden) {
+      for (const id of ids) {
+        const project = records.get(id);
+        if (project.hidden === hidden) continue;
+        await save({ ...project, hidden });
+        project.hidden = hidden;
+        invalidate(id);
+      }
+      return ids;
+    },
     async remove(ids) {
       const history = ids.flatMap(projectJobs);
       const images = (prefix) => ["png", "jpeg", "webp"].map((extension) => `${prefix}.${extension}`);
@@ -161,9 +178,9 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
       return ids;
     },
     list,
-    page({ page = 1, limit = 24, q = "", status }) {
+    page({ page = 1, limit = 24, q = "", status, includeHidden = false }) {
       const query = q.trim().toLocaleLowerCase();
-      const matching = list().filter((item) => (status !== "unstarted" || item.jobCount === 0) &&
+      const matching = list({ includeHidden }).filter((item) => (status !== "unstarted" || item.jobCount === 0) &&
         (!query || `${item.title} ${item.sourceUrl}`.toLocaleLowerCase().includes(query)));
       page = Math.min(page, Math.max(1, Math.ceil(matching.length / limit)));
       return { items: matching.slice((page - 1) * limit, page * limit), total: matching.length, page, pageSize: limit, revision: revision() };

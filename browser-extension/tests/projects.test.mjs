@@ -635,3 +635,117 @@ test("unstarted projects filter before paging and search, and leave the inbox wh
   assert.equal((await (await request("/projects?status=unstarted")).json()).total, 3);
   assert.equal((await (await request("/projects")).json()).length, 4);
 });
+
+test("hidden projects persist across restart and duplicate registration, filtering before search and pagination", async (t) => {
+  const { request, restart, dir } = await setup(t);
+  const projects = [];
+  for (let i = 0; i < 4; i++) {
+    const source = `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.from([i])]).toString("base64")}`;
+    projects.push(await (await request("/projects", post({ image: source, sourceUrl: `https://example.com/needle-${i}` }))).json());
+  }
+  assert.ok(projects.every((project) => project.hidden === false));
+  const hiddenIds = projects.slice(1, 3).map((project) => project.id);
+  const before = await (await request("/health")).json();
+  const changed = await (await request("/projects/visibility", post({ ids: hiddenIds, hidden: true }))).json();
+  assert.deepEqual(changed.updatedIds, hiddenIds);
+  assert.equal(changed.hidden, true);
+  assert.notEqual(changed.revision, before.projectsRevision);
+  const expected = [projects[0].id, projects[3].id].sort();
+  assert.deepEqual((await (await request("/projects")).json()).map((item) => item.id).sort(), expected);
+  const page = await (await request("/projects?page=99&limit=1&q=needle&status=unstarted")).json();
+  assert.equal(page.total, 2);
+  assert.equal(page.page, 2);
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].hidden, false);
+  assert.equal((await (await request("/projects?q=needle-1")).json()).total, 0);
+  assert.equal((await (await request("/projects?q=needle-1&includeHidden=true")).json()).total, 1);
+  assert.equal((await (await request("/projects?includeHidden=true")).json()).length, 4);
+  const detail = await (await request(`/projects/${hiddenIds[0]}?revision=${encodeURIComponent(projects[1].revision)}`)).json();
+  assert.equal(detail.hidden, true);
+  assert.notEqual(detail.revision, projects[1].revision);
+  const reference = await (await request(`/projects/${hiddenIds[0]}/reference`)).json();
+  assert.equal((await (await request("/projects", post({ image: reference.image }))).json()).hidden, true);
+  assert.equal(JSON.parse(await readFile(join(dir, "records", `project-${hiddenIds[0]}.json`))).hidden, true);
+  await restart();
+  assert.deepEqual((await (await request("/projects")).json()).map((item) => item.id).sort(), expected);
+  assert.deepEqual((await (await request("/health")).json()).hiddenProjectIds.sort(), hiddenIds.sort());
+  assert.deepEqual((await (await request("/health?includeHidden=true")).json()).hiddenProjectIds.sort(), hiddenIds.sort());
+  await request("/projects/visibility", post({ ids: hiddenIds, hidden: false }));
+  await restart();
+  assert.equal((await (await request("/projects")).json()).length, 4);
+  assert.deepEqual((await (await request("/health")).json()).hiddenProjectIds, []);
+});
+
+test("project visibility validates the whole batch and query, requires authentication, and defaults legacy records to visible", async (t) => {
+  const { request, restart, dir } = await setup(t);
+  const first = await (await request("/projects", post({ image }))).json();
+  const body = post({ ids: [first.id], hidden: true });
+  assert.equal((await request("/projects/visibility", { ...body, headers: { Authorization: "" } })).status, 401);
+  assert.equal((await request("/projects/visibility", { ...body, headers: { Origin: "https://pinterest.com" } })).status, 403);
+  for (const invalid of [{ ids: [], hidden: true }, { ids: [first.id, "../token"], hidden: true }, { ids: [first.id], hidden: "true" }, { ids: [first.id] }, { ids: Array(1001).fill(first.id), hidden: true }])
+    assert.equal((await request("/projects/visibility", post(invalid))).status, 400);
+  assert.equal((await request("/projects/visibility", post({ ids: [first.id, "0".repeat(64)], hidden: true }))).status, 404);
+  assert.equal((await (await request(`/projects/${first.id}`)).json()).hidden, false);
+  for (const path of ["/projects", "/jobs", "/health"]) {
+    for (const query of ["includeHidden=1", "includeHidden=", "includeHidden=true&includeHidden=false"])
+      assert.equal((await request(`${path}?${query}`)).status, 400);
+  }
+  const path = join(dir, "records", `project-${first.id}.json`);
+  const legacy = JSON.parse(await readFile(path));
+  delete legacy.hidden;
+  await writeFile(path, JSON.stringify(legacy));
+  await restart();
+  assert.equal((await (await request("/projects")).json())[0].hidden, false);
+  const changed = await (await request("/projects/visibility", post({ ids: [first.id, first.id], hidden: true }))).json();
+  assert.deepEqual(changed.updatedIds, [first.id]);
+  const repeated = await (await request("/projects/visibility", body)).json();
+  assert.equal(repeated.revision, changed.revision, "repeating an unchanged state does not invalidate the cache");
+});
+
+for (const task of ["analysis", "generation"]) test(`hiding a running ${task} removes its task and visible counter without cancelling it or releasing busy protection`, async (t) => {
+  let finish, signal;
+  const wait = (args) => new Promise((resolve) => { finish = resolve; signal = args.signal; });
+  const { request } = await setup(t, task === "analysis" ? { agent: wait } : { generator: wait });
+  const job = await (await request("/jobs", post({ image, mode: "recreate" }))).json();
+  if (task === "generation") {
+    await settled(request, job.id);
+    await request(`/jobs/${job.id}/generations`, post({ language: "zh" }));
+  }
+  assert.equal((await request("/projects/visibility", post({ ids: [job.projectId], hidden: true }))).status, 200);
+  assert.deepEqual(await (await request("/jobs")).json(), []);
+  assert.equal((await (await request("/jobs?includeHidden=true")).json())[0].id, job.id);
+  const health = await (await request("/health")).json();
+  assert.equal(health.active, 1);
+  assert.equal(health.visibleActive, 0);
+  assert.equal((await (await request("/health?includeHidden=true")).json()).visibleActive, 1);
+  assert.equal((await request("/models/refresh", post({}))).status, 409);
+  assert.equal(signal.aborted, false);
+  finish(task === "analysis" ? result : decodeImage(image));
+  const completed = await settled(request, job.id);
+  assert.equal(task === "analysis" ? completed.status : completed.generations[0].status, "completed");
+  assert.deepEqual(await (await request("/jobs")).json(), []);
+  await request("/projects/visibility", post({ ids: [job.projectId], hidden: false }));
+  assert.equal((await (await request("/jobs")).json())[0].id, job.id);
+});
+
+test("hidden jobs are excluded before the thirty-record task history limit", async (t) => {
+  const { request, restart } = await setup(t, {}, async (dir) => {
+    for (let i = 0; i < 34; i++) {
+      const id = `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`;
+      await writeFile(join(dir, `${id}.json`), JSON.stringify({ id, mode: "recreate", status: "completed", createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), result }));
+      await writeFile(join(dir, `${id}.${i < 31 ? "png" : "jpeg"}`), decodeImage(i < 31 ? image : otherImage).bytes);
+    }
+  });
+  const hiddenId = projectIdFor(decodeImage(otherImage).bytes);
+  await request("/projects/visibility", post({ ids: [hiddenId], hidden: true }));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const visible = await (await request("/jobs")).json();
+    assert.equal(visible.length, 30);
+    assert.ok(visible.every((job) => job.projectId !== hiddenId));
+    assert.ok(visible.some((job) => job.id.endsWith("000000000001")), "older visible jobs fill slots left by hidden jobs");
+    const all = await (await request("/jobs?includeHidden=true")).json();
+    assert.equal(all.length, 30);
+    assert.equal(all.filter((job) => job.projectId === hiddenId).length, 3);
+    if (!attempt) await restart();
+  }
+});
