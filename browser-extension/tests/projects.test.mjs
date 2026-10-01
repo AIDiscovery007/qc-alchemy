@@ -233,6 +233,47 @@ async function setup(t, options = {}, prepare) {
   };
 }
 
+test("parallel multi-image generations retain all snapshots through collection and restart", async (t) => {
+  const subjectImage = (label) => `data:image/png;base64,${Buffer.concat([decodeImage(image).bytes, Buffer.from(label)]).toString("base64")}`;
+  const original = [{ id: "a", subjectImage: subjectImage("person"), role: "人物", detail: "" }, { id: "b", subjectImage: subjectImage("prop"), role: "物品", detail: "" }];
+  const replacement = [{ ...original[0], subjectImage: subjectImage("replacement"), detail: "侧身" }, original[1]];
+  const pending = [];
+  const { request, dir, restart } = await setup(t, { generator: (args) => new Promise((finish) => pending.push({ args, finish })) });
+  const first = await (await request("/jobs", post({ image, mode: "multi-reenact", reenact: { subjects: original, basePrompt: "融合" } }))).json();
+  await settled(request, first.id);
+  const second = await (await request("/jobs", post({ image: otherImage, mode: "multi-reenact", reenact: { subjects: original, basePrompt: "融合" } }))).json();
+  await settled(request, second.id);
+  const disposable = await (await request("/projects", post({ image: subjectImage("disposable") }))).json();
+  const firstPath = `/jobs/${first.id}/generations`;
+  for (const subjects of [null, [], original.slice(0, 1), [original[0], { ...original[1], subjectImage: "bad" }]])
+    assert.equal((await request(firstPath, post({ language: "zh", subjects }))).status, 400);
+  const responses = await Promise.all([
+    request(firstPath, post({ language: "zh", subjects: replacement })),
+    request(`/jobs/${second.id}/generations`, post({ language: "en" })),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status), [202, 202]);
+  assert.equal(pending.length, 2);
+  assert.equal((await request(firstPath, post({ language: "zh", subjects: original }))).status, 409);
+  assert.equal((await request("/projects/delete", post({ ids: [first.projectId] }))).status, 409);
+  assert.equal((await request("/projects/delete", post({ ids: [disposable.id] }))).status, 200);
+  for (const { finish } of pending) finish(decodeImage(image));
+  const generated = await settled(request, first.id);
+  await settled(request, second.id);
+  await restart();
+  assert.deepEqual((await (await request(`/jobs/${first.id}/reference`)).json()).reenact.subjects, replacement);
+  assert.deepEqual((await (await request(`/jobs/${second.id}/reference`)).json()).reenact.subjects, original);
+  assert.deepEqual((await (await request(`${firstPath}/${generated.generations[0].id}/reference`)).json()).subjects, replacement);
+  assert.equal((await (await request(`/projects/${first.projectId}`)).json()).modes["multi-reenact"].hasImage, true);
+  await rm(join(dir, "images", generated.generations[0].subjects[0].subjectAsset));
+  const missing = await (await request(`/jobs/${first.id}/reference`)).json();
+  assert.match(missing.subjectError, /主体图已不存在/);
+  assert.ok(missing.reenact.subjects.every((subject) => subject.subjectImage === ""), "missing latest inputs cannot silently fall back to reverse inputs");
+  assert.equal((await request("/projects/delete", post({ ids: [first.projectId] }))).status, 200);
+  assert.deepEqual((await (await request(`/jobs/${second.id}/reference`)).json()).reenact.subjects, original, "shared subjects survive deletion of another project");
+  assert.equal((await request("/projects/delete", post({ ids: [second.projectId] }))).status, 200);
+  assert.deepEqual(await readdir(join(dir, "images")), []);
+});
+
 async function settled(request, id) {
   for (let i = 0; i < 100; i++) {
     const job = await (await request(`/jobs/${id}`)).json();

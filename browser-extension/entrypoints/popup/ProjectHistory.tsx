@@ -57,7 +57,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   return <section className={`history${workspace ? " workspace-project-library" : ""}`}>
     {workspace ? <h2 ref={heading} className="workspace-library-heading" tabIndex={-1}>项目记录</h2> : <h1 ref={heading} tabIndex={-1}>项目记录</h1>}
     {workspace && <div className="workspace-library-toolbar">
-      <p>每个项目收纳同一张参考图，以及三条路径下的提示词和生成结果。</p>
+      <p>每个项目收纳同一张参考图，以及四条路径下的提示词和生成结果。</p>
       <div>{searchTarget ? createPortal(searchInput, searchTarget) : searchInput}
       {!!projects.length && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}</div>
     </div>}

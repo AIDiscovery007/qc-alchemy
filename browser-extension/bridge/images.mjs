@@ -14,6 +14,13 @@ function slots(record, file) {
   const entries = [[record, "imageAsset", file.slice(0, -5)]];
   if (!project) {
     entries.push([record, "subjectAsset", `${id}-subject`]);
+    const subjects = [record.reenact?.subjects, ...(record.generations || []).map((generation) => generation.subjects)];
+    for (const list of subjects) {
+      if (list === undefined) continue;
+      if (!Array.isArray(list) || list.length < 2 || list.some((subject) => !subject || typeof subject.subjectAsset !== "string"))
+        throw new Error("多图主体记录无效");
+      for (const subject of list) entries.push([subject, "subjectAsset"]);
+    }
     for (const generation of record.generations || []) {
       if (!/^[\w-]+$/.test(generation?.id || "")) throw new Error("生图记录无效");
       entries.push([generation, "imageAsset", `${generation.id}-generated`],
@@ -87,7 +94,7 @@ export async function createImageStore(dataDir, recordsDir = dataDir) {
       for (const { file, record, entries } of all) {
         let changed = false;
         for (const [owner, key, prefix] of entries) {
-          const old = await legacy(prefix);
+          const old = prefix ? await legacy(prefix) : undefined;
           if (owner[key] !== undefined) {
             path(owner[key]);
             if (old && (await read(owner[key])).equals(old.bytes)) obsolete.add(old.file);
@@ -114,7 +121,7 @@ export async function createImageStore(dataDir, recordsDir = dataDir) {
           for (const [owner, key, prefix] of entries) {
             if (owner[key] !== undefined) { path(owner[key]); used.add(owner[key]); }
             // Failed/partial migrations keep both forms recoverable.
-            else if (await legacy(prefix)) return;
+            else if (prefix && await legacy(prefix)) return;
           }
         }
       } catch { return; }

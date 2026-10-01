@@ -23,6 +23,7 @@ const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="400"><rect width="320" height="400" fill="#e8e1c9"/><circle cx="160" cy="175" r="95" fill="#5b6f4c"/><rect x="55" y="232" width="210" height="63" fill="#bb6c51"/></svg>';
 const image = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 const gallery = Object.fromEntries(await Promise.all(["reference", "subject", "result"].map(async role => [role, `data:image/png;base64,${(await readFile(new URL(`../docs/gallery/watercolor-mug/${role}.png`, import.meta.url))).toString("base64")}`])));
+const person = `data:image/png;base64,${(await readFile(new URL("../docs/gallery/watercolor-portrait/subject.png", import.meta.url))).toString("base64")}`;
 const job = {
   id: "preview",
   mode: "style",
@@ -113,7 +114,7 @@ createServer(async (req, res) => {
           if(state==='generation-completed')job.generations=[{id:'preview-generation',createdAt:job.createdAt,prompt:job.result.promptZh,negativePrompt:job.result.negativePrompt,model:'preview-vision',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
         }
         const gallery = ${JSON.stringify(gallery)};
-        const template = state === 'gallery' ? gallery.reference : ${JSON.stringify(image)};
+        const template = state === 'gallery' || state.startsWith('multi') ? gallery.reference : ${JSON.stringify(image)};
         const subject = state === 'gallery' ? gallery.subject : template;
         const projectId='a'.repeat(64), secondId='b'.repeat(64);
         job.projectId=projectId;
@@ -124,8 +125,14 @@ createServer(async (req, res) => {
           job.generations=[{id:'preview-generation',createdAt:job.createdAt,prompt:job.result.promptZh,negativePrompt:job.result.negativePrompt,model:'preview-vision',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
         }
         if(state==='gallery') {job.result.title='午后，一杯水彩';job.reenact.basePrompt='保留图 1 的主体、结构和构图，仅迁移图 2 的画法。';job.result.promptZh='将图 1 的陶瓷杯完整重绘为水彩插画。保留杯子的形状、右侧把手、原始构图，以及墙面从右上到左下的斜向光影。\\n\\n仅从图 2 提取透明水彩叠染、暖金与蓝灰的冷暖关系、纸张细颗粒及自然晕染边缘。杯身以棕橙和赭色为主，受光面薄洗暖金，暗部叠加克制的蓝灰。\\n\\n保持木桌纹理与落地投影。杯口、把手内缘和接触面保留必要的清晰度，不引入参考图中的人物与装饰。';job.generations[0].prompt=job.result.promptZh;}
+        if(state.startsWith('multi')) {
+          job.mode='multi-reenact';job.reenact={basePrompt:'让人物手持杯子，重演参考图的姿态与水彩画风。',subjects:[{id:'person',subjectImage:${JSON.stringify(person)},role:'人物',detail:'保留五官、短发与身份特征'},{id:'cup',subjectImage:gallery.subject,role:'物品',detail:'保留杯型、颜色与把手'}]};
+          job.result={...job.result,title:'水彩里的日常',promptZh:'图 1 提供人物身份，图 2 提供杯子，图 3 为参考模板。让人物手持杯子，统一水彩画风、透视与光照。',promptEn:'Image 1 provides the person, image 2 the mug, and image 3 the template. Depict the person holding the mug, with unified watercolor style, perspective and lighting.'};
+          if(state==='multi-running'){job.status='running';job.stage='正在逆向…';delete job.result;}
+          if(state==='multi-failed'){job.status='failed';job.error='示例：连接中断，请重试';delete job.result;}
+        }
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
-        const projects=[{id:projectId,title:state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
+        const projects=[{id:projectId,title:state.startsWith('multi')?'水彩里的日常':state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
         if(state==='library') {
           const count=Math.min(1000,Math.max(0,Number(previewOptions.get('count')??61)||0));
@@ -142,7 +149,7 @@ createServer(async (req, res) => {
         const summary=(project)=>{
           const {jobs,image,...metadata}=project;
           const completed=jobs.flatMap(job=>(job.generations||[]).filter(g=>g.status==='completed').map(g=>({jobId:job.id,generationId:g.id,createdAt:g.createdAt}))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
-          return {...metadata,cover:completed?{jobId:completed.jobId,generationId:completed.generationId}:undefined,busy:jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:jobs.length,modes:Object.fromEntries(['style','recreate','reenact'].flatMap(mode=>{const item=jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))};
+          return {...metadata,cover:completed?{jobId:completed.jobId,generationId:completed.generationId}:undefined,busy:jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')),jobCount:jobs.length,modes:Object.fromEntries(['style','recreate','reenact','multi-reenact'].flatMap(mode=>{const item=jobs.find(j=>j.mode===mode);return item?[[mode,{status:item.status,hasImage:!!item.generations?.some(g=>g.status==='completed')}]]:[]}))};
         };
         const collected=new Map();
         let failedPage=false;
@@ -157,7 +164,7 @@ createServer(async (req, res) => {
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
-        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
+        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
         const handoff = new URLSearchParams(location.search).has('handoff') ? JSON.parse(sessionStorage.getItem('workspace-draft') || 'null') : null;
         if(handoff){projects.splice(0,projects.length,...handoff.projects);Object.assign(data,handoff.data);}
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);
@@ -210,18 +217,18 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:reference') {
             const saved=findJob(message.id);
-            return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?{...saved.reenact,subjectImage:subject}:undefined,generationSubjectImage:saved.generations?.at(-1)?.subjectImage}};
+            return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?(saved.mode==='multi-reenact'?{...saved.reenact,subjects:saved.generations?.at(-1)?.subjects||saved.reenact.subjects}:{...saved.reenact,subjectImage:subject}):undefined,generationSubjectImage:saved.generations?.at(-1)?.subjectImage}};
           }
           if(message.type==='alchemy:start') {
             const project=projects.find(p=>p.id===message.projectId);
-            const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',reenact:message.reenact?{basePrompt:message.reenact.basePrompt}:undefined};
-            project.jobs.unshift(next);touch(project);data.selection=selection(project);
-            setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词'};touch(project);}},1500);
+            const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',reenact:message.reenact?structuredClone(message.reenact):undefined};
+            project.jobs.unshift(next);touch(project);data.selection={...selection(project),jobId:next.id,reenact:structuredClone(message.reenact)};
+            setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词',promptEn:'Use the supplied subjects and reference template.'};touch(project);}},1500);
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
           if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};}
           if(message.type==='alchemy:generation-file-action')throw new Error('界面预览不会打开本机文件，请在扩展中使用。');
-          if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template}};
+          if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template,subjects:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjects}};
           if(message.type==='alchemy:generation-image') {
             if(previewOptions.get('fx')==='image-error')throw new Error('预览：图片读取失败');
             return {ok:true,value:{image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png',...(state==='gallery'?{}:{width:320,height:400})}};
@@ -233,7 +240,7 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:generate') {
             const saved=findJob(message.id);
-            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage,aspectRatio:message.aspectRatio};
+            const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage,subjects:message.subjects?structuredClone(message.subjects):undefined,aspectRatio:message.aspectRatio};
             saved.generations||=[];saved.generations.push(generation);touch(projects.find(p=>p.id===saved.projectId));
             setTimeout(()=>{if(generation.status==='running'){
               generation.status=previewOptions.get('fx')==='failed'?'failed':'completed';

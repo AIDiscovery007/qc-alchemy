@@ -743,3 +743,66 @@ for (const scenario of ["saved", "moved", "screenshot-error"]) test(`collection 
     assert.equal(draws.length, 0);
   }
 });
+
+test("multi-image messages preserve order and roles, enforce image bounds and keep bridge authentication", async () => {
+  const calls = [];
+  const id = "00000000-0000-0000-0000-000000000001";
+  const { handlers, chrome } = await background(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ id, mode: "multi-reenact", stage: "started" }) };
+  });
+  const storage = { preferences: { token: "private-token", mode: "style" }, selection: { id: "selected", image: "saved-template" } };
+  chrome.storage.local.get = async () => storage;
+  chrome.storage.local.set = async value => Object.assign(storage, value);
+  const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const subjects = [
+    { id: "person", subjectImage: "data:image/png;base64,iVBORw==", role: "人物", detail: "保留五官" },
+    { id: "cup", subjectImage: "data:image/jpeg;base64,/9j/", role: "物品", detail: "保留杯型" },
+  ];
+  assert.equal((await send({ type: "alchemy:mode", mode: "multi-reenact" })).ok, true);
+  assert.equal(storage.preferences.mode, "multi-reenact");
+  const start = { type: "alchemy:start", id: "selected", mode: "multi-reenact", reenact: { subjects, basePrompt: "让人物拿着杯子" } };
+  const started = await send(start);
+  assert.equal(started.ok, true);
+  assert.deepEqual(JSON.parse(calls[0].options.body).reenact, start.reenact);
+  assert.equal(started.value.selection.reenact.subjects[1].id, "cup");
+  assert.equal(storage.selection.reenact.subjects, undefined, "restore image bytes from bridge instead of exhausting local storage quota");
+  assert.equal(storage.selection.reenact.basePrompt, start.reenact.basePrompt);
+  const generate = { type: "alchemy:generate", id, language: "zh", subjects: [...subjects].reverse() };
+  assert.equal((await send(generate)).ok, true);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { language: "zh", subjects: generate.subjects });
+  assert.ok(calls.every(call => call.options.headers.Authorization === "Bearer private-token"));
+  const invalidSubjects = [null, [], [subjects[0]], Array.from({ length: 7 }, (_, i) => ({ ...subjects[0], id: String(i) })),
+    [subjects[0], subjects[0]], [subjects[0], { ...subjects[1], id: "../asset" }],
+    [subjects[0], { ...subjects[1], subjectImage: "file:///private/image.png" }],
+    [subjects[0], { ...subjects[1], subjectImage: `data:image/png;base64,${Buffer.alloc(2 * 1024 * 1024 + 1).toString("base64")}` }],
+    [subjects[0], { ...subjects[1], subjectImage: "data:image/png;base64,abc" }],
+    [subjects[0], { ...subjects[1], role: "invalid" }], [subjects[0], { ...subjects[1], detail: "x".repeat(2001) }],
+  ];
+  for (const subjects of invalidSubjects) {
+    assert.ok((await send({ ...generate, subjects })).error);
+    assert.ok((await send({ ...start, reenact: { subjects, basePrompt: "融合" } })).error);
+  }
+  assert.ok((await send({ ...generate, subjectImage: subjects[0].subjectImage })).error);
+  assert.ok((await send({ ...start, reenact: { subjects, basePrompt: "x".repeat(20001) } })).error);
+  assert.equal(calls.length, 2, "invalid inputs must not reach the bridge");
+  assert.equal(handlers.message(generate, { ...sender, id: "other" }, () => assert.fail("untrusted generation")), undefined);
+  const state = await send({ type: "alchemy:state", selectionId: storage.selection.id, selectionJobId: storage.selection.jobId });
+  assert.equal(state.value.selection.reenact, undefined, "polling must not resend all images");
+});
+
+test("workspace handoff carries ordered multi-image drafts and rejects malformed entries", async () => {
+  const { handlers, tabs, sessionStorage } = await background(() => assert.fail("handoff must not invoke inference"));
+  const sender = { id: "test", url: "chrome-extension://test/popup.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const subject = { id: "person", subjectImage: "data:image/png;base64,iVBORw==", role: "人物", detail: "五官" };
+  const draft = { multiSubjectDrafts: { project: [subject, { ...subject, id: "pending", subjectImage: "" }] } };
+  assert.equal((await send({ type: "alchemy:open-workspace", draft })).ok, true, "incomplete drafts remain transferable");
+  const id = new URL(tabs[0].url).searchParams.get("handoff");
+  assert.deepEqual(sessionStorage[`workspace:${id}`].draft, draft);
+  assert.deepEqual((await send({ type: "alchemy:workspace-handoff", id })).value.draft, draft);
+  for (const multiSubjectDrafts of [null, [], "invalid", { project: null }, { project: [{ ...subject, subjectImage: "file:///private" }] }])
+    assert.ok((await send({ type: "alchemy:open-workspace", draft: { multiSubjectDrafts } })).error);
+  assert.equal(tabs.length, 1);
+});

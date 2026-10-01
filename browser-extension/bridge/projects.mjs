@@ -112,7 +112,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
     let cover, coverDate = "";
     let updatedAt = project.updatedAt;
     for (const job of history) {
-      if (["style", "recreate", "reenact"].includes(job.mode) && !modes[job.mode]) {
+      if (["style", "recreate", "reenact", "multi-reenact"].includes(job.mode) && !modes[job.mode]) {
         modes[job.mode] = { status: job.status, hasImage: Boolean(job.generations?.some((generation) => generation.status === "completed")) };
       }
       if (job.createdAt > updatedAt) updatedAt = job.createdAt;

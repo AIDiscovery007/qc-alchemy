@@ -70,6 +70,25 @@ export function decodeImage(dataUrl) {
   return { bytes, extension: match[1] };
 }
 
+function decodeSubjects(subjects, referenceBytes) {
+  if (!Array.isArray(subjects) || subjects.length < 2 || subjects.length > 6)
+    throw bad("多图重演需要 2–6 张主体图");
+  const ids = new Set();
+  const decoded = subjects.map((subject) => {
+    if (!subject || typeof subject.id !== "string" || !/^[\w-]{1,100}$/.test(subject.id) || ids.has(subject.id))
+      throw bad("主体编号无效或重复");
+    ids.add(subject.id);
+    if (!["自动", "人物", "物品", "服饰", "场景", "细节"].includes(subject.role) || typeof subject.detail !== "string" || subject.detail.length > 2000)
+      throw bad("主体职责无效，补充要求最多 2000 字符");
+    const image = decodeImage(subject.subjectImage);
+    if (image.bytes.length > 2 * 1024 * 1024) throw bad("每张主体图最多 2 MB，请压缩后重试");
+    return { id: subject.id, role: subject.role, detail: subject.detail.trim(), ...image };
+  });
+  if (referenceBytes > 4 * 1024 * 1024 || decoded.reduce((total, item) => total + item.bytes.length, referenceBytes) > 16 * 1024 * 1024)
+    throw bad("参考图最多 4 MB，全部图片合计最多 16 MB");
+  return decoded;
+}
+
 export async function createBridge({
   dataDir = resolve(process.env.ALCHEMY_DATA_DIR || join(root, ".local")),
   skillPath = resolve(
@@ -134,6 +153,15 @@ export async function createBridge({
     }
     throw bad(subject ? "这条记录的主体图已不存在，请重新上传主体图。" : "这条历史记录的原图已不存在，请回到网页重新选择图片。", 404);
   };
+  const restoreSubjects = async (subjects) => {
+    if (!Array.isArray(subjects) || subjects.length < 2) throw bad("此记录没有保存多图主体快照", 404);
+    return Promise.all(subjects.map(async ({ id, subjectAsset, role, detail }) => ({
+      id, role, detail, subjectImage: await storedImage({ subjectAsset }, true),
+    })));
+  };
+  const saveSubjects = (subjects) => Promise.all(subjects.map(async ({ id, role, detail, bytes, extension }) => ({
+    id, role, detail, subjectAsset: await images.put({ bytes, extension }),
+  })));
   for (const file of await readdir(paths.records)) {
     if (!/^[\da-f-]{36}\.json$/.test(file)) continue;
     try {
@@ -392,6 +420,10 @@ export async function createBridge({
           return;
         }
         if (req.method === "GET" && generationMatch[3] === "reference") {
+          if (job.mode === "multi-reenact") {
+            json(200, { image: await storedImage(job), subjects: await restoreSubjects(generation.subjects) });
+            return;
+          }
           if (job.mode !== "recreate" && !generation.subjectAsset && !generation.subjectExtension) throw bad("此生图记录没有保存主体图快照", 404);
           json(200, { image: await storedImage(job.mode === "recreate" ? job : generation, job.mode !== "recreate") });
           return;
@@ -444,7 +476,9 @@ export async function createBridge({
           || ![aspectRatio.width, aspectRatio.height].every(value => Number.isInteger(value) && value >= 1 && value <= 10000)
           || aspectRatio.width / aspectRatio.height < 1 / 20 || aspectRatio.width / aspectRatio.height > 20))
           throw bad("宽高须为 1–10000 的整数，比例须在 1:20 至 20:1 之间");
-        if (job.mode === "recreate" && body.subjectImage !== undefined) throw bad("完整复刻使用纯文生图，不接受主体图");
+        if (job.mode === "recreate" && (body.subjectImage !== undefined || body.subjects !== undefined)) throw bad("完整复刻使用纯文生图，不接受主体图");
+        if (job.mode !== "multi-reenact" && body.subjects !== undefined) throw bad("此模式不接受多张主体图");
+        if (job.mode === "multi-reenact" && body.subjectImage !== undefined) throw bad("多图重演需要主体图列表");
         const { negativePrompt } = job.result;
         let prompt = body.language === "zh" ? job.result.promptZh : job.result.promptEn;
         if (!prompt?.trim() || /\[SUBJECT\]/i.test(prompt)) throw bad("提示词仍缺少主体，请补充后重新逆向");
@@ -452,7 +486,9 @@ export async function createBridge({
           ? `\n\n用户指定的输出画面宽高比例：${aspectRatio.width}:${aspectRatio.height}（宽:高）。此比例要求优先于原提示词及参考图中的画幅要求。请调整构图和背景以适应该比例，保持主体自然比例，不拉伸或压缩主体。`
           : `\n\nUser-requested output aspect ratio: ${aspectRatio.width}:${aspectRatio.height} (width:height). This ratio takes priority over framing requirements in the original prompt and reference images. Adapt the composition and background to this ratio while preserving natural subject proportions; do not stretch or compress the subject.`;
         const imagePath = job.mode === "recreate" ? undefined : await storedImage(job, false, true);
-        const subject = job.mode !== "recreate" && job.reenact
+        const multi = job.mode === "multi-reenact";
+        const decodedSubjects = multi ? decodeSubjects(body.subjects !== undefined ? body.subjects : await restoreSubjects(job.reenact?.subjects), (await images.read(job.imageAsset)).length) : undefined;
+        const subject = !multi && job.mode !== "recreate" && job.reenact
           ? decodeImage(body.subjectImage !== undefined ? body.subjectImage : await storedImage(job, true)) : undefined;
         if (subject?.bytes.length > 2 * 1024 * 1024) throw bad("主体图最多 2 MB，请压缩后重试");
         try { await readFile(generationSkillPath); } catch { throw bad("找不到 imagegen 技能，请设置 IMAGEGEN_SKILL_PATH", 503); }
@@ -460,9 +496,11 @@ export async function createBridge({
         const id = randomUUID();
         const subjectAsset = subject ? await images.put(subject) : undefined;
         const subjectImagePath = subjectAsset ? images.path(subjectAsset) : undefined;
+        const subjects = multi ? await saveSubjects(decodedSubjects) : undefined;
+        const subjectImagePaths = subjects?.map((item) => images.path(item.subjectAsset));
         const controller = new AbortController();
         controllers.set(id, controller);
-        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(aspectRatio ? { aspectRatio } : {}), ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}) };
+        const next = { id, model: modelSettings.model, status: "running", stage: "正在连接 Codex 生图…", createdAt: new Date().toISOString(), language: body.language, prompt, negativePrompt, ...(aspectRatio ? { aspectRatio } : {}), ...(subject ? { subjectExtension: subject.extension, subjectAsset } : {}), ...(subjects ? { subjects } : {}) };
         job.generations ||= [];
         job.generations.push(next);
         try {
@@ -475,7 +513,7 @@ export async function createBridge({
         json(202, job);
         void (async () => {
           try {
-            const output = await generator({ imagePath, subjectImagePath, prompt, negativePrompt: next.negativePrompt,
+            const output = await generator({ imagePath, subjectImagePath, subjectImagePaths, subjects, prompt, negativePrompt: next.negativePrompt,
               skillPath: generationSkillPath, cwd: root, signal: controller.signal, modelSettings,
               onProgress: (update) => { if (next.status === "running") { Object.assign(next, update); projects.updateJob(job); } },
             });
@@ -502,7 +540,15 @@ export async function createBridge({
         if (req.method === "GET" && idMatch[2] === "/reference") {
           const image = await storedImage(job);
           let reenact, subjectError, generationSubjectImage;
-          if (job.reenact) {
+          if (job.mode === "multi-reenact") {
+            const subjects = job.generations?.findLast((item) => item.subjects)?.subjects || job.reenact?.subjects;
+            reenact = { ...job.reenact, subjects: (subjects || []).map(({ subjectAsset, ...item }) => ({ ...item, subjectImage: "" })) };
+            try { reenact.subjects = await restoreSubjects(subjects); }
+            catch (error) {
+              if (error.status !== 404) throw error;
+              subjectError = error.message;
+            }
+          } else if (job.reenact) {
             reenact = { ...job.reenact, subjectImage: "" };
             try {
               reenact.subjectImage = await storedImage(job, true);
@@ -543,12 +589,18 @@ export async function createBridge({
       if (cliBusy()) throw bad("Codex 正在升级，请等待完成。", 409);
       if (models.busy) throw bad("正在验证模型，请稍候", 409);
       const body = await readBody(req);
-      if (!["style", "recreate", "reenact"].includes(body.mode)) throw bad("无效逆向模式");
+      if (!["style", "recreate", "reenact", "multi-reenact"].includes(body.mode)) throw bad("无效逆向模式");
       const { bytes, extension } = decodeImage(body.image);
       const projectId = projectIdFor(bytes);
       if (body.projectId !== undefined && body.projectId !== projectId) throw bad("参考图与项目不一致，请重新选择项目");
-      let subject, reenact;
-      if (body.mode === "reenact" || (body.mode === "style" && body.reenact !== undefined)) {
+      let subject, reenact, decodedSubjects;
+      const multi = body.mode === "multi-reenact";
+      if (multi) {
+        if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim() || body.reenact.basePrompt.length > 20000)
+          throw bad("多图重演需要任务指令，最多 20000 字符");
+        decodedSubjects = decodeSubjects(body.reenact.subjects, bytes.length);
+        reenact = { basePrompt: body.reenact.basePrompt.trim() };
+      } else if (body.mode === "reenact" || (body.mode === "style" && body.reenact !== undefined)) {
         if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim())
           throw bad("双图任务需要主体图和任务指令");
         if (body.reenact.basePrompt.length > 20000) throw bad("任务指令最多 20000 字符");
@@ -574,6 +626,7 @@ export async function createBridge({
       const sourceUrl = sourceUrlFor(body.sourceUrl);
       const project = await projects.register({ bytes, extension }, { sourceUrl, capture: body.capture });
       const subjectAsset = subject ? await images.put(subject) : undefined;
+      if (multi) reenact.subjects = await saveSubjects(decodedSubjects);
       const id = randomUUID();
       const controller = new AbortController();
       controllers.set(id, controller);
@@ -606,6 +659,8 @@ export async function createBridge({
           const result = await agent({
             imagePath,
             subjectImagePath,
+            subjectImagePaths: reenact?.subjects?.map((item) => images.path(item.subjectAsset)),
+            subjects: reenact?.subjects,
             basePrompt: reenact?.basePrompt,
             mode: job.mode,
             skillPath,

@@ -10,9 +10,11 @@ import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
 import { useEffect, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
-import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection } from "../../lib/types";
+import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection, MultiSubject } from "../../lib/types";
 import ProjectHistory from "./ProjectHistory";
 import SubjectForm from "./SubjectForm";
+import MultiInputPreview from "./MultiInputPreview";
+import MultiSubjectForm, { multiInstruction } from "./MultiSubjectForm";
 import AsyncAction from "./AsyncAction";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
@@ -25,7 +27,7 @@ const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" 
   : job.generations?.some((item) => item.status === "running") ? "生图中"
   : job.status !== "completed" ? "待重试"
   : job.generations?.some((item) => item.status === "completed") ? "提示词 + 图片" : "提示词已就绪";
-const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演" })[mode];
+const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" })[mode];
 type PromptDraft = Pick<NonNullable<Job["result"]>, "promptZh" | "promptEn" | "negativePrompt">;
 
 export default function App({ embedded = false, workspace = false }: { embedded?: boolean; workspace?: boolean }) {
@@ -49,6 +51,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [versions, setVersions] = useState<Record<string, string>>({});
   const [references, setReferences] = useState<Record<string, Selection>>({});
+  const [multiSubjectDrafts, setMultiSubjectDrafts] = useState<Record<string, MultiSubject[]>>({});
   const [subjectDrafts, setSubjectDrafts] = useState<Record<string, string>>({});
   const [promptDrafts, setPromptDrafts] = useState<Record<string, PromptDraft>>({});
   const [savingPrompt, setSavingPrompt] = useState("");
@@ -83,6 +86,16 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     const saved = savedJob && references[savedJob.id];
     return subjectDrafts[subjectKey(mode)] ?? saved?.generationSubjectImage ?? saved?.reenact?.subjectImage ?? "";
   };
+  const multiJob = modeJob("multi-reenact");
+  const multiKey = `${subjectKey("multi-reenact")}:${multiJob?.id || "new"}`;
+  const multiReference = multiJob && references[multiJob.id];
+  const multiSubjects = multiSubjectDrafts[multiKey] ?? multiReference?.generationSubjects ?? multiReference?.reenact?.subjects ?? [];
+  const multiPrompt = instructions[multiKey] ?? multiReference?.reenact?.basePrompt ?? multiJob?.reenact?.basePrompt ?? multiInstruction;
+  const savedMulti = multiReference?.reenact?.subjects || [];
+  const multiStale = !!multiJob?.result && (multiSubjects.length !== savedMulti.length || multiSubjects.some((item, index) => {
+    const saved = savedMulti[index];
+    return !saved || item.id !== saved.id || item.subjectImage !== saved.subjectImage || item.role !== saved.role || item.detail !== saved.detail;
+  }) || multiPrompt.trim() !== multiJob.reenact?.basePrompt.trim());
   const job = modeJob(preferences.mode);
   const activeJob = job;
   const running = job?.status === "running";
@@ -135,10 +148,11 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       const id = workspace && new URLSearchParams(location.search).get("handoff");
       if (id) {
         try {
-          const handoff = await request<{ selection?: Selection; draft?: { subjectDrafts?: Record<string, string>; promptDrafts?: Record<string, PromptDraft>; instructions?: Record<string, string>; versions?: Record<string, string>; lang?: "zh" | "en" } }>({ type: "alchemy:workspace-handoff", id });
+          const handoff = await request<{ selection?: Selection; draft?: { multiSubjectDrafts?: Record<string, MultiSubject[]>; subjectDrafts?: Record<string, string>; promptDrafts?: Record<string, PromptDraft>; instructions?: Record<string, string>; versions?: Record<string, string>; lang?: "zh" | "en" } }>({ type: "alchemy:workspace-handoff", id });
           if (cancelled) return;
           if (handoff?.draft) {
             setSubjectDrafts(handoff.draft.subjectDrafts || {});
+            setMultiSubjectDrafts(handoff.draft.multiSubjectDrafts || {});
             setPromptDrafts(handoff.draft.promptDrafts || {});
             setInstructions(handoff.draft.instructions || {});
             setVersions(handoff.draft.versions || {});
@@ -215,14 +229,14 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const openWorkspace = async () => {
     try {
       const prefix = `${selection?.projectId || selection?.id}:`;
-      const forProject = (items: Record<string, string>) => Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith(prefix)));
+      const forProject = <T,>(items: Record<string, T>) => Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith(prefix)));
       await request({ type: "alchemy:open-workspace", draft: {
-        subjectDrafts: forProject(subjectDrafts), instructions: forProject(instructions), versions: forProject(versions), lang,
+        multiSubjectDrafts: forProject(multiSubjectDrafts), subjectDrafts: forProject(subjectDrafts), instructions: forProject(instructions), versions: forProject(versions), lang,
         promptDrafts: Object.fromEntries(Object.entries(promptDrafts).filter(([id]) => activeProject?.jobs.some(job => job.id === id))),
       } });
     } catch (e) { setError((e as Error).message); }
   };
-  const uploadReference = async (file?: File) => {
+  const uploadReference = async (file?: File, keepComposition = false) => {
     if (!file) return;
     setBusy(true); setError("");
     try {
@@ -230,6 +244,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         throw new Error("请上传不超过 20 MB 的 PNG、JPEG 或 WebP 图片");
       const image = await normalizeImage(file, 4 * 1024 * 1024);
       const next = await request<Selection>({ type: "alchemy:upload-reference", image });
+      if (keepComposition && next.projectId) {
+        const target = await request<Project>({ type: "alchemy:project", id: next.projectId });
+        const targetJob = target.jobs.find(item => item.id === versions[`${next.projectId}:multi-reenact`] && item.mode === "multi-reenact") || target.jobs.find(item => item.mode === "multi-reenact");
+        const key = `${next.projectId}:multi-reenact:${targetJob?.id || "new"}`;
+        setMultiSubjectDrafts(items => ({ ...items, [key]: multiSubjects }));
+        setInstructions(items => ({ ...items, [key]: multiPrompt }));
+      }
       selectionRevision.current++;
       setSelection(next); setHistoryOpen(false); setMobilePane("edit"); setNewProjectOpen(false);
     } catch (e) { setError((e as Error).message); }
@@ -286,6 +307,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       });
       selectionRevision.current++;
       setSelection((current) => current?.id === selection.id ? value.selection : current);
+      setReferences(items => ({ ...items, [value.job.id]: value.selection }));
       updateJob(value.job);
       setVersions((items) => ({ ...items, [`${activeProject.id}:${mode}`]: value.job.id }));
       setCopied(false);
@@ -322,6 +344,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       if (selection?.projectId && deletedIds.includes(selection.projectId)) { setSelection(undefined); setProject(undefined); }
       setVersions((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
       setPromptDrafts((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
+      setMultiSubjectDrafts((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
       setSubjectDrafts((items) => Object.fromEntries(Object.entries(items).filter(([key]) => !deletedIds.some((id) => key.startsWith(`${id}:`)))));
       setReferences((items) => Object.fromEntries(Object.entries(items).filter(([id, value]) => !removedJobs.includes(id) && !deletedIds.includes(value.projectId || ""))));
       setReferenceErrors((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
@@ -362,7 +385,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const exportResult = () => {
     if (!job?.result) return;
     const r = job.result;
-    const inputs = job.reenact ? "\n使用方法：生成图片时，先附图 1（用户主体图），再附图 2（原始参考图），然后使用下方提示词。此 Markdown 不包含图片文件。\n" : "";
+    const inputs = job.mode === "multi-reenact" ? `\n使用方法：依次附图 1–${job.reenact?.subjects?.length || 0}（主体图），最后附参考模板，再使用下方提示词。此 Markdown 不包含图片文件。\n` : job.reenact ? "\n使用方法：生成图片时，先附图 1（用户主体图），再附图 2（原始参考图），然后使用下方提示词。此 Markdown 不包含图片文件。\n" : "";
     const markdown = `# ${r.title}\n\n来源：${job.sourceUrl || "网页图片"}\n模式：${modeName(job.mode)}\n${inputs}\n## 视觉观察\n${r.observations.map((x) => `- ${x}`).join("\n")}\n\n## 中文提示词\n${r.promptZh}\n\n## English prompt\n${r.promptEn}\n\n## 排除项\n${r.negativePrompt || "无"}\n\n## 不确定性\n${r.uncertainties.join("\n") || "无额外说明"}\n`;
     const url = URL.createObjectURL(
       new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
@@ -382,9 +405,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
               {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>{workspace ? `版本 ${items.length - i}${i === 0 ? " · 最新" : ""}` : `第 ${items.length - i} 次 · ${new Date(item.createdAt).toLocaleString("zh-CN")} · ${laneStatus(item)}`}</option>)}
             </SelectField>;
-  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft}
+  const multiPreview = preferences.mode === "multi-reenact" ? <MultiInputPreview image={selection?.image} subjects={multiSubjects} /> : undefined;
+  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (activeJob.mode === "multi-reenact" && multiStale)}
                   subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
-                  onUpdate={(updated, image) => {
+                  inputPreview={multiPreview}
+                  subjects={activeJob.mode === "multi-reenact" ? multiSubjects : undefined}
+                  onUpdate={(updated, image, subjects) => {
+                    if (subjects) setReferences(items => items[updated.id] ? { ...items, [updated.id]: { ...items[updated.id]!, generationSubjects: subjects } } : items);
                     updateJob(updated);
                     if (image) setReferences((items) => {
                       const saved = items[updated.id];
@@ -393,7 +420,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   }} /> : null;
 
   return (
-    <div className={workspace ? "app workspace-app" : "app"} data-motion-input="keyboard"
+    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion-input="keyboard"
       onPointerDownCapture={event => { event.currentTarget.dataset.motionInput = "pointer"; }}
       onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
       onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}>
@@ -535,8 +562,11 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 onClick={() => saveMode("reenact")}>
                 主体重演<span>换主体，演原图</span>{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
+              <button className={preferences.mode === "multi-reenact" ? "active" : ""} aria-pressed={preferences.mode === "multi-reenact"} disabled={savingMode || busy} onClick={() => saveMode("multi-reenact")}>
+                多图重演{activeProject && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
+              </button>
             </div>
-            {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>准备画面</h2></div>}
+            {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection?.image && preferences.mode === "recreate" && (
               workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} label="风格参考图" caption="提取视觉语言" alt="本次选择的参考图片" /></div> : <figure className="image-card">
                 <img src={selection.image} alt="本次选择的参考图片" />
@@ -588,8 +618,14 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
+            {selection && <MultiSubjectForm key={multiKey} image={selection.image} subjects={multiSubjects} instruction={multiPrompt}
+              active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
+              submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
+              onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
+              onInstruction={value => setInstructions(items => ({ ...items, [multiKey]: value }))}
+              onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2></div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : preferences.mode === "multi-reenact" ? "提示词待生成" : <>从一张参考图开始。<br />逆向后，可以在这里编辑中英文提示词与排除项。</>}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
               {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 
@@ -662,7 +698,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       </main>
       {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
       </div>
-      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>生成结果 <small>0 张 · 当前提示词版本</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas" /><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
+      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张 · 当前提示词版本"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
       </div>
       </div>
     </div>

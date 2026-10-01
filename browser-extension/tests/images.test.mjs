@@ -103,6 +103,42 @@ test("damaged metadata prevents destructive migration and collection", async (t)
   assert.deepEqual(await readFile(join(dir, `${id}.png`)), image.bytes);
 });
 
+test("multi-image subjects survive migration and collection across reverse and generation snapshots", async (t) => {
+  const { dir, store } = await setup(t);
+  const original = await store.put(image);
+  const replacement = await store.put(other);
+  const unrelated = await store.put({ ...other, bytes: Buffer.concat([other.bytes, Buffer.from("unused")]) });
+  const subjects = (asset) => [{ id: "one", subjectAsset: asset, role: "人物", detail: "" }, { id: "two", subjectAsset: asset, role: "物品", detail: "" }];
+  const job = { ...record, mode: "multi-reenact", reenact: { subjects: subjects(original), basePrompt: "融合" }, generations: [{ id: generationId, subjects: subjects(replacement) }] };
+  const path = join(dir, `${id}.json`);
+  await writeFile(path, JSON.stringify(job));
+  const restarted = await createImageStore(dir);
+  await restarted.migrate();
+  await restarted.collect();
+  assert.deepEqual(JSON.parse(await readFile(path)), job);
+  assert.deepEqual(await restarted.read(original), image.bytes);
+  assert.deepEqual(await restarted.read(replacement), other.bytes);
+  await assert.rejects(restarted.read(unrelated), { code: "ENOENT" });
+  await writeFile(path, JSON.stringify({ ...job, generations: [] }));
+  await restarted.collect();
+  assert.deepEqual(await restarted.read(original), image.bytes);
+  await assert.rejects(restarted.read(replacement), { code: "ENOENT" });
+  await rm(path);
+  await restarted.collect();
+  await assert.rejects(restarted.read(original), { code: "ENOENT" });
+});
+
+test("malformed multi-image references block collection instead of deleting potentially owned assets", async (t) => {
+  const { dir, store } = await setup(t);
+  const asset = await store.put(image);
+  for (const subjects of [null, {}, [{ id: "one" }], [{ subjectAsset: asset }, null]]) {
+    await writeFile(join(dir, `${id}.json`), JSON.stringify({ ...record, reenact: { subjects } }));
+    await store.migrate();
+    await store.collect();
+    assert.deepEqual(await store.read(asset), image.bytes);
+  }
+});
+
 test("asset refs, legacy names, symlinks and corrupt metadata cannot escape the image directory", async (t) => {
   const { dir, store } = await setup(t);
   await writeFile(join(dir, "private.png"), "private");

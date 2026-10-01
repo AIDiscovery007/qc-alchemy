@@ -1,6 +1,9 @@
-export type Mode = "style" | "recreate" | "reenact";
+export type Mode = "style" | "recreate" | "reenact" | "multi-reenact";
+export type MultiSubject = { id: string; subjectImage: string; role: string; detail: string };
+export type SavedSubject = Omit<MultiSubject, "subjectImage"> & { subjectAsset: string };
 export type SubjectInput = {
-  subjectImage: string;
+  subjectImage?: string;
+  subjects?: MultiSubject[];
   basePrompt: string; // User task instruction; keep the field name for saved jobs.
   promptSourceJobId?: string;
 };
@@ -17,6 +20,7 @@ export type Selection = {
   reenact?: SubjectInput; // Shared two-image input; retain the saved field name.
   subjectError?: string;
   generationSubjectImage?: string;
+  generationSubjects?: MultiSubject[];
 };
 export type Result = {
   title: string;
@@ -41,7 +45,7 @@ export type Job = {
   error?: string;
   threadId?: string;
   model?: string;
-  reenact?: Omit<SubjectInput, "subjectImage">;
+  reenact?: Omit<SubjectInput, "subjectImage" | "subjects"> & { subjects?: SavedSubject[] };
   generations?: Generation[];
 };
 export type ProjectSummary = {
@@ -62,6 +66,7 @@ export type ProjectPage = { items: ProjectSummary[]; total: number; page: number
 export type AspectRatio = { width: number; height: number };
 export type Generation = {
   id: string;
+  subjects?: SavedSubject[];
   imageAsset?: string;
   subjectAsset?: string;
   status: "running" | "completed" | "failed" | "cancelled";

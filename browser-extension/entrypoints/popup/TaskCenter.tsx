@@ -7,7 +7,7 @@ import Icon from "./Icon";
 import { logo } from "../../lib/brand";
 import "./task-center.css";
 
-const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演" };
+const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
 const statuses = { running: "进行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
 
 export default function TaskCenter({ onClose, onOpen, onUpdate }: {

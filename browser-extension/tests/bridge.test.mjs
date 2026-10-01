@@ -511,6 +511,78 @@ test("Codex receives subject first, template second, and the submitted user task
   assert.throws(() => agentInput({ ...args, mode: "reenact", subjectImagePath: undefined }), /缺少/);
 });
 
+test("multi-reenact keeps ordered roles, immutable generation inputs and latest restoration", async (t) => {
+  const otherImage = "data:image/jpeg;base64,/9j/2Q==";
+  const thirdImage = "data:image/png;base64," + Buffer.concat([decodeImage(image).bytes, Buffer.from("third")]).toString("base64");
+  const subjects = [{ id: "person", subjectImage: image, role: "人物", detail: "保留发型" }, { id: "bag", subjectImage: otherImage, role: "物品", detail: "手持" }];
+  const inverseCalls = [], generationCalls = [];
+  const { request, dir } = await setup(t, async (args) => {
+    inverseCalls.push(args);
+    return { ...result, promptZh: "图 1 人物手持图 2 物品", promptEn: "Person in image 1 holding item from image 2" };
+  }, async (args) => {
+    generationCalls.push(args);
+    return { bytes: decodeImage(image).bytes, extension: "png" };
+  });
+  const response = await request("/jobs", submit({ mode: "multi-reenact", reenact: { subjects, basePrompt: "沿用模板构图" } }));
+  assert.equal(response.status, 202);
+  const job = await waitFor(request, (await response.json()).id, "completed");
+  const args = inverseCalls[0];
+  const input = agentInput({ ...args, name: "alchemy" });
+  assert.deepEqual(input.filter((item) => item.type === "localImage").map((item) => item.path), [...args.subjectImagePaths, args.imagePath]);
+  assert.deepEqual(await Promise.all(args.subjectImagePaths.map((path) => readFile(path))), subjects.map((subject) => decodeImage(subject.subjectImage).bytes));
+  assert.match(input[0].text, /图 3 为参考模板/);
+  assert.ok(input.some((item) => item.text?.includes('"role":"人物"')));
+  assert.ok(input.some((item) => item.text?.includes('"detail":"手持"')));
+  assert.equal(job.reenact.subjects[0].subjectImage, undefined);
+  assert.equal((await (await request(`/projects/${job.projectId}`)).json()).modes["multi-reenact"].status, "completed");
+  assert.deepEqual((await (await request(`/jobs/${job.id}/reference`)).json()).reenact, { subjects, basePrompt: "沿用模板构图" });
+
+  const replacement = [{ ...subjects[1], role: "细节", subjectImage: thirdImage }, subjects[0]];
+  const generate = (inputs) => request(`/jobs/${job.id}/generations`, { method: "POST", body: JSON.stringify({ language: "zh", subjects: inputs }) });
+  assert.equal((await generate(replacement)).status, 202);
+  const first = await waitGeneration(request, job.id, "completed");
+  const snapshot = first.generations[0];
+  assert.deepEqual(first.reenact, job.reenact);
+  assert.deepEqual(snapshot.subjects.map(({ id }) => id), ["bag", "person"]);
+  const generationArgs = generationCalls[0];
+  const generation = generationInput(generationArgs);
+  assert.deepEqual(generation.filter((item) => item.type === "localImage").map((item) => item.path), [...generationArgs.subjectImagePaths, generationArgs.imagePath]);
+  assert.deepEqual(await readFile(generationArgs.subjectImagePaths[0]), decodeImage(thirdImage).bytes);
+  assert.match(generation[0].text, /图 3 为参考模板/);
+  assert.deepEqual((await (await request(`/jobs/${job.id}/generations/${snapshot.id}/reference`)).json()), { image, subjects: replacement });
+  assert.deepEqual((await (await request(`/jobs/${job.id}/reference`)).json()).reenact.subjects, replacement);
+  assert.equal((await generate(subjects)).status, 202);
+  const second = await waitGeneration(request, job.id, "completed");
+  assert.deepEqual(second.generations[0], snapshot);
+  assert.deepEqual((await (await request(`/jobs/${job.id}/generations/${snapshot.id}/reference`)).json()).subjects, replacement);
+  const saved = JSON.parse(await readFile(join(dir, "records", `${job.id}.json`)));
+  assert.deepEqual(saved.generations[0].subjects, snapshot.subjects);
+  assert.ok(!JSON.stringify(saved).includes("data:image/"));
+  await rm(join(dir, "images", snapshot.subjects[0].subjectAsset));
+  assert.equal((await request(`/jobs/${job.id}/generations/${snapshot.id}/reference`)).status, 404, "missing snapshot never falls back to a newer upload");
+});
+
+test("multi-reenact validates counts, roles, IDs and size before calling agents", async (t) => {
+  let calls = 0;
+  const { request } = await setup(t, async () => { calls++; return result; });
+  const subjects = [{ id: "one", subjectImage: image, role: "自动", detail: "" }, { id: "two", subjectImage: image, role: "服饰", detail: "" }];
+  const invalid = [undefined, null, [], subjects.slice(0, 1), [...subjects, ...subjects, ...subjects, subjects[0]],
+    [subjects[0], subjects[0]], [subjects[0], { ...subjects[1], id: "../bad" }],
+    [subjects[0], { ...subjects[1], role: "unknown" }], [subjects[0], { ...subjects[1], detail: "x".repeat(2001) }],
+    [subjects[0], { ...subjects[1], subjectImage: "not-an-image" }],
+    [subjects[0], { ...subjects[1], subjectImage: "data:image/png;base64," + Buffer.concat([decodeImage(image).bytes, Buffer.alloc(2 * 1024 * 1024)]).toString("base64") }]];
+  for (const inputs of invalid) assert.equal((await request("/jobs", submit({ mode: "multi-reenact", reenact: { subjects: inputs, basePrompt: "融合" } }))).status, 400);
+  for (const basePrompt of [undefined, " ", "x".repeat(20001)]) assert.equal((await request("/jobs", submit({ mode: "multi-reenact", reenact: { subjects, basePrompt } }))).status, 400);
+  const oversizedTemplate = "data:image/png;base64," + Buffer.concat([decodeImage(image).bytes, Buffer.alloc(4 * 1024 * 1024)]).toString("base64");
+  assert.equal((await request("/jobs", submit({ image: oversizedTemplate, mode: "multi-reenact", reenact: { subjects, basePrompt: "融合" } }))).status, 400);
+  assert.equal(calls, 0);
+  const six = ["自动", "人物", "物品", "服饰", "场景", "细节"].map((role, index) => ({ ...subjects[0], id: String(index), role }));
+  const accepted = await request("/jobs", submit({ mode: "multi-reenact", reenact: { subjects: six, basePrompt: "融合" } }));
+  assert.equal(accepted.status, 202);
+  await waitFor(request, (await accepted.json()).id, "completed");
+  assert.equal(calls, 1);
+});
+
 test("rejects malformed model output instead of reporting success", () => {
   assert.deepEqual(parseResult(JSON.stringify(result)), result);
   assert.throws(() => parseResult(JSON.stringify({ ...result, promptZh: "" })));

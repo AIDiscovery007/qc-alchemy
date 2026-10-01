@@ -6,11 +6,27 @@ import type {
   CollectionResult,
   Job,
   Mode,
+  MultiSubject,
   Preferences,
   Project,
   SubjectInput,
   Selection,
 } from "../lib/types";
+
+const modes = ["style", "recreate", "reenact", "multi-reenact"];
+const subjectRoles = ["自动", "人物", "物品", "服饰", "场景", "细节"];
+const validSubjectImage = (image: unknown) => {
+  if (typeof image !== "string" || image.length > 3 * 1024 * 1024 || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(image)) return false;
+  const data = image.slice(image.indexOf(",") + 1);
+  return data.length % 4 === 0 && data.length / 4 * 3 - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0) <= 2 * 1024 * 1024;
+};
+const validSubjects = (subjects: unknown, minimum = 2): subjects is MultiSubject[] => Array.isArray(subjects)
+  && subjects.length >= minimum && subjects.length <= 6
+  && subjects.every(subject => subject && typeof subject === "object" && !Array.isArray(subject)
+    && typeof subject.id === "string" && /^[\w-]{1,100}$/.test(subject.id)
+    && (validSubjectImage(subject.subjectImage) || minimum === 0 && subject.subjectImage === "") && subjectRoles.includes(subject.role)
+    && typeof subject.detail === "string" && subject.detail.length <= 2000)
+  && new Set(subjects.map(subject => subject.id)).size === subjects.length;
 
 export default defineBackground(() => {
   void browser.storage.local.setAccessLevel({
@@ -111,9 +127,12 @@ export default defineBackground(() => {
         "preferences",
         "selection",
       ])) as { preferences?: Preferences; selection?: Selection };
-      if (!["style", "recreate", "reenact"].includes(mode)) throw new Error("无效模式");
+      if (!modes.includes(mode)) throw new Error("无效模式");
       if ((mode === "reenact" || (mode === "style" && reenact !== undefined)) && (typeof reenact?.subjectImage !== "string" || !reenact.subjectImage || typeof reenact.basePrompt !== "string" || !reenact.basePrompt.trim()))
         throw new Error("请上传主体图并填写任务指令");
+      if (mode === "multi-reenact" && (!validSubjects(reenact?.subjects) || typeof reenact?.basePrompt !== "string" || !reenact.basePrompt.trim() || reenact.basePrompt.length > 20000))
+        throw new Error("请添加 2–6 张有效主体图并填写任务指令");
+      if (mode === "multi-reenact") reenact = { subjects: reenact!.subjects!.map(({ id, subjectImage, role, detail }) => ({ id, subjectImage, role, detail })), basePrompt: reenact!.basePrompt };
       const selection = projectId ? await projectReference(projectId, stored.preferences?.token || "") : referenceJobId
         ? { ...await reference(referenceJobId, stored.preferences?.token || ""), id: crypto.randomUUID() }
         : stored.selection;
@@ -128,9 +147,9 @@ export default defineBackground(() => {
         reenact: mode !== "recreate" ? reenact : undefined,
       });
       const next = { ...selection, projectId: job.projectId || selection.projectId, jobId: job.id, stage: job.stage, error: undefined,
-        reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined };
+        reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined, generationSubjectImage: undefined, generationSubjects: undefined };
       if (!projectId || stored.selection?.projectId === projectId)
-        await browser.storage.local.set({ selection: next });
+        await browser.storage.local.set({ selection: mode === "multi-reenact" ? { ...next, reenact: { basePrompt: reenact!.basePrompt } } : next });
       return { selection: next, job };
     } finally {
       selecting = false;
@@ -146,8 +165,11 @@ export default defineBackground(() => {
         const id = crypto.randomUUID();
         // Session-only transfer keeps unfinished form input out of durable project records.
         const draft = message.draft;
-        if (draft !== undefined && (typeof draft !== "object" || draft === null || new TextEncoder().encode(JSON.stringify(draft)).length > 8 * 1024 * 1024))
+        if (draft !== undefined && (typeof draft !== "object" || draft === null || Array.isArray(draft) || new TextEncoder().encode(JSON.stringify(draft)).length > 8 * 1024 * 1024))
           throw new Error("工作台草稿过大，请先保存提示词后重试");
+        if (draft?.multiSubjectDrafts !== undefined && (!draft.multiSubjectDrafts || typeof draft.multiSubjectDrafts !== "object" || Array.isArray(draft.multiSubjectDrafts)
+          || Object.values(draft.multiSubjectDrafts).some(subjects => !validSubjects(subjects, 0))))
+          throw new Error("多图草稿无效，请重新选择主体图");
         await browser.storage.session.set({ [`workspace:${id}`]: { mode: preferences?.mode || "style", draft } });
         try { await browser.tabs.create({ url: `${browser.runtime.getURL("/workspace.html")}?handoff=${id}` }); }
         catch (error) { await browser.storage.session.remove(`workspace:${id}`); throw error; }
@@ -181,7 +203,7 @@ export default defineBackground(() => {
           preferences: { paired: !!token, mode: preferences?.mode || "style" },
           // The panel already holds this image; avoid resending megabytes each poll.
           selection: selection && selection.id === message.selectionId && selection.jobId === message.selectionJobId
-            ? { ...selection, image: undefined, reenact: undefined } : selection,
+            ? { ...selection, image: undefined, reenact: undefined, generationSubjectImage: undefined, generationSubjects: undefined } : selection,
         };
       case "alchemy:connect": {
         if (typeof message.token !== "string") throw new Error("无效配对码");
@@ -191,7 +213,7 @@ export default defineBackground(() => {
         return health;
       }
       case "alchemy:mode":
-        if (!["style", "recreate", "reenact"].includes(message.mode)) throw new Error("无效模式");
+        if (!modes.includes(message.mode)) throw new Error("无效模式");
         await browser.storage.local.set({ preferences: { ...preferences, token, mode: message.mode } });
         return;
       case "alchemy:query":
@@ -291,7 +313,10 @@ export default defineBackground(() => {
             throw new Error("宽高须为 1–10000 的整数，比例须在 1:20 至 20:1 之间");
           if (message.subjectImage !== undefined && (typeof message.subjectImage !== "string" || message.subjectImage.length > 3 * 1024 * 1024 || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.subjectImage)))
             throw new Error("请上传有效的主体图");
-          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage, aspectRatio });
+          if (message.subjects !== undefined && (!validSubjects(message.subjects) || message.subjectImage !== undefined))
+            throw new Error("请添加 2–6 张有效主体图");
+          const subjects = message.subjects?.map(({ id, subjectImage, role, detail }: MultiSubject) => ({ id, subjectImage, role, detail }));
+          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage, subjects, aspectRatio });
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
         if (message.type === "alchemy:generation-file-action") {
