@@ -108,13 +108,13 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
     {error && !pending.length && <p className="error" role="alert">{error}</p>}
     {!loading && !loadError && !projects.length && !search.trim() && <p className="muted">{status ? "暂无待逆向项目。" : "暂无可见项目。"}</p>}
     {!loading && !loadError && !visible.length && !!search.trim() && <p className="muted">{status ? "没有找到匹配的待逆向项目。" : "没有找到匹配的项目。"}</p>}
-    <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : `共 ${total} 个${status ? "待逆向" : ""}项目 · 第 ${Math.min(page, pages)} / ${pages} 页`}</div>
+    <div className="project-page-status" role="status" aria-live="polite">{loading ? `正在读取第 ${page} 页…` : loadError ? "项目读取失败" : total ? `共 ${total} 个${status ? "待逆向" : ""}项目` : ""}</div>
     {loadError && <div className="error" role="alert">{loadError}<button className="text-button" onClick={onRetry}>重试</button></div>}
-    <nav className="project-pagination" aria-label="项目分页">
+    {(pages > 1 || page > 1) && <nav className="project-pagination" aria-label="项目分页">
       <button className="secondary" disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>上一页</button>
-      <span>{page} / {pages}</span>
+      <span aria-live="polite">{page} / {pages}</span>
       <button className="secondary" disabled={busy || page >= pages} onClick={() => onPage(page + 1)}>下一页</button>
-    </nav>
+    </nav>}
     <div className={workspace ? listView ? "workspace-project-list" : "workspace-project-grid" : "project-page-items"} role={workspace ? "list" : undefined} aria-label={workspace ? "项目" : undefined} aria-busy={loading} data-loading={loading}>{items}</div>
     <dialog ref={dialog} className={workspace ? "result-dialog modal dialog-small" : "delete-dialog"} aria-labelledby="delete-title" aria-describedby="delete-description"
       onCancel={(event) => { event.stopPropagation(); event.preventDefault(); if (!busy) setPending([]); }}

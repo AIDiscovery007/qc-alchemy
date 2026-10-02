@@ -24,10 +24,15 @@
 
 ## 二、当前临时 agent 注册表
 
-- 身份：[蒙板关闭弹窗执行 agent（未指定编号）](codex://threads/01a0fc91-6c48-7c51-beaf-37d6fe21ed86)。
-  - 意图与目标：全局检查带蒙板弹窗，支持点击蒙板关闭，保留内部操作、叠层、焦点恢复与忙碌保护。
-  - 范围与交叉点：`browser-extension/lib/motion-dialog.ts`、`entrypoints/popup/TaskCenter.tsx`、`tests/motion-dialog.test.mjs`、插件 `AGENTS.md` / `README.md` / `docs/releases/unreleased.md`；根 `AGENTS.md` 仅维护本条登记。与生成结果交互原型 agent 无实现交叉，共享台账按条目保留。
-  - 执行者报告：待复核（2026-10-02）。共用入口覆盖新建项目、设置、任务中心、删除确认、生成信息和图片预览；移除任务中心内部空白误关闭逻辑，保留 cancel 忙碌保护与焦点恢复。
+- 身份：[界面体验执行 agent（未指定编号）](codex://threads/01a0fc91-6c48-7c51-beaf-37d6fe21ed86)。
+  - 上一子任务意图与目标：全局检查带蒙板弹窗，支持点击蒙板关闭，保留内部操作、叠层、焦点恢复与忙碌保护。
+  - 当前子任务（2026-10-02）：已复核整合。按用户要求全局精简重复说明，将必要的低频帮助改为悬停、聚焦或点击查看，保留标签、操作条件、错误及删除后果。范围为 `entrypoints/popup/`、`entrypoints/workspace/` 的文案/共用帮助组件/样式及插件 README、AGENTS、unreleased；不调整结果区布局或原型，与原型 agent 仅共享台账。仅本地实现与验证，不推送、发布或调用模型。
+  - 当前子任务交付：已精简 App、ProjectItem、ProjectHistory、SettingsCenter、TaskCenter、PromptEditor，新增 InlineHelp 与共用样式；同步插件 README/AGENTS/unreleased。保留结果区布局、原型及其他 agent 改动；已本地整合，提交证据见本条 Git 历史；未推送、发布、重载实际扩展或调用模型。
+  - 复核返修（2026-10-02）：TaskCenter 的单一 `role=status` 移至持续挂载的任务信息容器，并声明 `aria-atomic=true`，保留阶段与终态通知且不增加视觉重复。返修后 build、compile 通过；示例状态转换检查 running/completed/failed/cancelled 共用同一节点、仅一个状态区域，证据 `/tmp/reframe-ui-copy-qa/task-status.json`。未实测真实读屏器播报；独立代码复核确认该问题已修复。
+  - 当前子任务验证：build → compile → 228/228 测试、git diff --check 通过。IAB 示例检查帮助点击/键盘展开、安装详情、模型额度提示、任务状态去重、配对空态、错误态、单页隐藏与多页翻页、空排除项保存后隐藏且可重新编辑；390px 宽设置内容无横向溢出。原生 title 悬停内容已核对；未做真实触屏、读屏器及 closed ShadowRoot 内实点。截图 `/tmp/reframe-ui-copy-qa/settings.jpg`，测试日志 `/tmp/reframe-ui-copy-tests.log`（均为本地临时证据）。
+  - 当前子任务监工复核：2026-10-02 复核通过。监工初次 build、compile、228 项测试通过；返修后基于新构建再次执行 compile 及 228 项测试全部通过，差异检查通过。预览实测安装详情和键盘展开帮助、任务取消后常驻状态区域更新为“已取消”；无新增阻塞问题。检查日志 `/tmp/reframe-supervisor-copy-{build,compile,tests}.log`，截图 `/tmp/reframe-copy-review-help.jpg`，均为本地临时证据。
+  - 上一子任务范围与交叉点：`browser-extension/lib/motion-dialog.ts`、`entrypoints/popup/TaskCenter.tsx`、`tests/motion-dialog.test.mjs`、插件 `AGENTS.md` / `README.md` / `docs/releases/unreleased.md`；根 `AGENTS.md` 仅维护本条登记。与生成结果交互原型 agent 无实现交叉，共享台账按条目保留。
+  - 上一子任务执行者报告：已复核整合（2026-10-02，`d0fc6db`）。共用入口覆盖新建项目、设置、任务中心、删除确认、生成信息和图片预览；移除任务中心内部空白误关闭逻辑，保留 cancel 忙碌保护与焦点恢复。
   - 验证：`npm run build` → `npm run compile` → `npm test` 全部通过（228/228）；`git diff --check` 通过。工作台示例实测六类弹窗蒙板关闭与焦点恢复，新建弹窗内部空白/拖出不关闭、任务中心内部空白不关闭；兼容分支的忙碌、手势取消与监听器清理由回归测试覆盖。
   - 监工复核：2026-10-02 复核通过，独立只读复核未发现需返修问题；监工重新构建、类型检查及 228 项测试全部通过，按本任务范围本地整合。提交证据见本条 Git 历史；未推送或发布。
   - 限制与交付：执行者补报 IAB Chrome 154 原生支持 `closedBy`，六类预览实测走原生路径；旧浏览器兼容分支仅回归测试。当前正常工作台 UI 无可达双层模态入口，叠层仅作代码检查；网页浮层 closed ShadowRoot 内控件未实点。未重载用户实际扩展，未调用模型。

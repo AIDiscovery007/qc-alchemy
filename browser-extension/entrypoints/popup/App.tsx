@@ -24,6 +24,7 @@ import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
 import ModelSettings from "./ModelSettings";
+import InlineHelp from "./InlineHelp";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -536,13 +537,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
         <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
         <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{library.recent.total}</span></button>
-        <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span><span className="count">{activeCount}</span></button>
-        <div className="sidebar-label">最近项目 <span>{recentProjects.length}</span></div>
+        <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span>{activeCount > 0 && <span className="count">{activeCount}</span>}</button>
+        <div className="sidebar-label">最近项目</div>
         <div className="project-nav">{recentProjects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
-        <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span><span className="count">↑</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"} · 本地存储</div></div>
+        <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"}</div></div>
       </aside>}
       <div className={workspace ? "workspace-main" : "compact-main"}>
-      {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "所有灵感，都在这里。" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
+      {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
         {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><button className="quiet-button" aria-label="导出提示词" disabled={!result || !!promptDraft} onClick={exportResult}><Icon name="download" /><span>导出提示词</span></button></>}
         <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
@@ -582,8 +583,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       {!workspace && settings && (
         <section className="settings card">
           <h2>连接 Codex</h2>
-          <p>在扩展项目目录启动服务，复制终端显示的配对码。</p>
-          <code className="command">npm run bridge</code>
+          <details className="inline-help" open={!connected}><summary>如何获取配对码？</summary><p>在插件目录打开终端，启动服务并获取配对码。</p><code className="command">npm start<br />npm run pair</code></details>
           <label htmlFor="pair-token">本机配对码</label>
           <input
             id="pair-token"
@@ -655,7 +655,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 disabled={savingMode || busy}
                 onClick={() => saveMode("style")}
               >
-                提取风格{activeProject && <small>{laneStatus(modeJob("style"))}</small>}
+                提取风格{activeProject && modeJob("style") && <small>{laneStatus(modeJob("style"))}</small>}
               </button>
               <button
                 className={preferences.mode === "recreate" ? "active" : ""}
@@ -663,15 +663,15 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 disabled={savingMode || busy}
                 onClick={() => saveMode("recreate")}
               >
-                完整复刻{activeProject && <small>{laneStatus(modeJob("recreate"))}</small>}
+                完整复刻{activeProject && modeJob("recreate") && <small>{laneStatus(modeJob("recreate"))}</small>}
               </button>
               <button className={preferences.mode === "reenact" ? "active" : ""}
                 aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
                 onClick={() => saveMode("reenact")}>
-                主体重演{activeProject && <small>{laneStatus(modeJob("reenact"))}</small>}
+                主体重演{activeProject && modeJob("reenact") && <small>{laneStatus(modeJob("reenact"))}</small>}
               </button>
               <button className={preferences.mode === "multi-reenact" ? "active" : ""} aria-pressed={preferences.mode === "multi-reenact"} disabled={savingMode || busy} onClick={() => saveMode("multi-reenact")}>
-                多图重演{activeProject && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
+                多图重演{activeProject && modeJob("multi-reenact") && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
               </button>
             </div>
             {selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
@@ -744,7 +744,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
                   onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} />
                 {!workspace && activeJob.mode === "style" && !activeJob.reenact && (
-                  <p className="fine">把 [SUBJECT] 替换成你的创作主体。</p>
+                  <InlineHelp label="风格提示词用法">把 [SUBJECT] 替换成你的创作主体。</InlineHelp>
                 )}
                 {!workspace && promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
                 {workspace ? resultPane && generationPanel && createPortal(generationPanel, resultPane) : generationPanel}

@@ -224,3 +224,9 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 
 .hidden-projects-toggle[aria-pressed="true"] { background: var(--yellow); border-color: transparent; }
 .hidden-projects-toggle { flex-shrink: 0; }
+
+/* Optional explanations stay available by hover, click, touch and keyboard. */
+.inline-help { margin: 8px 0; min-width: 0; color: var(--muted); font-size: 11px; }
+.inline-help > summary { width: fit-content; max-width: 100%; gap: 8px; padding: 4px 0; color: var(--muted); }
+.inline-help > summary:hover, .inline-help > summary:focus-visible { color: var(--ink); }
+.inline-help > p { margin: 6px 0 10px; line-height: 1.8; overflow-wrap: anywhere; }

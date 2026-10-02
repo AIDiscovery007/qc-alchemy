@@ -102,21 +102,21 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
   return <dialog ref={dialog} className="task-center" aria-labelledby="task-center-title"
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}>
-    <div className="modal-head"><img src={logo} alt="" /><h2 id="task-center-title">任务中心 · {running} 项执行中</h2>
+    <div className="modal-head"><img src={logo} alt="" /><h2 id="task-center-title">任务中心{running > 0 && ` · ${running} 项执行中`}</h2>
       <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>
     <div className="task-list">
       {!loaded && <p className="hint task-scope" role="status">正在读取任务…</p>}
       {error && <div className="error" role="alert">{error}</div>}
       {actionError && <div className="error" role="alert">{actionError}</div>}
-      {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>没有任务在排队。</h3></div>}
+      {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>暂无任务</h3></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>
         <button type="button" className="task-image-open" aria-label={`打开项目：${job.result?.title || "参考图项目"} · ${modes[job.mode]}`} disabled={!job.projectId || !!opening} onClick={() => void open(job)}>
           <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} />
         </button>
-        <div className="task-meta"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>
+        <div className="task-meta" role="status" aria-atomic="true"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>
           <small title={timestamp === null ? "时间未知" : new Date(timestamp).toLocaleString("zh-CN")}>{generation ? "生成图片" : "逆向提示词"} / <i className={task.status === "running" ? "activity-dot" : "task-status-dot"} aria-hidden="true" /> {statuses[task.status]}</small>
-          <small className="task-stage" role="status" title={task.status === "running" ? task.stage : undefined}>{task.status === "running" ? task.stage : statuses[task.status]}</small>
+          {task.status === "running" && <small className="task-stage" title={task.stage}>{task.stage}</small>}
           {task.error && <small className="task-error">{task.error}</small>}
         </div>
         <button type="button" className="text-link task-cancel" style={{ visibility: task.status === "running" ? "visible" : "hidden" }} disabled={pending.includes(task.id)} onClick={() => void cancel(job, generation)}>{pending.includes(task.id) ? "正在取消…" : "取消"}</button>
