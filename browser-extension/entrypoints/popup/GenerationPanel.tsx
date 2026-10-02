@@ -1,6 +1,7 @@
 import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
 import ImagePreview from "./ImagePreview";
+import LoadingPlaceholder from "./LoadingPlaceholder";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { request } from "../../lib/client";
@@ -14,7 +15,8 @@ const ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 
 export const GenerationEffectContext = createContext<ComponentType<{ running: boolean; image: string; failed: boolean }> | null>(null);
 
-export default function GenerationPanel({ job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, versionNumber = 1 }: {
+export default function GenerationPanel({ job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, versionNumber = 1, drawerOpen = true, onCollapse, onRequestState, requestError = "", requestPending = false }: {
+  requestPending?: boolean; requestError?: string; drawerOpen?: boolean; onCollapse?(): void; onRequestState?(pending: boolean, error?: string): void;
   inputPreview?: ReactNode; workspace?: boolean; actionsTarget?: HTMLElement | null; versionNumber?: number;
   job: Job; lang: "zh" | "en"; disabled: boolean; subjectImage?: string; subjects?: MultiSubject[]; onUpdate(job: Job, subjectImage?: string, subjects?: MultiSubject[]): void;
 }) {
@@ -24,8 +26,12 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   const [comparisonError, setComparisonError] = useState("");
   const [modal, setModal] = useState<Generation>();
   const infoDialog = useRef<HTMLDialogElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [actionBusy, setBusy] = useState(false);
+  const busy = actionBusy || requestPending;
+  const [actionError, setError] = useState("");
+  const error = actionError || requestError;
+  const [localSubmitting, setSubmitting] = useState(false);
+  const submitting = localSubmitting || requestPending;
   const [selected, setSelected] = useState("");
   const [asset, setAsset] = useState<{ key: string; image: string; path?: string; width?: number; height?: number }>();
   const previousRatio = job.generations?.at(-1)?.aspectRatio;
@@ -86,14 +92,16 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     if (!cancel && (disabled || !inputsReady || generic || incomplete)) return;
     setBusy(true);
     setError("");
+    if (!cancel) { setSubmitting(true); setCompare(false); setSelected(""); onRequestState?.(true); }
+    let failure = "";
     try {
       onUpdate(await request<Job>({ type: cancel ? "alchemy:generation-cancel" : "alchemy:generate",
         id: job.id, language: lang, generationId: running?.id,
         ...(!cancel && ratio !== "auto" ? { aspectRatio: { width, height } } : {}),
         ...(!cancel && job.mode !== "recreate" ? multi ? { subjects } : { subjectImage } : {}) }), cancel ? undefined : subjectImage, !cancel && multi ? subjects : undefined);
-      setSelected("");
-    } catch (error) { setError((error as Error).message); }
-    finally { setBusy(false); }
+      setSelected(cancel ? [...generations].reverse().find(item => item.status === "completed")?.id || "" : "");
+    } catch (error) { failure = (error as Error).message; setError(failure); }
+    finally { setBusy(false); if (!cancel) { setSubmitting(false); onRequestState?.(false, failure); } }
   };
 
   const copyPath = async () => {
@@ -130,10 +138,10 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     title={`使用${job.mode === "recreate" ? "" : "当前主体图、参考模板与"}${lang === "zh" ? "中文" : "英文"}提示词生成，包含排除项。使用 Codex 生图额度。`} onClick={() => act()}>
     {!running && !busy && <Icon name="image" />}{running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "生成图片"}<Icon name="arrow" />
   </button>;
-  const generationControls = <>{ratioControls}{generateButton}</>;
+  const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : !inputsReady ? multi ? "请添加至少 2 张可用的主体图。" : "请先上传可用的主体图。" : "";
+  const generationControls = <>{ratioControls}{generateButton}{workspace && warning && <p className="hint">{warning}</p>}{workspace && error && <p className="error" role="alert">{error}</p>}</>;
   const action = actionsTarget ? createPortal(generationControls, actionsTarget) : workspace ? generationControls : <>{ratioControls}<AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction></>;
   const dimensions = image && asset?.width && asset?.height ? <p className="generation-dimensions">{asset.width} × {asset.height} px · {imageRatio(asset.width, asset.height)}</p> : null;
-  const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : !inputsReady ? multi ? "请添加至少 2 张可用的主体图。" : "请先上传可用的主体图。" : "";
   const comparisonInputs = original?.key === assetKey ? multi ? <div className="multi-comparison-inputs">
     {original.subjects?.map((subject, index) => <figure key={subject.id}><ImagePreview src={subject.subjectImage} alt={`本次主体 ${index + 1}`} loading="lazy" /><figcaption>主体 {index + 1} · {subject.role}{subject.detail && <small>{subject.detail}</small>}</figcaption></figure>)}
     <figure><ImagePreview src={original.image} alt="本次参考模板" loading="lazy" /><figcaption>参考模板</figcaption></figure>
@@ -141,27 +149,31 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     : <p role="status">{comparisonError || "正在读取原图…"}</p>;
   const copyNotice = copyError && <div className="error" role="alert">{copyError}{imagePath && <p className="file-path">{imagePath}</p>}</div>;
 
-  return <section className={`generated-pane${workspace ? "" : " compact-results"}`} aria-label="图片生成">
-    <div className="result-toolbar"><h2>{!generation && inputPreview ? "输入预览" : "生成结果"} <small>{!generation && inputPreview ? `${(subjects?.length || 0) + 1} 张` : `${generations.filter(item => item.status === "completed").length} 张`}</small></h2>
-      <div className="result-toolbar-actions"><button className="quiet-button" disabled={!image} aria-pressed={compare} onClick={() => setCompare(!compare)}><ResultIcon name="compare" />{compare ? "退出对照" : "对照原图"}</button>
-        {workspace && running && <button className="quiet-button" disabled={busy} onClick={() => act(true)} aria-label="取消生图" title="取消生图"><span aria-hidden="true">×</span></button>}</div></div>
+  return <section className={`generated-pane${workspace ? "" : " compact-results"}`} aria-label="图片生成" data-pending={submitting || generation?.status === "running"}>
+    <div className="result-toolbar">{!workspace && <h2>{!generation && inputPreview ? "输入预览" : "生成结果"} <small>{!generation && inputPreview ? `${(subjects?.length || 0) + 1} 张` : `${generations.filter(item => item.status === "completed").length} 张`}</small></h2>}
+      <div className="result-toolbar-actions"><button className="quiet-button" hidden={workspace && (!image || submitting)} disabled={!image} aria-label={compare ? "退出对照" : "对照原图"} title={compare ? "退出对照" : "对照原图"} aria-pressed={compare} onClick={() => setCompare(!compare)}><ResultIcon name="compare" />{!workspace && (compare ? "退出对照" : "对照原图")}</button>
+        {workspace && running && <button className="quiet-button" disabled={busy} onClick={() => act(true)} aria-label="取消生图" title="取消生图">取消</button>}
+        {workspace && <button className="quiet-button result-collapse" aria-label="收起生成结果" title="收起生成结果" onClick={onCollapse}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></button>}</div></div>
     {action}
-    {warning && <p className="result-notice">{warning}</p>}
-    {error && <div className="error result-notice" role="alert">{error}</div>}
-    <div className="preview-canvas">{!generation && inputPreview}{image ? compare ? <div className="compare-images">
+    {!workspace && warning && <p className="result-notice">{warning}</p>}
+    {!workspace && error && <div className="error result-notice" role="alert">{error}</div>}
+    <div className="preview-canvas">{workspace && error && (image || running) && <p className="error result-request-error" role="alert">{error}</p>}{!workspace && !generation && inputPreview}{submitting ? workspace && drawerOpen ? <LoadingPlaceholder className="generation-submitting">正在提交生成请求…</LoadingPlaceholder> : null : image ? compare ? <div className="compare-images">
       {comparisonInputs}
       <figure><ImagePreview src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <ImagePreview src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
+    </div> : <ImagePreview src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError || error) ? <div className="empty-canvas">
       <Icon name="image" />
       <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
-      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
-    </div> : !GenerationEffect && generation?.status === "completed" ? <p role="status">正在读取生成图片…</p> : null}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
+      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || error || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
+      {workspace && <button className="outline-button" disabled={disabled || busy || !!running || !validRatio || generic || incomplete || !inputsReady} onClick={() => act()}>重新生成</button>}
+    </div> : !GenerationEffect && generation?.status === "completed" ? <p role="status">正在读取生成图片…</p> : null}{GenerationEffect && drawerOpen && generation && !compare && !submitting && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
       failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>
+    <div className="result-footer">
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} · ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong>{dimensions}</div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
-    {(workspace || generation) && <div className="result-bottom" role="group" aria-label="图片操作"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} compact /><button className="outline-button copy-path-button result-icon-action" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={copied === assetKey ? "已复制路径" : "复制图片路径"} aria-label={copied === assetKey ? "已复制路径" : "复制图片路径"}><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} /></button>
+    {(workspace || generation) && <div className="result-bottom" role="group" aria-label="图片操作"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} compact iconOnly={workspace} /><button className="outline-button copy-path-button result-icon-action" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={copied === assetKey ? "已复制路径" : "复制图片路径"} aria-label={copied === assetKey ? "已复制路径" : "复制图片路径"}><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} /></button>
       <button className="outline-button result-icon-action" disabled={!generation} title="生成信息" aria-label="生成信息" onClick={() => generation && setModal(generation)}><ResultIcon name="info" /></button><span className="result-action-status" role="status">{copied === assetKey ? "已复制路径" : ""}</span></div>}
+    </div>
     {modal && <dialog className="result-dialog modal" ref={infoDialog} aria-label="本次生成信息"
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
       <div className="modal-head"><img src={logo} alt="" /><h2>本次生成信息</h2><button className="close-btn" aria-label="关闭窗口" onClick={() => setModal(undefined)}>×</button></div>

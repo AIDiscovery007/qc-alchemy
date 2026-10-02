@@ -11,9 +11,10 @@ export default function ImageInput({ image, label, alt, disabled, uploading, onU
   return <div className="workspace-image-input">
     <div className="workspace-image-wrap">
       {image ? <ImagePreview src={image} alt={alt} rotation={rotation} /> : onUpload ? <button className="workspace-upload-empty" disabled={disabled || uploading} onClick={() => file.current?.click()}><Icon name="plus" />{uploading ? "正在读取…" : "上传主体图"}</button> : <LoadingPlaceholder active={loading && !error} className="workspace-upload-empty">{error || "正在恢复参考图…"}</LoadingPlaceholder>}
-      {image && onUpload && <button className="workspace-image-action" aria-busy={uploading || undefined} disabled={disabled || uploading} onClick={() => file.current?.click()}>{uploading ? <span className="activity-dot" aria-hidden="true" /> : <Icon name="plus" />}{uploading ? "读取中…" : "更换"}</button>}
       {onUpload && <input ref={file} type="file" hidden accept="image/png,image/jpeg,image/webp" aria-label="上传主体图" onChange={(event) => { onUpload(event.target.files?.[0]); event.target.value = ""; }} />}
     </div>
-    <div className="workspace-input-caption"><strong>{label}</strong></div>
+    <div className="workspace-input-caption"><strong>{label}</strong>
+      {image && onUpload && <button className="workspace-image-action" aria-busy={uploading || undefined} disabled={disabled || uploading} onClick={() => file.current?.click()}>{uploading ? <span className="activity-dot" aria-hidden="true" /> : <Icon name="plus" />}{uploading ? "读取中…" : "更换"}</button>}
+    </div>
   </div>;
 }

@@ -280,6 +280,8 @@ createServer(async (req, res) => {
             return {ok:true,value:job};
           }
           if(message.type==='alchemy:generate') {
+            await new Promise(resolve=>setTimeout(resolve,Math.min(60000,Math.max(0,Number(previewOptions.get('generationStartDelay'))||0))));
+            if(previewOptions.get('generationStart')==='failed')return {error:'示例：生成请求提交失败，请重试'};
             const saved=findJob(message.id);
             const generation={id:'preview-'+Date.now(),status:'running',stage:'正在生成图片…',language:message.language,extension:'png',createdAt:new Date().toISOString(),prompt:message.language==='zh'?saved.result.promptZh:saved.result.promptEn,negativePrompt:saved.result.negativePrompt,model:models.selected,subjectImage:message.subjectImage,subjects:message.subjects?structuredClone(message.subjects):undefined,aspectRatio:message.aspectRatio};
             saved.generations||=[];saved.generations.push(generation);touch(projects.find(p=>p.id===saved.projectId));

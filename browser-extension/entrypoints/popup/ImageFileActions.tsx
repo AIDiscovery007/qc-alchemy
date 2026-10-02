@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { request } from "../../lib/client";
 import Icon from "./Icon";
 
-export default function ImageFileActions({ jobId, generationId, disabled, compact = false }: { jobId: string; generationId?: string; disabled: boolean; compact?: boolean }) {
+export default function ImageFileActions({ jobId, generationId, disabled, compact = false, iconOnly = false }: { jobId: string; generationId?: string; disabled: boolean; compact?: boolean; iconOnly?: boolean }) {
   const pending = useRef(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -16,7 +16,7 @@ export default function ImageFileActions({ jobId, generationId, disabled, compac
     finally { pending.current = false; setBusy(""); }
   };
   return <>
-    <button className="outline-button secondary" disabled={disabled || !!busy} aria-busy={busy === "open"} onClick={() => act("open")}><Icon name="image" />打开图片</button>
+    <button className={`outline-button secondary${iconOnly ? " result-icon-action" : ""}`} aria-label="打开图片" title="打开图片" disabled={disabled || !!busy} aria-busy={busy === "open"} onClick={() => act("open")}><Icon name="image" />{!iconOnly && "打开图片"}</button>
     <button className={`outline-button secondary${compact ? " result-icon-action" : ""}`} aria-label="在文件夹中显示" title="在文件夹中显示" disabled={disabled || !!busy} aria-busy={busy === "reveal"} onClick={() => act("reveal")}><Icon name="history" />{!compact && "在文件夹中显示"}</button>
     {error && <p className="image-file-notice error" role="alert">{error}</p>}
   </>;

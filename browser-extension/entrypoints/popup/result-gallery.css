@@ -85,3 +85,5 @@
 .app .compact-results .result-bottom { margin-bottom:8px; }
 .app .compact-results .result-history:empty { display:none; }
 .app .compact-results .thumbnail-loading { background:var(--surface-muted); }
+
+.app .result-footer { display:contents; }

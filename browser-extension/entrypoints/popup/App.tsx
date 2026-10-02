@@ -1,3 +1,4 @@
+import { resultDrawers, resultDrawerView } from "../../lib/result-drawer";
 import useProjectLibrary from "./useProjectLibrary";
 import { useMotion } from "../../lib/use-motion";
 import { pollWhileVisible } from "../../lib/visible-poll";
@@ -10,7 +11,7 @@ import ImageInput from "../workspace/ImageInput";
 import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
 import HiddenProjectsToggle from "./HiddenProjectsToggle";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection, MultiSubject } from "../../lib/types";
 import ProjectHistory from "./ProjectHistory";
@@ -42,7 +43,14 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [generationActions, setGenerationActions] = useState<HTMLDivElement | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
-  const [mobilePane, setMobilePane] = useState("edit");
+  const [drawers, dispatchDrawer] = useReducer(resultDrawers, {});
+  const resultReturn = useRef<HTMLButtonElement>(null);
+  const wasDrawerOpen = useRef(false);
+  const editor = useRef<HTMLDivElement>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>();
+  const [smallSidebar, setSmallSidebar] = useState(() => matchMedia("(max-width: 860px)").matches);
+  const sidebarCollapsed = !(sidebarExpanded ?? !smallSidebar);
+  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 650px)").matches);
   const [instructions, setInstructions] = useState<Record<string, string>>({});
   const referenceInput = useRef<HTMLInputElement>(null);
   const [activeCount, setActiveCount] = useState(0);
@@ -286,7 +294,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         setInstructions(items => ({ ...items, [key]: multiPrompt }));
       }
       selectionRevision.current++;
-      setSelection(next); setHistoryOpen(false); setMobilePane("edit"); setNewProjectOpen(false);
+      setSelection(next); setHistoryOpen(false); setNewProjectOpen(false);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -303,7 +311,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       else if (mode !== "recreate") setSubjectDrafts(items => ({ ...items, [key]: subjectImage(mode) }));
       if (instruction !== undefined) setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
-      setSelection(next); setError(""); setHistoryOpen(false); setMobilePane("edit");
+      setSelection(next); setError(""); setHistoryOpen(false);
     } finally { setBusy(false); }
   };
   const swapImages = async (mode: "style" | "reenact" | "multi-reenact", instruction: string, subjectId?: string) => {
@@ -323,7 +331,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       } else setSubjectDrafts(items => ({ ...items, [key]: subject }));
       setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
-      setSelection(next); setHistoryOpen(false); setMobilePane("edit");
+      setSelection(next); setHistoryOpen(false);
     } catch (e) { setError((e as Error).message || "无法互换图片，请重试"); }
     finally { setBusy(false); }
   };
@@ -397,7 +405,6 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       selectionRevision.current++;
       setSelection(next);
       setHistoryOpen(false);
-      setMobilePane("edit");
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -514,7 +521,34 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               {modeJobs(preferences.mode).map((item, i, items) => <option key={item.id} value={item.id}>{`版本 ${items.length - i}${i === 0 ? " · 最新" : ""}`}</option>)}
             </SelectField>;
   const multiPreview = preferences.mode === "multi-reenact" ? <MultiInputPreview image={selection?.image} subjects={multiSubjects} /> : undefined;
-  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (activeJob.mode === "multi-reenact" && multiStale)}
+  const drawerKey = `${selection?.projectId || selection?.id}:${preferences.mode}:${activeJob?.id || "new"}`;
+  const drawer = resultDrawerView(drawers, drawerKey, activeJob?.generations);
+  const drawerOpen = workspace && !historyOpen && drawer.open;
+  const closeResults = () => {
+    dispatchDrawer({ type: "toggle", key: drawerKey, open: false, seen: drawer.completed });
+    requestAnimationFrame(() => resultReturn.current?.focus({ preventScroll: true }));
+  };
+  useEffect(() => {
+    const media = matchMedia("(max-width: 650px)");
+    const sidebarMedia = matchMedia("(max-width: 860px)");
+    const update = () => { setNarrow(media.matches); setSmallSidebar(sidebarMedia.matches); };
+    media.addEventListener("change", update);
+    sidebarMedia.addEventListener("change", update);
+    return () => { media.removeEventListener("change", update); sidebarMedia.removeEventListener("change", update); };
+  }, []);
+  useEffect(() => {
+    const closed = wasDrawerOpen.current && !drawerOpen;
+    wasDrawerOpen.current = drawerOpen;
+    if (!workspace || !closed || !(resultPane?.contains(document.activeElement) || document.activeElement === document.body)) return;
+    (resultReturn.current || editor.current?.querySelector<HTMLButtonElement>(".generate-button"))?.focus({ preventScroll: true });
+  }, [workspace, drawerOpen, resultPane]);
+  useEffect(() => {
+    if (!workspace || !narrow || !drawerOpen) return;
+    if (editor.current?.contains(document.activeElement) || document.activeElement === document.body) resultPane?.querySelector<HTMLButtonElement>(".result-collapse")?.focus({ preventScroll: true });
+  }, [workspace, narrow, drawerOpen, resultPane]);
+  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace}
+                  drawerOpen={drawerOpen} onCollapse={closeResults} requestError={drawer.error} requestPending={drawer.pending}
+                  onRequestState={(pending, error) => dispatchDrawer({ type: pending ? "request" : "settled", key: drawerKey, error })} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (activeJob.mode === "multi-reenact" && multiStale)}
                   subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
                   inputPreview={multiPreview}
                   subjects={activeJob.mode === "multi-reenact" ? multiSubjects : undefined}
@@ -528,12 +562,15 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   }} /> : null;
 
   return (
-    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion={reduced ? "reduce" : "full"} data-motion-input="keyboard"
+    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion={reduced ? "reduce" : "full"} data-motion-input="keyboard" data-sidebar-collapsed={sidebarCollapsed}
       onPointerDownCapture={event => { event.currentTarget.dataset.motionInput = "pointer"; }}
       onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
-      onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}>
-      {workspace && <aside className="sidebar" aria-label="工作台导航">
-        <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div></div>
+      onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}
+      onKeyDown={event => {
+        if (event.key === "Escape" && drawerOpen && !event.defaultPrevented && !(event.target as Element).closest("dialog")) { event.stopPropagation(); closeResults(); }
+      }}>
+      {workspace && <aside id="workspace-sidebar" className="sidebar" aria-label="工作台导航">
+        <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div><button className="quiet-button sidebar-toggle" aria-label={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} title={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={() => setSidebarExpanded(sidebarCollapsed)}><Icon name="sidebar" /></button></div>
         <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
         <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
         <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{library.recent.total}</span></button>
@@ -545,6 +582,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       <div className={workspace ? "workspace-main" : "compact-main"}>
       {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
+        {!historyOpen && drawer.content && !drawerOpen && <button ref={resultReturn} className="outline-button result-return" aria-controls="workspace-results" aria-expanded={false} onClick={() => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}><Icon name="image" />{drawer.label}</button>}
         {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><button className="quiet-button" aria-label="导出提示词" disabled={!result || !!promptDraft} onClick={exportResult}><Icon name="download" /><span>导出提示词</span></button></>}
         <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
         <button className="outline-button" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" />{activeCount ? `${activeCount} 项执行中` : "任务中心"}</button>
@@ -623,13 +661,12 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
       {workspace && tasksOpen && <TaskCenter showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId) => {
         const next = await request<Selection>({ type: "alchemy:open-project", id: projectId });
-        selectionRevision.current++; setSelection(next); setHistoryOpen(false); setMobilePane("edit");
+        selectionRevision.current++; setSelection(next); setHistoryOpen(false);
         setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
         await saveMode(mode);
       }} />}
-      {workspace && !historyOpen && <div className="workspace-mobile-tabs"><button aria-pressed={mobilePane === "edit"} onClick={() => setMobilePane("edit")}>画面与提示词</button><button aria-pressed={mobilePane === "result"} onClick={() => setMobilePane("result")}>生成结果</button></div>}
-      <div className={workspace ? "workspace-body" : undefined} data-pane={mobilePane} data-history={historyOpen}>
-      <div className={workspace ? "workspace-editor" : undefined}>
+      <div className={workspace ? "workspace-body" : undefined} data-results-open={drawerOpen} data-history={historyOpen}>
+      <div ref={editor} className={workspace ? "workspace-editor" : undefined} inert={workspace && narrow && drawerOpen}>
       <main>
         {historyOpen ? (
           <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} />
@@ -758,7 +795,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       </main>
       {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
       </div>
-      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /></div>}</aside>}
+      {workspace && !historyOpen && <div className="result-drawer-slot"><aside id="workspace-results" className="workspace-results" ref={setResultPane} aria-label="生成结果抽屉" aria-hidden={!drawerOpen} inert={!drawerOpen} /></div>}
       </div>
       </div>
     </div>

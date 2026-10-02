@@ -57,12 +57,10 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
 
   return (
     <section className="reenact-form" hidden={!active} aria-label={`${style ? "提取风格" : "主体重演"}输入`}>
-      <div className="swappable-images">
-      <div className="workspace-inputs">
+      <div className="workspace-inputs paired">
         <ImageInput image={subjectImage} rotation={subjectRotation} label="图 1 · 主体" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
+        <button type="button" className="image-swap" aria-label="互换主体图与参考图" title="互换主体图与参考图" disabled={disabled || uploading || !subjectImage || !selection.image} onClick={() => onSwap(basePrompt)}><Icon name="swap" /></button>
         <ImageInput loading={active} error={selection.error} image={selection.image} rotation={referenceRotation} label="图 2 · 参考" alt="图 2：原始参考模板" />
-      </div>
-      <button type="button" className="image-swap" aria-label="互换主体图与参考图" title="互换主体图与参考图" disabled={disabled || uploading || !subjectImage || !selection.image} onClick={() => onSwap(basePrompt)}><Icon name="swap" /></button>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
       {selection.subjectError && !subjectImage && <p className="fine">{selection.subjectError}</p>}

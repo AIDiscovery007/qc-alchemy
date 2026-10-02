@@ -24,7 +24,33 @@
 
 ## 二、当前临时 agent 注册表
 
+- 身份：[生成结果交互原型执行 agent（未指定编号）](codex://threads/01a0fc94-0203-71e2-84f8-fd5299c1d464)。
+  - 正式接入（2026-10-02）：已复核整合。用户已确认最终原型，要求按原型落实推挤式结果抽屉，继续使用当前 ImagePreview/ImageViewer 与真实生成动效。追加用户需求：左侧项目栏提供展开/收起图标，保留窄条项目入口。范围为 popup/App、GenerationPanel、ImageFileActions、Icon、workspace 布局/结果样式、必要状态逻辑和回归测试，以及插件 README/AGENTS/unreleased；保留既有文案与蒙板关闭改动，根台账仅更新本条。授权本地实现与验证；不推送、发布或调用模型。
+  - 提交空白返修（2026-10-02）：按监工 P2 复核意见，仅修复提交请求尚未回包时的抽屉空白；复用 LoadingPlaceholder/LoadingEffect，保留已确认固定页脚与历史规则。追加范围 `scripts/preview.mjs` 的隔离提交延迟/失败参数和插件说明，用于首次生成、已有图重试及窄屏验证；不提交。
+  - 提交空白返修交付（2026-10-02，执行者报告，现已复核）：提交分支复用 LoadingPlaceholder/LoadingEffect，明确显示「正在提交生成请求…」，父级 requestPending 维持切走返回后的提交等待与防重复提交；等待隐藏/卸载清理、回包接回原 GenerationEffect。build → compile → 232/232 测试与 diff 检查通过；390px首次/再次慢提交、生成/reveal衔接、减少动效静态反馈、收起/切项目后动效节点为0、返回恢复等待/禁用重复提交、收起后完成只显示新结果、首次提交失败可重试及再次失败保留旧图/返回保留错误均实测。证据素材目录 submit-first.jpg、submit-mobile.jpg、submit-failure.jpg；日志 /tmp/reframe-submit-{build,compile,tests}.log。未改生成动效/预览组件源码；未提交、推送、发布、重载实际扩展或调用模型；请求监工复核。
+  - 监工整合复核（2026-10-02）：已通过独立代码复核，提交空白 P2 已返修。监工预览实测侧栏/抽屉开合、收起后新结果、图片预览及焦点恢复；3 秒提交延迟在桌面与 390px 窄屏均显示等待反馈，回包后恢复结果。与输入区改动共同执行最终 build → compile → 232/232 测试及差异检查全部通过，日志 `/tmp/reframe-supervisor-integrated-{build,compile,tests}.log`；截图 `/tmp/reframe-submit-review.jpg`、`/tmp/reframe-submit-mobile-review.jpg`。按本地整合提交交付，提交证据见本条 Git 历史；未推送、发布、重载实际扩展或调用模型。下方执行报告中的未提交状态为交接时记录。
+  - 正式接入交付：已落实推挤式结果抽屉、无内容隐藏、收起后完成不重开/新结果入口、项目/模式/版本隔离、底部纯图标浅色工具条；继续使用原 GenerationEffect、ImagePreview/ImageViewer。项目栏新增独立开合图标，收起保留导航和项目缩略图；未隐藏工作台侧栏。实现范围另含 `lib/result-drawer.ts`、`tests/result-drawer.test.mjs`、`popup/result-gallery.css`、`popup/multi-subject.css`，原型文件未改；与已整合文案任务的 App/样式/文档共享块均保留。
+  - 正式接入验证：build → compile → 232/232 测试与差异检查通过。IAB 示例实测像素 reveal；896px 画布等待至出图高度保持730px；手动收起后完成、新结果找回、版本/模式/项目切换、取消空任务/恢复旧图、失败切回历史图、原图片预览125%缩放/Escape焦点恢复、390px无横向溢出、减少动效0s、轻量面板与多图空态。项目栏170↔64px开合、收起时项目切换、键盘即时展开及390px默认54px窄条已实测。
+  - 正式接入证据与限制：本地忽略目录 `browser-extension/design-extract-output/generated-results-prototype/` 内 `landed-results.jpg`、`landed-sidebar-collapsed.jpg`、`landed-reveal.jpg`；日志 `/tmp/reframe-drawer-{build,compile,tests}.log`。未重载真实扩展、未调用模型、未做真实触屏/读屏器或帧率测量；未提交、推送或发布。请求监工 review、处理冲突并本地整合。
+  - 意图与目标：验证生成结果无内容隐藏、有结果自然展开及收起找回的交互；按用户指定方向交付推挤式结果抽屉，保留现有生成动效供用户体验。
+  - 原型归档证据（2026-10-02）：监工已将最终原型独立本地归档到 `codex/prototype-result-drawer`，提交 `db01eb63f4747e2ecc3d8f575b5589b5c7619ec3`，经核验仅含 `prototypes/generated-results/` 五个原型文件；主工作区未切换。插件 AGENTS 已引用该分支/提交，正式实现状态见上方监工整合复核。
+  - 原型阶段范围与交叉点（历史）：新增 `browser-extension/prototypes/generated-results/{index.html,serve.mjs,effect.tsx,motion.ts,README.md}`；截图素材及预览证据保存在被忽略的 `browser-extension/design-extract-output/generated-results-prototype/`；根 `AGENTS.md` 仅维护本条登记。不修改生产组件，与其他执行任务无实现交叉。
+  - 本轮细节调整：原型复核通过，待用户评审（2026-10-02）。已按用户反馈移除结果区灰色底板、图片容器圆角框、工具栏托底，仅修改原型 CSS 和 README。浏览器实测三层背景透明/圆角 0，推挤后工作台约 547px，生产组件仍进入 reveal；保持图片原色。git diff --check 通过，截图证据为素材目录 frameless-complete.jpg。未改生产、提交或调用模型。
+  - 后续标注调整：原型复核通过，待用户评审（2026-10-02）。已移除结果区顶部标题和张数，恢复底部操作栏浅色背景/13px 圆角；仅改原型 index.html、README 和本条台账。896px 预览验证顶部无文字、工具栏恢复色块且仍进入 reveal；脚本语法及差异检查通过，证据为素材目录 clean-header-toolbar.jpg。未改生产、提交或调用模型。
+  - 图标按钮细化：原型复核通过，待用户评审（2026-10-02）。已移除“打开图片”可见文字，使用36px纯图标按钮，保留 title/aria-label。浏览器实测可正常打开/关闭预览并恢复焦点；diff检查通过，证据素材目录 icon-toolbar.jpg。仅改原型和本人台账，未提交或修改生产。
+  - 执行者报告：原型已复核，待用户评审（2026-10-02）。按用户要求移除旧 A/B/C，重做单一推挤式抽屉。生成开始即推出、工作台真实收窄；直接复用生产 GenerationEffect/LoadingEffect 的像素等待及 0.7 秒揭晓，原生产组件未修改。主动收起不取消任务，收起后完成不重开，失败可找回已有图片；旧方案截图已删除。
+  - 验证与限制：新方案 Vite 内存编译、服务/内联脚本语法及 git diff --check 通过；1440×1000 下工作台宽度由 1232px 收至约 641.6px，真实组件实测进入 reveal，画布尺寸稳定。390×844 无横向溢出；实测取消空任务、失败保留历史图、放大、收起焦点恢复、生成中收起后完成及减少动效。证据为素材目录 push-generating.jpg、push-reveal.jpg、push-complete.jpg；未调用模型、未测试真实扩展/任务或测量帧率。新方案等待用户评审。
+  - 纯图标按钮监工复核（2026-10-02）：预览确认按钮可见文字为空、宽 36px，title 和 aria-label 均为“打开图片”；实测打开及关闭图片预览，焦点恢复到原按钮。截图 `/tmp/reframe-icon-toolbar-review.jpg`；差异检查通过，仍仅原型，未提交或修改生产。
+  - 顶部与工具栏监工复核（2026-10-02）：1280px 预览确认顶部标题/张数已移除，底部工具栏浅色背景 rgb(255,254,250) 与 13px 圆角已恢复；生成时取消、收起入口可见，实测进入 reveal，完成视觉截图 `/tmp/reframe-toolbar-review.jpg`。差异检查通过，仍仅原型，未提交或进入生产实现。
+  - 去底板监工复核（2026-10-02）：预览确认结果区、图片容器、工具栏三层均透明，边框/圆角为 0、无阴影；1280px 下编辑区仍收窄至约 547px，实测进入 reveal。视觉截图 `/tmp/reframe-frameless-review.jpg`，仅原型效果验收，未提交或进入生产实现。
+  - 新方案监工复核（2026-10-02）：原型复核通过，独立只读代码检查无阻塞问题。1280px 预览实测工作台宽度从 1072px 收至约 547px；主动收起后完成只显示新结果入口，不重开，入口可找回结果，收起焦点恢复。实测生产组件进入 reveal 并截图确认像素揭晓，证据 `/tmp/reframe-push-drawer-review.jpg`。手机、取消/失败及减少动效沿用执行者实测并经代码检查；未测试真实任务、实际扩展或帧率。本轮只评审，未提交原型或进入生产实现。
+  - 上一方案监工复核（用户已否决 A/B/C，不适用于新方案）：2026-10-02 原型评审通过，待用户选型；已检查独立文件与内存模拟边界，实看 A/B/C 布局，复测生成中主动收起、完成后不重开及顶部入口找回。建议 A 作为编辑与预览并行的方案；手机与其余场景沿用执行者实测报告，未验证真实任务。未合入生产、提交、推送或发布。
+  - 原型阶段授权边界（历史，现以正式接入条目为准）：仅本地原型和预览；不提交、推送、发布或调用模型。待用户确认方案后再进入正式实现。
+
 - 身份：[界面体验执行 agent（未指定编号）](codex://threads/01a0fc91-6c48-7c51-beaf-37d6fe21ed86)。
+  - 图片输入区打磨（2026-10-02）：已复核整合。已移除准备画面图片区色块衬底、双图互换按钮置于两图之间（多图保留现有位置）、四种模式主预览统一高度且保留原始比例；更换入口移至标签行，放大入口贴近图片。已处理监工反馈的极窄 caption 折字：标签与短操作保持完整，输入区不超过 280px 时上下排列双图，互换仍位于两图之间。新增 popup/image-input.css 并在 style.css 汇总；修改 SubjectForm、workspace/ImageInput、compact-editor.css、image-preview.css、workspace.css 与 multi-subject.css 的输入区块，同步插件 README/AGENTS/unreleased。保留结果抽屉逻辑、侧栏、历史及他人未提交改动；未提交、推送、发布、重载实际扩展或调用模型。
+  - 图片输入区监工复核（2026-10-02）：独立代码检查通过，确认输入样式未影响结果图；监工实测四种路径在同宽输入区采用 180px 高度、背景透明，复核 896px 抽屉挤压下短标签/按钮不再逐字折行。共享 workspace.css、multi-subject.css 和文档已协调保留双方改动；最终整合构建、类型检查与 232/232 测试全部通过。按本地整合提交交付，提交证据见本条 Git 历史；下方执行报告中的未提交状态为交接时记录。未推送、发布、重载实际扩展或调用模型。
+  - 图片输入区验证：build → compile → 232/232 测试及差异检查通过。示例检查桌面四模式主预览 180px、390px 工作台及400px轻量面板 120px 等高/无横向溢出，双图交换居中且实际互换成功，多图交换保留原操作栏，空主体禁用，放大及 Escape 返回可用。补验 896px 侧栏与结果抽屉同时展开、390px 侧栏手动展开，均无横向溢出且主图等高。证据 `/tmp/reframe-input-ui-qa/prepared-images.jpg`、`measurements.json`、`constrained-layouts.json`；日志 `/tmp/reframe-input-ui-{build,compile,tests}.log`。未测试真实触屏/读屏器与 closed ShadowRoot 内操作；请求监工 review、协调共享样式并整合。
   - 上一子任务意图与目标：全局检查带蒙板弹窗，支持点击蒙板关闭，保留内部操作、叠层、焦点恢复与忙碌保护。
   - 当前子任务（2026-10-02）：已复核整合。按用户要求全局精简重复说明，将必要的低频帮助改为悬停、聚焦或点击查看，保留标签、操作条件、错误及删除后果。范围为 `entrypoints/popup/`、`entrypoints/workspace/` 的文案/共用帮助组件/样式及插件 README、AGENTS、unreleased；不调整结果区布局或原型，与原型 agent 仅共享台账。仅本地实现与验证，不推送、发布或调用模型。
   - 当前子任务交付：已精简 App、ProjectItem、ProjectHistory、SettingsCenter、TaskCenter、PromptEditor，新增 InlineHelp 与共用样式；同步插件 README/AGENTS/unreleased。保留结果区布局、原型及其他 agent 改动；已本地整合，提交证据见本条 Git 历史；未推送、发布、重载实际扩展或调用模型。
