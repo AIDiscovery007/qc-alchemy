@@ -25,14 +25,11 @@
 
 ## 二、当前临时 agent 注册表
 
-| 身份与会话 | 职责简介 | 工作记录 |
-| --- | --- | --- |
-| [生成结果交互原型执行 agent（未指定编号）](codex://threads/01a0fc94-0203-71e2-84f8-fd5299c1d464) | 生成结果交互原型、结果抽屉及项目侧栏体验。 | [工作日志](agent-logs/01a0fc94-0203-71e2-84f8-fd5299c1d464.md) |
-| [界面体验执行 agent（未指定编号）](codex://threads/01a0fc91-6c48-7c51-beaf-37d6fe21ed86) | 共用弹窗、界面文案与帮助、图片输入区体验。 | [工作日志](agent-logs/01a0fc91-6c48-7c51-beaf-37d6fe21ed86.md) |
+当前无在册临时 agent。
 
 ### 最近阶段发布
 
-2026-10-02 已正式发布 [v0.1.24](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.24)，发布提交为 `dfad03fccdc1d2e886a34f12448d0f7705d4940f`，已推送 `origin/main`。历史分工和交付证据见 Git 历史，功能及验证边界见 [v0.1.24 版本说明](browser-extension/docs/releases/v0.1.24.md)。发布不代表用户实际扩展已重载生效。
+2026-10-02 已正式发布 [v0.1.25](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.25)，发布提交为 `f5d3b572a4895c0bb087d1b22518fdcdf9404ea4`，已推送 `origin/main`。历史分工和交付证据见 Git 历史，功能及验证边界见 [v0.1.25 版本说明](browser-extension/docs/releases/v0.1.25.md)。发布不代表用户实际扩展已重载生效。
 
 ## 三、执行 agent 的协作规则
 
