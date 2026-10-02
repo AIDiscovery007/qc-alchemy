@@ -4,6 +4,7 @@ const paths = {
   swap: "M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4",
   compare: "M12 3v18M4 5h4v14H4zM16 5h4v14h-4z",
   grid: "M3 3h6v6H3V3ZM15 3h6v6h-6V3ZM3 15h6v6H3v-6ZM15 15h6v6h-6v-6Z",
+  list: "M3 5h2v2H3V5ZM9 6h12M3 11h2v2H3v-2ZM9 12h12M3 17h2v2H3v-2ZM9 18h12",
   clock: "M12 8v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   edit: "m16 3 5 5-12 12-6 1 1-6L16 3Zm-2 2 5 5",
   maximize: "M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5",

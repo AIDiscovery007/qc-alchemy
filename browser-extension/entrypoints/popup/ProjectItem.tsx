@@ -39,13 +39,14 @@ export default function ProjectItem({ project, disabled, selected, onSelect, onD
   if (workspace) {
     let source = "上传参考图";
     try { source = new URL(project.sourceUrl).hostname.replace(/^www\./, "") || source; } catch { /* Local uploads have no website. */ }
-    return <div ref={element} className="workspace-project-card" data-selected={selected}>
-      <div className="project-open-with-preview"><button className="workspace-project-open" disabled={disabled} onClick={onOpen} aria-label={`打开项目：${project.title}`}>
-        <div className="workspace-project-cover">{image ? <img src={image} alt={project.title} decoding="async" /> : <span>{failed ? "封面暂不可用" : "正在读取封面…"}</span>}</div>
-        <div className="workspace-project-info"><strong>{project.title}</strong><small>{source} · {project.jobCount ? `${project.jobCount} 次逆向` : "待逆向"}{project.busy ? " · 任务进行中" : ""}{project.hidden ? " · 已隐藏" : ""}</small></div>
-      </button>{preview}</div>
+    return <div ref={element} className="workspace-project-card" role="listitem" data-selected={selected}>
       {selectable && <input className="project-checkbox" type="checkbox" checked={selected} disabled={disabled}
         aria-label={`选择项目：${project.title}`} title="选择项目" onChange={onSelect} />}
+      <div className="project-open-with-preview"><button className="workspace-project-open" disabled={disabled} onClick={onOpen} aria-label={`打开项目：${project.title}`}>
+        <div className="workspace-project-cover">{image ? <img src={image} alt={project.title} decoding="async" /> : <span>{failed ? "封面暂不可用" : "正在读取封面…"}</span>}</div>
+        <div className="workspace-project-info"><strong>{project.title}</strong><small>{source} · {project.jobCount ? `${project.jobCount} 次逆向` : "待逆向"}{project.busy ? " · 任务进行中" : ""}{project.hidden ? " · 已隐藏" : ""}</small>
+          <small className="workspace-project-updated">更新于 {new Date(project.updatedAt).toLocaleString("zh-CN")}</small></div>
+      </button>{preview}</div>
       <div className="workspace-project-actions">
         <button disabled={disabled} onClick={onOpen}>{project.jobCount ? "继续创作" : "开始逆向"} <Icon name="arrow" /></button>
         <button className="danger" disabled={disabled || project.busy} onClick={onDelete}
