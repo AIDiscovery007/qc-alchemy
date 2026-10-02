@@ -32,4 +32,4 @@
 .task-item .outline-button { min-width:84px; }
 .task-status-dot { display:inline-block;width:6px;height:6px; }
 
-.task-center .task-image .image-preview { width: 100%; height: 100%; }
+.task-center .task-image-open { padding: 0; border: 0; border-radius: 5px; background: none; }

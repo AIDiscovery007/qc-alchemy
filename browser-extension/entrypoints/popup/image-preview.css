@@ -25,9 +25,6 @@
 .result-thumb-wrap { position: relative; flex: none; }
 .result-thumb-wrap > .image-preview-trigger { inset: auto; }
 
-.project-row .project-open-with-preview { position: relative; flex: 1; min-width: 0; }
-.project-row .history-item { width: 100%; }
-.project-row .project-preview-action { left: 4px; top: calc(50% - 33px); right: auto; bottom: auto; width: 52px; height: 66px; }
 .workspace-app .image-preview-surface > .ui-icon { width: 28px; height: 28px; }
 .workspace-image-wrap .workspace-image-action { z-index: 2; }
 

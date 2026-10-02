@@ -115,7 +115,3 @@
 .workspace-app .button-row > .async-action { flex:1;margin-top:0; }
 .workspace-app .workspace-reverse .outline-button { min-height:38px;border-color: transparent;font-weight:600; }
 .workspace-app .empty-prompt { min-height:92px; }
-
-.workspace-app .recent-project-with-preview { position: relative; }
-.workspace-app .recent-preview-action { position: absolute; left: 8px; top: 13px; right: auto; bottom: auto; width: 35px; height: 43px; }
-@media(max-width:860px) { .workspace-app .recent-preview-action { left: calc(50% - 16px); top: 10px; width: 32px; height: 39px; } }

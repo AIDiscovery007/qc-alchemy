@@ -32,8 +32,6 @@
  .workspace-library-toolbar > div { justify-content: flex-end; }
 }
 
-.workspace-project-card .project-open-with-preview { position: relative; }
-.workspace-project-card .project-preview-action { position: absolute; inset: 0 0 auto; width: 100%; height: 225px; border-radius: 0; }
 
 .workspace-project-view { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface-muted); }
 .workspace-app .workspace-project-view button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); font: inherit; font-size: 11px; white-space: nowrap; }
@@ -45,11 +43,9 @@
 .workspace-project-list .workspace-project-card:hover { background: var(--surface-muted); }
 .workspace-project-list .workspace-project-card[data-selected="true"] { background: #fff0b5; }
 .workspace-project-list .workspace-project-card > .project-checkbox { position: static; flex: 0 0 auto; box-shadow: none; }
-.workspace-project-list .project-open-with-preview { flex: 1; min-width: 0; }
-.workspace-project-list .workspace-project-open { display: flex; align-items: center; justify-content: flex-start; gap: 16px; }
+.workspace-project-list .workspace-project-open { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 16px; }
 .workspace-project-list .workspace-project-cover { flex: 0 0 64px; height: 72px; border-radius: 7px; }
 .workspace-project-list .workspace-project-cover span { padding: 4px; font-size: 10px; }
-.workspace-project-list .project-preview-action { width: 64px; height: 72px; border-radius: 7px; }
 .workspace-project-list .workspace-project-info { min-width: 0; padding: 0; }
 .workspace-project-list .workspace-project-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-project-list .workspace-project-updated { display: block; }
