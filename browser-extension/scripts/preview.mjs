@@ -132,6 +132,8 @@ createServer(async (req, res) => {
           if(state==='multi-running'){job.status='running';job.stage='正在逆向…';delete job.result;}
           if(state==='multi-failed'){job.status='failed';job.error='示例：连接中断，请重试';delete job.result;}
         }
+        if(['style','recreate','reenact'].includes(previewOptions.get('mode')))job.mode=previewOptions.get('mode');
+        if(previewOptions.get('keepResult')==='1')job.result=${JSON.stringify(result)};
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
         const projects=[{id:projectId,title:state.startsWith('multi')?'水彩里的日常':state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
@@ -168,7 +170,7 @@ createServer(async (req, res) => {
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
-        const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
+        const data={preferences:{token:state==='empty'?'':'preview',mode:previewOptions.get('mode')|| (state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style')},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
         if(previewOptions.has('reference') && data.selection) {
           data.selection.image='';
           setTimeout(()=>{
@@ -255,13 +257,17 @@ createServer(async (req, res) => {
             return {ok:true,value:{...selection(projects.find(p=>p.id===saved.projectId)),jobId:saved.id,reenact:saved.reenact?(saved.mode==='multi-reenact'?{...saved.reenact,subjects:saved.generations?.at(-1)?.subjects||saved.reenact.subjects}:{...saved.reenact,subjectImage:subject}):undefined,generationSubjectImage:saved.generations?.at(-1)?.subjectImage}};
           }
           if(message.type==='alchemy:start') {
+            await new Promise(resolve=>setTimeout(resolve,Math.min(10000,Math.max(0,Number(previewOptions.get('startDelay'))||0))));
             const project=projects.find(p=>p.id===message.projectId);
             const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',instruction:message.instruction,reenact:message.reenact?structuredClone(message.reenact):undefined};
             project.jobs.unshift(next);touch(project);data.selection={...selection(project),jobId:next.id,reenact:structuredClone(message.reenact)};
             setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词',promptEn:'Use the supplied subjects and reference template.'};touch(project);}},1500);
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};
           }
-          if(message.type==='alchemy:cancel'){const saved=findJob(message.id);saved.status='cancelled';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};}
+          if(message.type==='alchemy:cancel'){
+            await new Promise(resolve=>setTimeout(resolve,Math.min(10000,Math.max(0,Number(previewOptions.get('cancelDelay'))||0))));
+            if(previewOptions.get('cancel')==='failed')throw new Error('示例：取消失败，请重试');
+            const saved=findJob(message.id);saved.status='cancelled';touch(projects.find(p=>p.id===saved.projectId));return {ok:true,value:structuredClone(saved)};}
           if(message.type==='alchemy:generation-file-action')throw new Error('界面预览不会打开本机文件，请在扩展中使用。');
           if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template,subjects:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjects}};
           if(message.type==='alchemy:generation-image') {

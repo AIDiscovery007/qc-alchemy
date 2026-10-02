@@ -7,9 +7,9 @@ import ImagePreview from "./ImagePreview";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, onSwap, onReferenceRotate, instruction, onInstructionChange, status, onCancel, workspace = false }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, onSwap, onReferenceRotate, instruction, onInstructionChange, status, onCancel, hideAction = false, cancelling = false, workspace = false }: {
   workspace?: boolean;
-  status?: string;
+  status?: string; hideAction?: boolean; cancelling?: boolean;
   onCancel?: () => void;
   instruction: string;
   onInstructionChange: (value: string) => void;
@@ -82,8 +82,8 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
       {error && <div className="error" role="alert">{error}</div>}
       {selection.subjectError && !subjectImage && <p className="fine">{selection.subjectError}</p>}
       <TaskInstruction value={basePrompt} disabled={disabled} onChange={onInstructionChange} />
-      <div className={workspace ? "button-row" : undefined}>
-      <AsyncAction status={status} onCancel={onCancel} cancelling={submitting}>
+      {!hideAction && <div className={workspace ? "button-row" : undefined}>
+      <AsyncAction status={status} onCancel={onCancel} cancelling={cancelling}>
       <button className={workspace ? "outline-button" : "primary"} disabled={disabled || uploading || !selection.image || !subjectImage || !basePrompt.trim()} aria-busy={submitting}
         onClick={() => onSubmit({ subjectImage, basePrompt })}>
         {workspace && !submitting && job?.status !== "running" && <Icon name="edit" />}
@@ -92,7 +92,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
       </AsyncAction>
       {onExtract && <button className={workspace ? "text-link" : "secondary"} disabled={disabled} onClick={onExtract}
         title="按任务指令提取参考图的通用风格，不使用主体图">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
-      </div>
+      </div>}
       {subjectImage && !basePrompt.trim() && <p className="fine" role="status">填写任务指令后可生成提示词。</p>}
     </section>
   );

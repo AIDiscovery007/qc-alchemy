@@ -84,6 +84,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const pendingCancellations = useRef(new Set<string>());
+  const [cancellingJobs, setCancellingJobs] = useState<string[]>([]);
   const [lang, setLang] = useState<"zh" | "en">("zh");
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -125,6 +127,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const running = job?.status === "running";
   const loadingProject = !!selection && !activeProject;
   const result = job?.result;
+  const promptLoading = workspace && !!activeProject && !result && running;
+  const cancelling = !!job && cancellingJobs.includes(job.id);
   const promptDraft = job && promptDrafts[job.id];
   const reading = selection && !selection.image && !selection.error;
   const referenceError = job && referenceErrors[job.id];
@@ -446,9 +450,16 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     finally { setBusy(false); }
   };
   const cancel = async () => {
-    if (!job) return;
+    if (!job || !running || pendingCancellations.current.has(job.id)) return;
+    pendingCancellations.current.add(job.id);
+    setCancellingJobs([...pendingCancellations.current]);
+    setError("");
     try { updateJob(await request<Job>({ type: "alchemy:cancel", id: job.id })); }
     catch (e) { setError((e as Error).message); }
+    finally {
+      pendingCancellations.current.delete(job.id);
+      setCancellingJobs([...pendingCancellations.current]);
+    }
   };
   const copy = async () => {
     try {
@@ -684,7 +695,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 )}
                 {selection && preferences.mode === "recreate" && (<>
                   <TaskInstruction value={taskInstruction("recreate")} disabled={blocked} onChange={value => changeInstruction("recreate", value)} />
-                  <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={busy}>
+                  {!promptLoading && <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={cancelling}>
                   <button
                     className={workspace ? "outline-button" : "primary"}
                     disabled={blocked || !selection.image}
@@ -700,7 +711,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                           ? `正在${modeName(preferences.mode)}…`
                           : workspace ? result ? "重新逆向提示词" : "逆向提示词" : "生成复刻提示词"}
                   </button>
-                  </AsyncAction>
+                  </AsyncAction>}
                 </>)}
               </>
             )}
@@ -714,6 +725,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
+                hideAction={promptLoading && preferences.mode === mode} cancelling={cancelling}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onReferenceRotate={(image, instruction) => applyReferenceRotation(image, mode, instruction)}
                 onSwap={instruction => void swapImages(mode, instruction)}
@@ -721,13 +733,17 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             })}
             {selection && <MultiSubjectForm key={multiKey} image={selection.image} imageError={selection.error} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
               active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
-              submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
+              hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
+              hideAction={promptLoading && preferences.mode === "multi-reenact"} cancelling={cancelling}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
               onInstruction={value => changeInstruction("multi-reenact", value)}
               onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}>{running ? job.stage || "正在逆向提示词…" : job?.status === "failed" ? "逆向失败，请重试。" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</LoadingPlaceholder></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}
+                action={promptLoading && <button type="button" className="quiet-button" disabled={cancelling} onClick={cancel}>{cancelling ? "正在取消…" : "取消"}</button>}>
+                {running ? job.stage || "正在逆向提示词…" : job?.status === "failed" ? "逆向失败，请重试。" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}
+              </LoadingPlaceholder></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
               {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 

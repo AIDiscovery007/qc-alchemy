@@ -8,9 +8,9 @@ import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
 import { ImagePreviewButton } from "./ImagePreview";
 
-export default function MultiSubjectForm({ image, imageError, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
+export default function MultiSubjectForm({ image, imageError, subjects, instruction, active, disabled, status, hideAction = false, cancelling = false, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
   image?: string; imageError?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
-  status?: string; submitting: boolean; hasPrompt: boolean; stale: boolean;
+  status?: string; hideAction?: boolean; cancelling?: boolean; hasPrompt: boolean; stale: boolean;
   onChange(subjects: MultiSubject[]): void; onInstruction(value: string): void;
   onSubmit(input: SubjectInput): void; onCancel?: () => void; onReference?: (file: File) => void;
   onReferenceRotate(image: string): Promise<void>;
@@ -80,9 +80,9 @@ export default function MultiSubjectForm({ image, imageError, subjects, instruct
     </div>
     {error && <p className="error" role="alert">{error}</p>}
     <TaskInstruction value={instruction} disabled={locked} onChange={onInstruction} />
-    <AsyncAction className="multi-reverse" status={uploading ? "正在读取主体图…" : status} onCancel={onCancel} cancelling={submitting}>
+    {!hideAction && <AsyncAction className="multi-reverse" status={uploading ? "正在读取主体图…" : status} onCancel={onCancel} cancelling={cancelling}>
       <button className="outline-button" disabled={locked || !image || subjects.length < 2 || subjects.some(item => !item.subjectImage) || !instruction.trim()} onClick={() => onSubmit({ subjects, basePrompt: instruction })}><Icon name="edit" />{hasPrompt ? "重新逆向提示词" : "逆向提示词"}</button>
-    </AsyncAction>
+    </AsyncAction>}
     {subjects.length < 2 ? <p className="input-status" role="status">至少添加 2 张主体图</p> : stale && <p className="input-status" role="status">提示词待更新</p>}
     <input hidden ref={upload} type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="批量上传主体图" onChange={event => { void addFiles([...event.target.files || []]); event.target.value = ""; }} />
     <input hidden ref={replace} type="file" accept="image/png,image/jpeg,image/webp" aria-label="替换主体图" onChange={event => { void addFiles([...event.target.files || []], replacing.current); event.target.value = ""; }} />

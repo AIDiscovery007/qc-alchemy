@@ -3,11 +3,12 @@ import { createContext, useContext, type ComponentType, type ReactNode } from "r
 // The workspace supplies the effect; shared/content UI never imports its engine.
 export const LoadingEffectContext = createContext<ComponentType | null>(null);
 
-export default function LoadingPlaceholder({ active = true, className = "", children }: {
-  active?: boolean; className?: string; children: ReactNode;
+export default function LoadingPlaceholder({ active = true, className = "", children, action }: {
+  active?: boolean; className?: string; children: ReactNode; action?: ReactNode;
 }) {
   const Effect = useContext(LoadingEffectContext);
-  return <span className={`loading-placeholder ${className}`} role="status">
-    {active && Effect && <Effect />}<span className="loading-label">{children}</span>
+  return <span className={`loading-placeholder ${className}`}>
+    {active && Effect && <Effect />}<span className="loading-label" role="status">{children}</span>
+    {action && <span className="loading-action">{action}</span>}
   </span>;
 }
