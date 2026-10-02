@@ -25,11 +25,11 @@
 
 ## 二、当前临时 agent 注册表
 
-- [核心交互与界面执行 agent（用户未指定编号）](codex://threads/01a0fcf2-1ea9-7243-85b2-5ca1ed167522)：打磨工作台路径选择、提示词工具与主操作流程；[日志](agent-logs/01a0fcf2-1ea9-7243-85b2-5ca1ed167522.md)。
+当前无在册临时 agent。
 
 ### 最近阶段发布
 
-2026-10-02 已正式发布 [v0.1.25](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.25)，发布提交为 `f5d3b572a4895c0bb087d1b22518fdcdf9404ea4`，已推送 `origin/main`。历史分工和交付证据见 Git 历史，功能及验证边界见 [v0.1.25 版本说明](browser-extension/docs/releases/v0.1.25.md)。发布不代表用户实际扩展已重载生效。
+2026-10-02 已正式发布 [v0.1.26](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.26)，发布提交为 `8cf582d2c3d098f4c413a8b577de900a4e049668`，已推送 `origin/main`。历史分工和交付证据见 Git 历史，功能及验证边界见 [v0.1.26 版本说明](browser-extension/docs/releases/v0.1.26.md)。发布不代表用户实际扩展已重载生效。
 
 ## 三、执行 agent 的协作规则
 
