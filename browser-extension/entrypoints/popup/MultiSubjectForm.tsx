@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { normalizeImage } from "../../lib/image";
 import type { MultiSubject, SubjectInput } from "../../lib/types";
+import LoadingPlaceholder from "./LoadingPlaceholder";
 import Icon from "./Icon";
 import TaskInstruction from "./TaskInstruction";
 import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
 import { ImagePreviewButton } from "./ImagePreview";
 
-export default function MultiSubjectForm({ image, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
-  image?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
+export default function MultiSubjectForm({ image, imageError, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
+  image?: string; imageError?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
   status?: string; submitting: boolean; hasPrompt: boolean; stale: boolean;
   onChange(subjects: MultiSubject[]): void; onInstruction(value: string): void;
   onSubmit(input: SubjectInput): void; onCancel?: () => void; onReference?: (file: File) => void;
@@ -60,7 +61,7 @@ export default function MultiSubjectForm({ image, subjects, instruction, active,
   return <section className="multi-subject-form" hidden={!active} aria-label="多图重演输入">
     <div className="composition-layout" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void addFiles([...event.dataTransfer.files]); }}>
       <div className="template-card"><button className="template-replace" disabled={locked || !onReference} aria-label="更换参考模板" onClick={() => reference.current?.click()}>
-        {image ? <img src={image} alt="参考模板" width="240" height="300" /> : <span>正在读取模板…</span>}<span className="replace-label">更换</span>
+        {image ? <img src={image} alt="参考模板" width="240" height="300" /> : <LoadingPlaceholder active={active && !imageError}>{imageError || "正在读取模板…"}</LoadingPlaceholder>}<span className="replace-label">更换</span>
       </button>{image && <ImagePreviewButton src={image} alt="参考模板" className="template-preview" rotation={{ disabled: locked, onApply: onReferenceRotate }} />}<span>参考模板</span></div>
       <div className="subject-filmstrip" aria-label="主体编排">{subjects.map((item, i) => <div key={item.id} className="subject-thumbnail"><button className={current?.id === item.id ? "selected" : ""} aria-label={`选择主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => setSelected(item.id)}>
         {item.subjectImage ? <img src={item.subjectImage} alt={`主体 ${i + 1}`} width="88" height="88" /> : <small>{uploading ? "读取中" : "待上传"}</small>}<span>{i + 1}</span>

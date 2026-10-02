@@ -169,6 +169,13 @@ createServer(async (req, res) => {
         };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
         const data={preferences:{token:state==='empty'?'':'preview',mode:state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style'},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
+        if(previewOptions.has('reference') && data.selection) {
+          data.selection.image='';
+          setTimeout(()=>{
+            if(previewOptions.get('reference')==='failed')data.selection.error='示例：参考图读取失败';
+            else data.selection.image=template;
+          },Number(previewOptions.get('referenceDelay'))||5000);
+        }
         const handoff = new URLSearchParams(location.search).has('handoff') ? JSON.parse(sessionStorage.getItem('workspace-draft') || 'null') : null;
         if(handoff){projects.splice(0,projects.length,...handoff.projects);Object.assign(data,handoff.data);}
         const findJob=(id)=>projects.flatMap(p=>p.jobs).find(j=>j.id===id);

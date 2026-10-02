@@ -18,6 +18,7 @@ import SubjectForm from "./SubjectForm";
 import MultiInputPreview from "./MultiInputPreview";
 import TaskInstruction, { defaultInstructions } from "./TaskInstruction";
 import MultiSubjectForm from "./MultiSubjectForm";
+import LoadingPlaceholder from "./LoadingPlaceholder";
 import AsyncAction from "./AsyncAction";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
@@ -662,8 +663,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               </button>
             </div>
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
-            {selection?.image && preferences.mode === "recreate" && (
-              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} label="风格参考图" alt="本次选择的参考图片" /></div> : <figure className="image-card">
+            {selection && preferences.mode === "recreate" && (
+              workspace ? <div className="workspace-inputs single"><ImageInput error={selection.error} image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} label="风格参考图" alt="本次选择的参考图片" /></div> : selection.image && <figure className="image-card">
                 <ImagePreview src={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
@@ -716,7 +717,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 onSwap={instruction => void swapImages(mode, instruction)}
                 onExtract={mode === "style" ? () => start("style") : undefined} />;
             })}
-            {selection && <MultiSubjectForm key={multiKey} image={selection.image} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
+            {selection && <MultiSubjectForm key={multiKey} image={selection.image} imageError={selection.error} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
               active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
               submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
@@ -724,7 +725,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><div className="empty-prompt">{running ? "正在逆向提示词…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</div></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
+              {workspace ? <><div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}>{running ? job.stage || "正在逆向提示词…" : job?.status === "failed" ? "逆向失败，请重试。" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</LoadingPlaceholder></> : <h2>{running ? "提示词生成中…" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}</h2>}
               {!workspace && <div className="generation-card"><h2><Icon name="image" />图片待生成</h2><button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button></div>}
             </section>}
 

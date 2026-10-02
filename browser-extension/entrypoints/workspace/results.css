@@ -23,8 +23,9 @@
 .workspace-app .empty-canvas svg{width:40px;height:40px;margin-bottom:18px}
 .workspace-app .empty-canvas h3{color:var(--ink);font-size:18px;margin-bottom:10px}
 .workspace-app .empty-canvas p{font-size:11px;line-height:1.9;max-width:250px;margin:auto}
-.workspace-app .generation-effect { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; }
-.workspace-app .generation-effect canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.workspace-app .loading-effect { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; }
+.workspace-app .loading-effect canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.workspace-app .loading-effect.static-effect canvas { visibility:hidden; }
 .workspace-app .preview-canvas:has(.generation-effect) .empty-canvas { display: none; }
 .workspace-app .static-effect, .workspace-app .result-thumb .static-effect { background-color: #e7e2d7; background-image: repeating-conic-gradient(#d4d0c544 0% 25%, transparent 0% 50%), repeating-conic-gradient(#c8c4ba55 0% 25%, transparent 0% 50%); background-size: 38px 38px, 62px 62px; background-position: 0 0, 17px 11px; }
 .workspace-app .result-toolbar-actions { display: flex; align-items: center; }
@@ -61,3 +62,9 @@
 .workspace-app .result-dialog .negative p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; margin: 8px 0; line-height: 1.8; }
 @media (max-width:1100px) { .workspace-app .preview-canvas { margin: 0 14px; } .workspace-app :is(.result-toolbar,.result-caption,.result-history,.result-bottom) { padding-left: 14px; padding-right: 14px; } .workspace-app .result-toolbar { flex-wrap: wrap; } .workspace-app .result-bottom { flex-wrap: wrap; } }
 @media (max-width:650px) { .workspace-app .generated-pane { flex: 1; } .workspace-app .result-bottom { padding: 10px; } .workspace-app .result-dialog, .workspace-app .result-dialog.zoom-modal { width: calc(100% - 24px); height: calc(100dvh - 70px); } .workspace-app .result-dialog .modal-head { padding: 16px; } }
+
+.workspace-app .loading-placeholder { position:relative;isolation:isolate;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:10px; }
+.workspace-app .loading-placeholder .loading-effect { opacity:.38; }
+.workspace-app .loading-placeholder .loading-label { position:relative;z-index:1;padding:6px 10px;border-radius:6px;background:var(--surface);color:var(--muted); }
+.workspace-app .loading-placeholder:not(:has(.loading-effect)) .loading-label { padding:0;background:none; }
+.workspace-app .template-replace > .loading-placeholder { width:100%;height:100%; }
