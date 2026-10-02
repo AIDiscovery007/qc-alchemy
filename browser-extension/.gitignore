@@ -25,6 +25,8 @@ tmp/
 coverage/
 # Local design references for future UI work.
 /design-extract-output/
+# Local prototypes are archived on dedicated branches.
+/prototypes/
 .env
 .env.*
 !.env.example

@@ -33,6 +33,7 @@
   - 正式接入验证：build → compile → 232/232 测试与差异检查通过。IAB 示例实测像素 reveal；896px 画布等待至出图高度保持730px；手动收起后完成、新结果找回、版本/模式/项目切换、取消空任务/恢复旧图、失败切回历史图、原图片预览125%缩放/Escape焦点恢复、390px无横向溢出、减少动效0s、轻量面板与多图空态。项目栏170↔64px开合、收起时项目切换、键盘即时展开及390px默认54px窄条已实测。
   - 正式接入证据与限制：本地忽略目录 `browser-extension/design-extract-output/generated-results-prototype/` 内 `landed-results.jpg`、`landed-sidebar-collapsed.jpg`、`landed-reveal.jpg`；日志 `/tmp/reframe-drawer-{build,compile,tests}.log`。未重载真实扩展、未调用模型、未做真实触屏/读屏器或帧率测量；未提交、推送或发布。请求监工 review、处理冲突并本地整合。
   - 意图与目标：验证生成结果无内容隐藏、有结果自然展开及收起找回的交互；按用户指定方向交付推挤式结果抽屉，保留现有生成动效供用户体验。
+  - 原型忽略规则（2026-10-02）：已复核整合。按用户要求将本地 `browser-extension/prototypes/` 加入插件 `.gitignore`，保留磁盘文件和独立原型归档；范围仅插件 `.gitignore` 与本人登记，无其他实现交叉，仅本地修改。监工确认 `git check-ignore` 命中且差异检查通过，原型不再出现在未跟踪列表；磁盘文件和 `db01eb6` 归档仍保留。已按本地提交整合，提交证据见本条 Git 历史；未推送或发布。
   - 原型归档证据（2026-10-02）：监工已将最终原型独立本地归档到 `codex/prototype-result-drawer`，提交 `db01eb63f4747e2ecc3d8f575b5589b5c7619ec3`，经核验仅含 `prototypes/generated-results/` 五个原型文件；主工作区未切换。插件 AGENTS 已引用该分支/提交，正式实现状态见上方监工整合复核。
   - 原型阶段范围与交叉点（历史）：新增 `browser-extension/prototypes/generated-results/{index.html,serve.mjs,effect.tsx,motion.ts,README.md}`；截图素材及预览证据保存在被忽略的 `browser-extension/design-extract-output/generated-results-prototype/`；根 `AGENTS.md` 仅维护本条登记。不修改生产组件，与其他执行任务无实现交叉。
   - 本轮细节调整：原型复核通过，待用户评审（2026-10-02）。已按用户反馈移除结果区灰色底板、图片容器圆角框、工具栏托底，仅修改原型 CSS 和 README。浏览器实测三层背景透明/圆角 0，推挤后工作台约 547px，生产组件仍进入 reveal；保持图片原色。git diff --check 通过，截图证据为素材目录 frameless-complete.jpg。未改生产、提交或调用模型。
