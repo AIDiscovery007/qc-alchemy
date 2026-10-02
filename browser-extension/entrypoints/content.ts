@@ -1,4 +1,5 @@
 import { browser } from "wxt/browser";
+import { getMotion, subscribeMotion } from "../lib/motion-preference";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import App from "./popup/App";
@@ -39,7 +40,7 @@ export default defineContentScript({
     let menuOffsets: MenuOffsets = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }];
     let menuPointer = false;
     const updateLiquid = (instant = true) => {
-      liquid?.update({ offsets: menuOffsets, open: !menu.hidden, instant: instant || reducedMotion.matches });
+      liquid?.update({ offsets: menuOffsets, open: !menu.hidden, instant: instant || getMotion().reduced });
     };
     let menuTarget: PickedImage | undefined;
     let menuAnimations: Animation[] = [];
@@ -57,7 +58,6 @@ export default defineContentScript({
     const panel = shadow.querySelector<HTMLElement>(".panel")!;
     const notice = shadow.querySelector<HTMLElement>(".notice")!;
     const closeButton = shadow.querySelector<HTMLButtonElement>(".close")!;
-    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     const records = new WeakMap<Element, { src: string; state: CollectionState }>();
     const captures = new Map<string, PickedImage>();
     const hiddenCaptures = new Set<string>();
@@ -101,7 +101,7 @@ export default defineContentScript({
       if ("showPopover" in notice && !notice.matches(":popover-open")) notice.showPopover();
       if (!pointer) noticeAnimation?.cancel();
       // Repeated saves update this notice in place, without replaying its entrance.
-      if (wasHidden && pointer && !reducedMotion.matches)
+      if (wasHidden && pointer && !getMotion().reduced)
         noticeAnimation = notice.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 160, easing: "cubic-bezier(.23,1,.32,1)" });
       noticeRemaining = state === "saved" ? 4000 : 0;
       resumeNotice();
@@ -129,7 +129,7 @@ export default defineContentScript({
         returnFocus ||= (shadow.activeElement || document.activeElement) as HTMLElement;
         closeButton.focus({ preventScroll: true });
         opening?.cancel();
-        if (pointerOpening && !reducedMotion.matches)
+        if (pointerOpening && !getMotion().reduced)
           opening = panel.animate([{ opacity: 0, transform: "translateX(18px)" }, { opacity: 1, transform: "none" }],
             { duration: 180, easing: "cubic-bezier(.23,1,.32,1)" });
       }
@@ -166,7 +166,12 @@ export default defineContentScript({
         closePanel();
       }
     });
-    ctx.addEventListener(reducedMotion, "change", () => { if (reducedMotion.matches) { opening?.cancel(); noticeAnimation?.cancel(); menuAnimations.forEach(animation => animation.cancel()); updateLiquid(); } });
+    const applyMotion = () => {
+      host.dataset.motion = getMotion().reduced ? "reduce" : "full";
+      if (getMotion().reduced) { opening?.cancel(); noticeAnimation?.cancel(); menuAnimations.forEach(animation => animation.cancel()); updateLiquid(); }
+    };
+    const stopMotion = subscribeMotion(applyMotion);
+    applyMotion();
     shadow.querySelector(".refresh")!.addEventListener("click", () => location.reload());
     shadow.querySelector(".dismiss")!.addEventListener("click", () => {
       const focused = notice.contains(shadow.activeElement);
@@ -368,7 +373,7 @@ export default defineContentScript({
       });
       updateLiquid(!pointer);
       menuAnimations.forEach(animation => animation.cancel());
-      menuAnimations = pointer && !reducedMotion.matches ? actions.map((action, index) =>
+      menuAnimations = pointer && !getMotion().reduced ? actions.map((action, index) =>
         action.animate([{ opacity: 0, transform: `translate(${-offsets[index]!.x}px, ${-offsets[index]!.y}px) scale(0)` }, { opacity: 1, transform: "none" }], { duration: liquidTiming.duration, easing: liquidTiming.ease })) : [];
       openButton.focus({ preventScroll: true });
     };
@@ -470,6 +475,7 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener(geometry);
     ctx.onInvalidated(() => {
       disposed = true;
+      stopMotion();
       clearTimeout(noticeTimer);
       noticeAnimation?.cancel();
       menuAnimations.forEach(animation => animation.cancel());

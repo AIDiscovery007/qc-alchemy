@@ -167,6 +167,24 @@ export default defineBackground(() => {
     }
   };
   const uiMessage = async (message: Record<string, any>) => {
+    // Expose only this public preference; content scripts cannot read local storage.
+    if (message.type === "alchemy:get-motion-preference") {
+      const { motionPreference } = await browser.storage.local.get("motionPreference");
+      return motionPreference === "full" || motionPreference === "reduce" ? motionPreference : "system";
+    }
+    if (message.type === "alchemy:set-motion-preference") {
+      if (!["system", "reduce", "full"].includes(message.preference)) throw new Error("无效动效设置");
+      await browser.storage.local.set({ motionPreference: message.preference });
+      const changed = { type: "alchemy:motion-changed" };
+      // Re-read on notification so concurrent changes cannot deliver stale values.
+      await Promise.allSettled([
+        browser.runtime.sendMessage(changed),
+        browser.tabs.query({ url: ["http://*/*", "https://*/*"] }).then(tabs => Promise.allSettled(
+          tabs.filter(tab => tab.id != null).map(tab => browser.tabs.sendMessage(tab.id!, changed, { frameId: 0 })),
+        )),
+      ]);
+      return;
+    }
     const { preferences, selection } = (await browser.storage.local.get([
       "preferences", "selection",
     ])) as { preferences?: Preferences; selection?: Selection };
@@ -378,7 +396,7 @@ export default defineBackground(() => {
       uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
       return true;
     }
-    if ((contentSender || extensionSender) && ["alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:get-motion-preference", "alchemy:set-motion-preference", "alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
       uiMessage(message).then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

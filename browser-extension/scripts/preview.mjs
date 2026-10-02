@@ -184,7 +184,18 @@ createServer(async (req, res) => {
         if(new URLSearchParams(location.search).get('cli')==='standalone')Object.assign(cli,{source:'standalone',version:'0.159.2',latestVersion:'0.159.2',canUpdate:false,updateAvailable:false,command:'/example/bin/codex update'});
         if(new URLSearchParams(location.search).get('cli')==='custom')Object.assign(cli,{source:'custom',latestVersion:null,canUpdate:false,updateAvailable:false,command:null,reason:'此安装来源无法安全自动升级，请通过原安装方式更新。'});
         const listeners = new Set();
-        globalThis.chrome = {runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+        const notifyMotion = () => listeners.forEach(fn=>fn({type:'alchemy:motion-changed'},{id:'preview'},()=>{}));
+        addEventListener('storage',event=>{if(event.key==='preview-motion-preference')notifyMotion();});
+        // Match real content-script restrictions: all motion access goes through runtime messages.
+        globalThis.chrome = {storage:{local:{
+          get:async()=>{throw new Error('Access to storage is not allowed from this context.');},
+          set:async()=>{throw new Error('Access to storage is not allowed from this context.');}
+        }},runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+          if(message.type==='alchemy:get-motion-preference')return {ok:true,value:localStorage.getItem('preview-motion-preference')||'system'};
+          if(message.type==='alchemy:set-motion-preference'){
+            if(previewOptions.get('motionSave')==='failed')return {error:'示例：保存失败'};
+            localStorage.setItem('preview-motion-preference',message.preference);notifyMotion();return {ok:true};
+          }
           if(['alchemy:project-reference','alchemy:reference','alchemy:generation-image'].includes(message.type)&&document.querySelector('.image-preview-dialog[open]')) {
             if(previewOptions.get('imagePreview')==='fail')throw new Error('预览：原图读取失败');
             if(previewOptions.get('imagePreview')==='delay')await new Promise(resolve=>setTimeout(resolve,2500));

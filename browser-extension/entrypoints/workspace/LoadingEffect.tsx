@@ -1,29 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Instance } from "img-fx";
+import { useMotion } from "../../lib/use-motion";
 
 export type LoadingEngine = { api: typeof import("img-fx"); instance: Instance; element: HTMLSpanElement };
 
-export default function LoadingEffect({ active = true, respectReducedMotion = true, className = "", onReady, onUnavailable, children }: {
-  active?: boolean; respectReducedMotion?: boolean; className?: string; children?: ReactNode;
+export default function LoadingEffect({ active = true, className = "", onReady, onUnavailable, children }: {
+  active?: boolean; className?: string; children?: ReactNode;
   onReady?(engine: LoadingEngine | null): void; onUnavailable?(): void;
 }) {
   const host = useRef<HTMLSpanElement>(null);
   const shader = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
-  const [reduced, setReduced] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
-
-  useEffect(() => {
-    if (!respectReducedMotion) return;
-    const media = matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [respectReducedMotion]);
+  const { reduced } = useMotion();
 
   useEffect(() => {
     setReady(false);
-    if (!active || (respectReducedMotion && reduced)) return;
+    if (!active || reduced) return;
     const element = host.current!;
     let disposed = false;
     let engine: LoadingEngine | undefined;
@@ -71,7 +63,7 @@ export default function LoadingEffect({ active = true, respectReducedMotion = tr
       onReady?.(null);
       if (engine) engine.api.destroyInstance(engine.instance);
     };
-  }, [active, respectReducedMotion, reduced, onReady, onUnavailable]);
+  }, [active, reduced, onReady, onUnavailable]);
 
   return <span className={`loading-effect${ready ? "" : " static-effect"} ${className}`} ref={host} aria-hidden="true">
     <canvas ref={shader} />{children}

@@ -1,44 +1,42 @@
 /* Motion cases: press feedback, modal, text replacement and async status.
    State changes are immediate; only pointer interactions add spatial feedback. */
-@media (prefers-reduced-motion: no-preference) {
-  .app[data-motion-input="pointer"] :is(button, .file-picker) {
+  .app[data-motion="full"][data-motion-input="pointer"] :is(button, .file-picker) {
     transition: transform 120ms var(--ease-out);
   }
-  .app[data-motion-input="pointer"] button:active:not(:disabled):not([aria-disabled="true"]),
-  .app[data-motion-input="pointer"] .file-picker:active:not(:has(input:disabled)) {
+  .app[data-motion="full"][data-motion-input="pointer"] button:active:not(:disabled):not([aria-disabled="true"]),
+  .app[data-motion="full"][data-motion-input="pointer"] .file-picker:active:not(:has(input:disabled)) {
     transform: scale(.97);
   }
-  .app[data-motion-input="pointer"] :is(.primary, .new-project):active:not(:disabled) {
+  .app[data-motion="full"][data-motion-input="pointer"] :is(.primary, .new-project):active:not(:disabled) {
     transform: translate(1px, 1px) scale(.99);
   }
-  .app[data-motion-input="pointer"] .select-control > .ui-icon {
+  .app[data-motion="full"][data-motion-input="pointer"] .select-control > .ui-icon {
     transition: transform 160ms var(--ease-out);
   }
-  .app :is(.async-action-status, .error, .settings.card),
-  .app details[open] > :not(summary) { transition: opacity 160ms ease-out; }
-  .app [data-copied="true"] > .ui-icon {
+  .app[data-motion="full"] :is(.async-action-status, .error, .settings.card),
+  .app[data-motion="full"] details[open] > :not(summary) { transition: opacity 160ms ease-out; }
+  .app[data-motion="full"] [data-copied="true"] > .ui-icon {
     transition: opacity 180ms ease-out, transform 180ms var(--ease-out);
   }
   /* Starting styles run only on entry, never when input modality changes. */
   @starting-style {
-    .app[data-motion-input="pointer"] :is(.async-action-status, .error, .settings.card),
-    .app[data-motion-input="pointer"] details[open] > :not(summary) { opacity: 0; }
-    .app[data-motion-input="pointer"] [data-copied="true"] > .ui-icon { opacity: .4; transform: scale(.8); }
+    .app[data-motion="full"][data-motion-input="pointer"] :is(.async-action-status, .error, .settings.card),
+    .app[data-motion="full"][data-motion-input="pointer"] details[open] > :not(summary) { opacity: 0; }
+    .app[data-motion="full"][data-motion-input="pointer"] [data-copied="true"] > .ui-icon { opacity: .4; transform: scale(.8); }
   }
   @supports (transition-behavior: allow-discrete) and (overlay: auto) {
-    .app dialog[open] {
+    .app[data-motion="full"] dialog[open] {
       transform-origin: var(--dialog-origin, center);
       transition: opacity 200ms ease-out, transform 200ms var(--ease-out), overlay 200ms allow-discrete, display 200ms allow-discrete;
     }
-    .app dialog[open]::backdrop {
+    .app[data-motion="full"] dialog[open]::backdrop {
       transition: opacity 160ms ease-out, overlay 160ms allow-discrete, display 160ms allow-discrete;
     }
     @starting-style {
-      .app[data-motion-input="pointer"] dialog[open] { opacity: 0; transform: scale(.97); }
-      .app[data-motion-input="pointer"] dialog[open]::backdrop { opacity: 0; }
+      .app[data-motion="full"][data-motion-input="pointer"] dialog[open] { opacity: 0; transform: scale(.97); }
+      .app[data-motion="full"][data-motion-input="pointer"] dialog[open]::backdrop { opacity: 0; }
     }
   }
-}
 
 /* Stable success feedback remains visible without motion, including keyboard use. */
 .app button[data-copied="true"]:not(:disabled),
@@ -46,6 +44,4 @@
 .app .copy-path-button { min-width: 132px; }
 .copy-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app[data-motion-input="keyboard"] button { transition: none; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .app button:active:not(:disabled), .app .file-picker:active { transform: none; }
-}
+.app[data-motion="reduce"] button:active:not(:disabled), .app[data-motion="reduce"] .file-picker:active { transform: none; }

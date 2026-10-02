@@ -12,19 +12,19 @@ const sender = { id: "test", url: "chrome-extension://test/workspace.html" };
 const contentSender = { id: "test", frameId: 0, tab: { id: 1, windowId: 1, url: "https://example.com/" } };
 
 function background(local = { preferences: { token: "private-token" } }) {
-  const session = {}, calls = [], tabMessages = [];
+  const session = {}, calls = [], tabMessages = [], runtimeMessages = [], accessLevels = [], storageReads = [];
   let listener, hidden = false, offline = false;
   const area = data => ({
-    get: async () => structuredClone(data),
+    get: async key => { storageReads.push(key); return structuredClone(data); },
     set: async value => Object.assign(data, structuredClone(value)),
     remove: async key => { delete data[key]; },
-    setAccessLevel: async () => {},
+    setAccessLevel: async value => { accessLevels.push(value.accessLevel); },
   });
   const browser = {
     storage: { local: area(local), session: area(session) },
-    runtime: { id: "test", getURL: path => `chrome-extension://test${path}`, onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
+    runtime: { id: "test", getURL: path => `chrome-extension://test${path}`, sendMessage: async message => runtimeMessages.push(message), onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
     contextMenus: { onClicked: { addListener() {} } },
-    tabs: { sendMessage: async (_, message) => tabMessages.push(message), create: async () => {} },
+    tabs: { query: async () => [{ id: 1 }, { id: 2 }], sendMessage: async (id, message) => { if (id === 2) throw new Error("no content script"); tabMessages.push(message); }, create: async () => {} },
   };
   const bridge = async (path, token, body) => {
     calls.push({ path, token, body: structuredClone(body) });
@@ -46,7 +46,7 @@ function background(local = { preferences: { token: "private-token" } }) {
     })[name],
   });
   return {
-    local, session, calls, tabMessages,
+    local, session, calls, tabMessages, runtimeMessages, accessLevels, storageReads,
     set hidden(value) { hidden = value; }, set offline(value) { offline = value; },
     send(message, from = sender) { return new Promise(resolve => { if (listener(message, from, resolve) !== true) resolve(undefined); }); },
   };
@@ -180,4 +180,34 @@ test("web selection conceals a duplicate hidden image and collecting it preserve
   assert.equal(bg.local.selection.projectId, undefined);
   assert.equal(bg.session.showHiddenProjects, undefined);
   assert.ok(!bg.calls.some(call => call.path === "/projects/visibility"));
+});
+
+test('public motion messages preserve trusted storage and notify extension pages and reachable content scripts', async () => {
+  const bg = background({ preferences: { token: 'private-token' }, motionPreference: 'full' });
+  const read = await bg.send({ type: 'alchemy:get-motion-preference' }, contentSender);
+  assert.equal(read.value, 'full');
+  assert.deepEqual(bg.storageReads, ['motionPreference']);
+  assert.deepEqual(bg.accessLevels, ['TRUSTED_CONTEXTS']);
+  const saved = await bg.send({ type: 'alchemy:set-motion-preference', preference: 'reduce', token: 'injected' }, contentSender);
+  assert.equal(saved.ok, true);
+  assert.equal(bg.local.motionPreference, 'reduce');
+  assert.equal(bg.local.preferences.token, 'private-token');
+  assert.equal(bg.tabMessages.length, 1);
+  assert.equal(bg.runtimeMessages.length, 1);
+  for (const message of [...bg.tabMessages, ...bg.runtimeMessages])
+    assert.equal(JSON.stringify(message), '{"type":"alchemy:motion-changed"}');
+  assert.equal(bg.calls.length, 0);
+});
+
+test('motion messages reject untrusted senders and invalid values without changing storage', async () => {
+  const bg = background();
+  const message = { type: 'alchemy:set-motion-preference', preference: 'full' };
+  for (const from of [{ ...sender, id: 'foreign' }, { ...contentSender, frameId: 1 }, { id: 'test', url: 'https://example.com/' }])
+    assert.equal(await bg.send(message, from), undefined);
+  for (const preference of [undefined, true, 'invalid', { token: 'secret' }])
+    assert.match((await bg.send({ ...message, preference })).error, /无效/);
+  assert.equal(bg.local.motionPreference, undefined);
+  assert.equal((await bg.send({ type: 'alchemy:get-motion-preference' })).value, 'system');
+  assert.equal(bg.runtimeMessages.length, 0);
+  assert.equal(bg.tabMessages.length, 0);
 });

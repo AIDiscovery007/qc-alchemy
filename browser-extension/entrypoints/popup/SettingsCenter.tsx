@@ -3,6 +3,9 @@ import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
 import { query, request } from "../../lib/client";
 import ModelSettings from "./ModelSettings";
+import SelectField from "./SelectField";
+import { useMotion } from "../../lib/use-motion";
+import { setMotionPreference, type MotionPreference } from "../../lib/motion-preference";
 import { logo } from "../../lib/brand";
 
 // Mirrors the authenticated bridge status; command is for display only.
@@ -21,7 +24,7 @@ type CliStatus = {
   command?: string | null;
   operation?: { status: "running" | "completed" | "failed"; stage: string; error?: string; startedAt: string; finishedAt?: string } | null;
 };
-const sections = { models: "插件模型", cli: "Codex 与更新", connection: "本机连接", storage: "本地数据" };
+const sections = { appearance: "界面与动效", models: "插件模型", cli: "Codex 与更新", connection: "本机连接", storage: "本地数据" };
 const sources = { npm: "npm", homebrew: "Homebrew", standalone: "独立安装版", app: "Codex App 内置", custom: "自定义安装", missing: "未检测到" };
 
 export default function SettingsCenter({ connected, serviceBusy, onClose, onConnected }: {
@@ -31,6 +34,16 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
   onConnected(): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { preference, reduced } = useMotion();
+  const [savingMotion, setSavingMotion] = useState(false);
+  const [motionError, setMotionError] = useState("");
+  const changeMotion = async (value: MotionPreference) => {
+    setSavingMotion(true);
+    setMotionError("");
+    try { await setMotionPreference(value); }
+    catch { setMotionError("动效设置保存失败，请重试。"); }
+    finally { setSavingMotion(false); }
+  };
   const revision = useRef(0);
   const [section, setSection] = useState<keyof typeof sections>(connected ? "cli" : "connection");
   const [cli, setCli] = useState<CliStatus>();
@@ -100,6 +113,17 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
         {Object.entries(sections).map(([key, label]) => <button key={key} aria-current={section === key ? "page" : undefined} onClick={() => setSection(key as keyof typeof sections)}>{label}</button>)}
       </nav>
       <div className="settings-center-content">
+        {section === "appearance" && <section aria-labelledby="appearance-title">
+          <h3 id="appearance-title">界面与动效</h3>
+          <SelectField label="减少动态效果" value={preference} disabled={savingMotion} onChange={event => void changeMotion(event.target.value as MotionPreference)} aria-describedby="motion-description">
+            <option value="system">跟随系统</option>
+            <option value="reduce">开启</option>
+            <option value="full">关闭</option>
+          </SelectField>
+          <p id="motion-description" className="fine">开启后，加载像素、图片揭晓、弹窗和按钮反馈改为静态显示。设置同步应用于工作台与网页浮层，不影响任务执行。</p>
+          <p className="fine" role="status">{savingMotion ? "正在保存…" : `当前效果：${reduced ? "减少动态效果" : "完整动效"}。设置自动保存。`}</p>
+          {motionError && <div className="settings-info settings-error" role="alert">{motionError}</div>}
+        </section>}
         {section === "cli" && <section aria-labelledby="cli-title">
           <h3 id="cli-title">本机 Codex</h3>
           <div className="settings-update-top"><strong>Codex CLI</strong><span className={`settings-chip ${connected && cli?.installed ? "good" : "attention"}`}>{!connected ? "无法检测" : cli ? sources[cli.source] : "检测中"}</span></div>

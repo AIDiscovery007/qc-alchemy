@@ -152,9 +152,7 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 .history-toolbar label { font-size: 12px; cursor: pointer; }
 .history-management-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .history-management-actions .icon-button { justify-content: center; }
-@media (prefers-reduced-motion: no-preference) {
- .history-management-actions button[aria-busy="true"] .ui-icon { animation: activity-pulse 1.4s ease-in-out infinite; }
-}
+.app[data-motion="full"] .history-management-actions button[aria-busy="true"] .ui-icon { animation: activity-pulse 1.4s ease-in-out infinite; }
 .project-checkbox { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); cursor: pointer; flex-shrink: 0; }
 .project-checkbox:disabled { cursor: not-allowed; }
 .project-row { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 12px 0; border: 0; border-radius: 12px; background: #fff; }
@@ -192,10 +190,8 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
  .input-image { padding: 8px; }
  .input-image img, .image-placeholder { height: 120px; }
 }
-@media (prefers-reduced-motion: reduce) {
- *, *::before, *::after { animation: none !important; transition: none !important; }
- :is(.primary, .secondary, .copy-button, .history-item):active:not(:disabled) { transform: none; }
-}
+.app[data-motion="reduce"], .app[data-motion="reduce"] *, .app[data-motion="reduce"] *::before, .app[data-motion="reduce"] *::after { animation: none !important; transition: none !important; }
+.app[data-motion="reduce"] :is(.primary, .secondary, .copy-button, .history-item):active:not(:disabled) { transform: none; }
 
 .compact-main { display: contents; }
 .compact-main > .error { margin: 16px 20px 0; }
@@ -210,7 +206,7 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 .async-action-status .async-action-cancel { flex:none;border:0;background:none;padding:6px 0 6px 8px;font-size:11px;color:var(--ink); }
 .activity-dot { display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;animation:activity-pulse 1.4s ease-in-out infinite; }
 @keyframes activity-pulse { 50% { opacity:.3; } }
-@media(prefers-reduced-motion:reduce) { .activity-dot { animation:none; } }
+
 
 /* Pagination changes immediately; only pointer presses use the existing short feedback. */
 .history-search { margin-bottom: 12px; }

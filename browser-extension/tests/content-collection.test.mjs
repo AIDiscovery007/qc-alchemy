@@ -70,6 +70,13 @@ function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
   const motion = Object.assign(new Element(), { matches: reducedMotion });
   let nextTimer = 0;
   const modules = {
+    "../lib/motion-preference": {
+      getMotion: () => ({ reduced: motion.matches }),
+      subscribeMotion: fn => {
+        motion.addEventListener("change", fn);
+        return () => motion.listeners.set("change", motion.listeners.get("change").filter(listener => listener !== fn));
+      },
+    },
     "wxt/browser": { browser: { runtime: { onMessage: { addListener(fn) { messageHandler = fn; }, removeListener() {} } } } },
     "react": { createElement() { assert.ok(allowPanel, "collection must not render the panel"); return {}; } },
     "react-dom/client": { createRoot() { assert.ok(allowPanel, "collection must not open the panel"); return { render() {}, unmount() {} }; } },

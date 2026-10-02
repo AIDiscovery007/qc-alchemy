@@ -1,4 +1,5 @@
 import useProjectLibrary from "./useProjectLibrary";
+import { useMotion } from "../../lib/use-motion";
 import { pollWhileVisible } from "../../lib/visible-poll";
 import { createPortal } from "react-dom";
 import { normalizeImage } from "../../lib/image";
@@ -35,6 +36,7 @@ const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复�
 type PromptDraft = Pick<NonNullable<Job["result"]>, "promptZh" | "promptEn" | "negativePrompt">;
 
 export default function App({ embedded = false, workspace = false }: { embedded?: boolean; workspace?: boolean }) {
+  const { reduced } = useMotion();
   const [projectSearchTarget, setProjectSearchTarget] = useState<HTMLDivElement | null>(null);
   const [resultPane, setResultPane] = useState<HTMLElement | null>(null);
   const [generationActions, setGenerationActions] = useState<HTMLDivElement | null>(null);
@@ -515,7 +517,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   }} /> : null;
 
   return (
-    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion-input="keyboard"
+    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion={reduced ? "reduce" : "full"} data-motion-input="keyboard"
       onPointerDownCapture={event => { event.currentTarget.dataset.motionInput = "pointer"; }}
       onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
       onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import LoadingEffect, { type LoadingEngine } from "./LoadingEffect";
+import { useMotion } from "../../lib/use-motion";
 
 // Mounted per selected generation. Historical results never replay the effect.
 export default function GenerationEffect({ running, image, failed }: { running: boolean; image: string; failed: boolean }) {
@@ -8,6 +9,11 @@ export default function GenerationEffect({ running, image, failed }: { running: 
   const overlay = useRef<HTMLCanvasElement>(null);
   const finish = useCallback(() => setFinished(true), []);
   const active = !finished && !failed;
+  const { reduced } = useMotion();
+
+  useEffect(() => {
+    if (reduced && image) setFinished(true);
+  }, [reduced, image]);
 
   useEffect(() => {
     if (!active || !engine || !image) return;
@@ -66,7 +72,7 @@ export default function GenerationEffect({ running, image, failed }: { running: 
     };
   }, [active, engine, image]);
 
-  return active ? <LoadingEffect className="generation-effect" respectReducedMotion={false} onReady={setEngine} onUnavailable={finish}>
+  return active ? <LoadingEffect className="generation-effect" onReady={setEngine} onUnavailable={finish}>
     <canvas ref={overlay} />
   </LoadingEffect> : !failed && (running || !image) ? <LoadingEffect className="generation-effect" active={false} /> : null;
 }
