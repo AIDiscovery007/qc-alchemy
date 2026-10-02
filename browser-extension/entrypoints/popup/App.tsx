@@ -815,7 +815,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       </main>
       {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
       </div>
-      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /><div className="result-bottom"><button className="outline-button" disabled><Icon name="copy" />复制图片路径</button><button className="outline-button" disabled><Icon name="clock" />生成信息</button></div></div>}</aside>}
+      {workspace && !historyOpen && <aside className="workspace-results" ref={setResultPane} aria-label="生成结果">{!result && <div className="generated-pane"><div className="result-toolbar"><h2>{multiPreview ? "输入预览" : "生成结果"} <small>{multiPreview ? `${multiSubjects.length + 1} 张` : "0 张"}</small></h2><button className="quiet-button" disabled><Icon name="compare" />对照原图</button></div><div className="preview-canvas">{multiPreview}</div><div className="result-caption"><strong>图片待生成</strong></div><div className="result-history" /></div>}</aside>}
       </div>
       </div>
     </div>

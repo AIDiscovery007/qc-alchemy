@@ -78,7 +78,7 @@
 .workspace-app .composer-footer .generate-button { margin:0; }
 .workspace-app .composer-footer .hint { font-size:9px;margin-top:7px; }
 .workspace-app .empty-prompt { padding:25px 15px;background: var(--surface-muted);border: 0;border-radius:10px;text-align:center;color:var(--muted);font-size:11px;line-height:1.8; }
-.workspace-results { display:flex;flex-direction:column;min-height:0;min-width:0;background: #f3f1eb; }
+.workspace-results { display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--paper); }
 .workspace-result-empty { display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:30px;text-align:center;color:var(--muted); }
 .workspace-result-empty > .ui-icon { width:40px;height:40px;margin-bottom:18px; }
 .workspace-result-empty p { font-size:11px;line-height:1.9; }

@@ -151,18 +151,17 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     <div className="preview-canvas">{!generation && inputPreview}{image ? compare ? <div className="compare-images">
       {comparisonInputs}
       <figure><ImagePreview src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <><ImagePreview src={image} alt={`${job.result!.title} · 生成结果`} /><span className="canvas-tag">生成结果</span></> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
+    </div> : <ImagePreview src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError) ? <div className="empty-canvas">
       <Icon name="image" />
       <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
       <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
     </div> : null}{GenerationEffect && generation && !compare && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
       failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>
-    <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} / ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong><span>{generation?.model || job.model || ""}</span></div>
-    {dimensions}
+    <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} · ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong>{dimensions}</div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
-    <div className="result-bottom"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} /><button className="outline-button copy-path-button" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={imagePath} aria-live="polite"><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} />{copied === assetKey ? "已复制路径" : "复制图片路径"}</button>
-      <button className="outline-button" disabled={!generation} onClick={() => generation && setModal(generation)}><ResultIcon name="clock" />生成信息</button></div>
+    <div className="result-bottom" role="group" aria-label="图片操作"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} compact /><button className="outline-button copy-path-button result-icon-action" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={copied === assetKey ? "已复制路径" : "复制图片路径"} aria-label={copied === assetKey ? "已复制路径" : "复制图片路径"}><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} /></button>
+      <button className="outline-button result-icon-action" disabled={!generation} title="生成信息" aria-label="生成信息" onClick={() => generation && setModal(generation)}><ResultIcon name="info" /></button><span className="result-action-status" role="status">{copied === assetKey ? "已复制路径" : ""}</span></div>
     {modal && <dialog className="result-dialog modal" ref={infoDialog} aria-label="本次生成信息"
       onCancel={event => { event.preventDefault(); setModal(undefined); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); event.preventDefault(); setModal(undefined); } }}>
       <div className="modal-head"><img src={logo} alt="" /><h2>本次生成信息</h2><button className="close-btn" aria-label="关闭窗口" onClick={() => setModal(undefined)}>×</button></div>
@@ -202,8 +201,8 @@ function imageRatio(width: number, height: number) {
   return width >= height ? `≈${Number((width / height).toFixed(2))}:1` : `≈1:${Number((height / width).toFixed(2))}`;
 }
 
-function ResultIcon({ name }: { name: "compare" | "clock" }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={name === "compare" ? "M12 3v18M4 5h4v14H4zM16 5h4v14h-4z" : "M12 8v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"} /></svg>;
+function ResultIcon({ name }: { name: "compare" | "info" }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={name === "compare" ? "M12 3v18M4 5h4v14H4zM16 5h4v14h-4z" : "M12 11v6M12 7v.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"} /></svg>;
 }
 
 function GenerationThumbnail({ jobId, generation, index, active, image, onSelect }: {
