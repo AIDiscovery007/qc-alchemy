@@ -24,7 +24,7 @@ export default defineContentScript({
     const shadow = host.attachShadow({ mode: "closed" });
     shadow.innerHTML = `<div class="pick-control"><div class="pick-liquid" aria-hidden="true"></div><button class="pick-toggle" type="button" aria-label="Reframe 图片操作" title="Reframe 图片操作" aria-haspopup="menu" aria-expanded="false" aria-controls="reframe-image-menu"><img src="${logo}" alt="" draggable="false"></button></div>
     <div class="pick-menu" id="reframe-image-menu" role="menu" aria-label="图片操作" hidden><button class="pick-action pick-open" type="button" role="menuitem" tabindex="-1" aria-label="立即逆向" title="立即逆向"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m5 18 6-6 3 3 3-4 3 4"/></svg></button><button class="pick-action pick-collect" type="button" role="menuitem" tabindex="-1" aria-label="加入 Reframe" title="加入 Reframe" data-state="idle"><svg class="pick-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><svg class="pick-done" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span class="pick-wait" aria-hidden="true"></span></button><button class="pick-action pick-workspace" type="button" role="menuitem" tabindex="-1" aria-label="打开工作台" title="打开工作台"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button></div>
-    <section class="panel" role="dialog" aria-label="QC-Reframe 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC-Reframe</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
+    <section class="panel" role="dialog" aria-modal="false" aria-label="QC-Reframe 图片逆向" hidden><div class="bar"><span><img src="${logo}" alt="">QC-Reframe</span><button class="close" type="button" aria-label="关闭逆向面板">×</button></div><div class="panel-body"></div></section>
     <div class="notice" popover="manual" hidden><div class="notice-copy" role="status" aria-live="polite" aria-atomic="true"><strong></strong><span></span></div><div class="notice-actions"><button class="retry" type="button" hidden>重试</button><button class="refresh" type="button" hidden>刷新网页</button><button class="dismiss" type="button" aria-label="关闭收集提示">×</button></div></div>`;
     const styles = document.createElement("style");
     styles.textContent = panelCss + shellCss;
@@ -124,7 +124,7 @@ export default defineContentScript({
       }
       hideNotice();
       panel.hidden = false;
-      control.style.display = "none";
+      position();
       if (wasHidden) {
         returnFocus ||= (shadow.activeElement || document.activeElement) as HTMLElement;
         closeButton.focus({ preventScroll: true });
@@ -145,9 +145,11 @@ export default defineContentScript({
       returnFocus = undefined;
     };
     closeButton.addEventListener("click", closePanel);
+    for (const type of ["pointerdown", "focusin"])
+      panel.addEventListener(type, () => closeMenu());
     ctx.addEventListener(host, "keydown", (event) => {
       const key = (event as KeyboardEvent).key;
-      if (!menu.hidden) {
+      if (!menu.hidden && (shadow.activeElement === trigger || actions.includes(shadow.activeElement as HTMLButtonElement))) {
         if (key === "Escape" || key === "Tab") {
           closeMenu(true);
           if (key === "Escape") { event.preventDefault(); event.stopPropagation(); }
@@ -166,6 +168,9 @@ export default defineContentScript({
         closePanel();
       }
     });
+    // Isolate panel/menu shortcuts without cancelling native controls or touching page events.
+    for (const type of ["click", "dblclick", "pointerdown", "pointerup", "keydown", "keyup", "keypress", "wheel"])
+      ctx.addEventListener(host, type, event => event.stopPropagation());
     const applyMotion = () => {
       host.dataset.motion = getMotion().reduced ? "reduce" : "full";
       if (getMotion().reduced) { opening?.cancel(); noticeAnimation?.cancel(); menuAnimations.forEach(animation => animation.cancel()); updateLiquid(); }
@@ -205,8 +210,16 @@ export default defineContentScript({
         viewportHeight: innerHeight,
       };
     };
+    // Shadow-root controls are excluded by page hit-testing, so reserve their bounds explicitly.
+    const actionEnvironment = (image: Element) => {
+      const environment = imageActionEnvironment(image, host);
+      for (const overlay of [panel, notice]) {
+        if (!overlay.hidden) environment.obstacles.push(overlay.getBoundingClientRect());
+      }
+      return environment;
+    };
     const position = () => {
-      if (!selected?.element.isConnected || !panel.hidden || document.hidden || selecting) {
+      if (!selected?.element.isConnected || document.hidden || selecting) {
         control.style.display = "none";
         closeMenu();
         return;
@@ -232,7 +245,7 @@ export default defineContentScript({
         top: placement.top + r.top - anchor.top, bottom: placement.bottom + r.top - anchor.top,
       } : undefined;
       const priorPlacement = placement;
-      const { obstacles, isClear } = imageActionEnvironment(selected.element, host);
+      const { obstacles, isClear } = actionEnvironment(selected.element);
       placement = placeImageAction(r, { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, { width: 40, height: 40 }, obstacles, previous, isClear);
       anchor = r;
       control.style.display = placement ? "inline-flex" : "none";
@@ -311,7 +324,7 @@ export default defineContentScript({
       if (menu.hidden && shadow.activeElement !== trigger) { selected = undefined; schedulePosition(); }
     });
     // Hover controls can be mounted late or animated without any pointer movement.
-    ctx.setInterval(() => { if (selected && panel.hidden && !document.hidden) schedulePosition(); }, 240);
+    ctx.setInterval(() => { if (selected && !document.hidden) schedulePosition(); }, 240);
     const collect = async (picked: PickedImage, pointer: boolean) => {
       const record = records.get(picked.element);
       if (record?.src === picked.src && record.state === "saving") return;
@@ -353,7 +366,7 @@ export default defineContentScript({
     const openMenu = (pointer: boolean) => {
       position();
       if (!selected || control.style.display === "none") return;
-      const { obstacles, isClear } = imageActionEnvironment(selected.element, host);
+      const { obstacles, isClear } = actionEnvironment(selected.element);
       const offsets = placement && placeImageMenu(selected.element.getBoundingClientRect(), { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, placement, obstacles, isClear);
       if (!offsets || !placement) {
         retryTarget = undefined;

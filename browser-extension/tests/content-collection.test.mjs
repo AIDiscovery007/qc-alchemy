@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { placeImageAction } from "../lib/image-action-placement.ts";
 import { placeImageMenu } from "../lib/image-menu-placement.ts";
 
 const compiled = ts.transpileModule(await readFile(new URL("../entrypoints/content.ts", import.meta.url), "utf8"), {
@@ -47,7 +48,7 @@ class ImageElement extends Element {
   }
 }
 
-function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
+function setup(t, { reducedMotion = true, allowPanel = false, realPlacement = false } = {}) {
   const shadow = new Element(), host = new Element(), document = new Element();
   const selectors = [".pick-collect", ".pick-control", ".pick-toggle", ".pick-liquid", ".pick-menu", ".pick-open", ".pick-workspace", ".panel", ".notice", ".close", ".refresh", ".dismiss", ".retry", ".panel-body"];
   for (const selector of selectors) shadow.children.set(selector, new Element());
@@ -57,6 +58,8 @@ function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
   menu.contained = openButton;
   const collectButton = shadow.querySelector(".pick-collect"), notice = shadow.querySelector(".notice"), retry = shadow.querySelector(".retry");
   shadow.querySelector(".panel").hidden = notice.hidden = retry.hidden = true;
+  shadow.querySelector(".panel").bounds = { x: 568, y: 12, left: 568, top: 12, right: 988, bottom: 788, width: 420, height: 776 };
+  notice.bounds = { x: 20, y: 700, left: 20, top: 700, right: 400, bottom: 780, width: 380, height: 80 };
   notice.children.set("strong", new Element());
   notice.children.set(".notice-copy > span", new Element());
   host.attachShadow = () => shadow;
@@ -89,7 +92,7 @@ function setup(t, { reducedMotion = true, allowPanel = false } = {}) {
     "../lib/client": { request(message) { return new Promise((resolve, reject) => requests.push({ message, resolve, reject })); } },
     "../lib/image-action-placement": {
       imageActionEnvironment: () => ({ obstacles: [], isClear: () => true }),
-      placeImageAction: bounds => ({ left: bounds.left + 10, top: bounds.top + 10, right: bounds.left + 50, bottom: bounds.top + 50, compact: false }),
+      placeImageAction: realPlacement ? placeImageAction : bounds => ({ left: bounds.left + 10, top: bounds.top + 10, right: bounds.left + 50, bottom: bounds.top + 50, compact: false }),
     },
   };
   const exports = {};
@@ -413,4 +416,95 @@ test("workspace opening errors show feedback without a collection retry", async 
   assert.equal(ui.notice.querySelector("strong").textContent, "打开工作台失败");
   assert.equal(ui.notice.querySelector(".notice-copy > span").textContent, "无法打开标签页");
   assert.equal(ui.retry.hidden, true);
+});
+
+
+test("an open non-modal panel keeps page image actions available and collection leaves it open", async t => {
+  const ui = setup(t, { allowPanel: true, realPlacement: true });
+  ui.geometry({ type: "alchemy:show" });
+  ui.hover(new ImageElement("https://example.com/visible.png")); ui.tick();
+  assert.equal(ui.shadow.querySelector(".pick-control").style.display, "inline-flex");
+  ui.click();
+  assert.equal(ui.requests[0].message.type, "alchemy:collect");
+  ui.requests[0].resolve({ projectId: "collected", created: true }); await settle();
+  assert.equal(ui.shadow.querySelector(".panel").hidden, false);
+  let prevented = false;
+  ui.document.emit("pointerdown", { composedPath: () => [], preventDefault() { prevented = true; } });
+  assert.equal(prevented, false, "page controls keep their default behavior");
+  assert.equal(ui.shadow.querySelector(".panel").hidden, false, "outside clicks do not dismiss the panel");
+});
+
+test("page entry and its menu avoid the open panel, and covered images do not expose an entry", t => {
+  const ui = setup(t, { allowPanel: true, realPlacement: true });
+  ui.geometry({ type: "alchemy:show" });
+  ui.hover(new ImageElement("https://example.com/partial.png", 420)); ui.tick();
+  const control = ui.shadow.querySelector(".pick-control");
+  assert.equal(control.style.display, "inline-flex");
+  assert.ok(parseFloat(control.style.left) + 40 < 568);
+  ui.trigger.emit("click");
+  assert.equal(ui.menu.hidden, false);
+  for (const action of [ui.openButton, ui.collectButton, ui.workspaceButton])
+    assert.ok(parseFloat(ui.menu.style.left) + parseFloat(action.style.left) + 40 < 568);
+  ui.host.emit("keydown", { key: "Escape" });
+  ui.shadow.activeElement = null;
+  ui.hover(new ImageElement("https://example.com/covered.png", 650)); ui.tick();
+  assert.equal(control.style.display, "none");
+  ui.shadow.querySelector(".close").emit("click");
+  assert.equal(control.style.display, "inline-flex", "closing the panel releases the reserved image area");
+});
+
+test("panel visibility polling invalidates an image menu that moves under the panel", t => {
+  const ui = setup(t, { allowPanel: true, realPlacement: true });
+  ui.geometry({ type: "alchemy:show" });
+  const image = new ImageElement("https://example.com/moving.png");
+  ui.hover(image); ui.tick(); ui.trigger.emit("click");
+  Object.assign(image.bounds, { x: 650, left: 650, right: 850 });
+  ui.tick();
+  assert.equal(ui.menu.hidden, true);
+  assert.equal(ui.shadow.querySelector(".pick-control").style.display, "none");
+});
+
+test("extension shortcuts do not bubble to the host site or cancel native field behavior", t => {
+  const ui = setup(t);
+  let stopped = false, prevented = false;
+  ui.host.emit("keydown", { key: "ArrowLeft", stopPropagation() { stopped = true; }, preventDefault() { prevented = true; } });
+  assert.equal(stopped, true);
+  assert.equal(prevented, false);
+});
+
+for (const entry of ["pointerdown", "focusin"]) {
+  test(`entering the panel via ${entry} dismisses the image menu without stealing textarea keys`, t => {
+    const ui = setup(t, { allowPanel: true });
+    ui.geometry({ type: "alchemy:show" });
+    ui.hover(new ImageElement("https://example.com/a.png"));
+    ui.trigger.emit("click");
+    assert.equal(ui.menu.hidden, false);
+    const panel = ui.shadow.querySelector(".panel"), textarea = new Element();
+    textarea.focus = () => { ui.shadow.activeElement = textarea; };
+    if (entry === "focusin") textarea.focus();
+    panel.emit(entry, { target: textarea });
+    assert.equal(ui.menu.hidden, true);
+    assert.equal(ui.trigger["aria-expanded"], "false");
+    if (entry === "pointerdown") textarea.focus();
+    for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "Tab"]) {
+      let prevented = false;
+      ui.host.emit("keydown", { key, preventDefault() { prevented = true; } });
+      assert.equal(prevented, false, `${key} retains its native textarea behavior`);
+      assert.equal(ui.shadow.activeElement, textarea, `${key} does not redirect focus to the image actions`);
+    }
+    assert.equal(panel.hidden, false);
+  });
+}
+
+test("an open image menu only handles navigation when its trigger or actions have focus", t => {
+  const ui = setup(t);
+  ui.hover(new ImageElement("https://example.com/a.png"));
+  ui.trigger.emit("click");
+  ui.retry.focus();
+  for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "Tab"]) {
+    let prevented = false;
+    ui.host.emit("keydown", { key, preventDefault() { prevented = true; } });
+    assert.equal(prevented, false);
+    assert.equal(ui.shadow.activeElement, ui.retry, `${key} does not take focus from another extension control`);
+  }
 });

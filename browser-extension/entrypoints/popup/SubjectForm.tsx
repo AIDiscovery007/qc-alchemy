@@ -3,7 +3,6 @@ import Icon from "./Icon";
 import TaskInstruction from "./TaskInstruction";
 import AsyncAction from "./AsyncAction";
 import ImageInput from "../workspace/ImageInput";
-import ImagePreview from "./ImagePreview";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
@@ -59,24 +58,10 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   return (
     <section className="reenact-form" hidden={!active} aria-label={`${style ? "提取风格" : "主体重演"}输入`}>
       <div className="swappable-images">
-      {workspace ? <div className="workspace-inputs">
+      <div className="workspace-inputs">
         <ImageInput image={subjectImage} rotation={subjectRotation} label="图 1 · 主体" alt="图 1：用户指定的主体" disabled={disabled} uploading={uploading} onUpload={file => void upload(file)} />
         <ImageInput loading={active} error={selection.error} image={selection.image} rotation={referenceRotation} label="图 2 · 参考" alt="图 2：原始参考模板" />
-      </div> : <div className="reenact-images">
-        <div className="input-image">
-          <strong>图 1 · 主体</strong>
-          {subjectImage ? <ImagePreview src={subjectImage} rotation={subjectRotation} alt="图 1：用户指定的主体" /> : <div className="image-placeholder">{uploading ? "正在读取…" : <span aria-hidden="true">＋</span>}</div>}
-          <label className="file-picker">
-            {subjectImage ? "更换主体图" : "上传主体图"}
-            <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传主体图" disabled={disabled || uploading} onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
-          </label>
-        </div>
-        <div className="input-image">
-          <strong>图 2 · {style ? "风格参考" : "参考模板"}</strong>
-          {selection.image ? <ImagePreview src={selection.image} rotation={referenceRotation} alt="图 2：原始参考模板" /> : <div className="image-placeholder">正在恢复参考图…</div>}
-          {selection.capture === "screenshot" && <span className="input-source">屏幕截取</span>}
-        </div>
-      </div>}
+      </div>
       <button type="button" className="image-swap" aria-label="互换主体图与参考图" title="互换主体图与参考图" disabled={disabled || uploading || !subjectImage || !selection.image} onClick={() => onSwap(basePrompt)}><Icon name="swap" /></button>
       </div>
       {error && <div className="error" role="alert">{error}</div>}

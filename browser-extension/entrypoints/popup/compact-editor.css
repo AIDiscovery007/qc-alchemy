@@ -1,0 +1,33 @@
+/* Shared editor controls, sized for the webpage panel and toolbar popup. */
+.app:not(.workspace-app) .workspace-inputs { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.app:not(.workspace-app) .workspace-inputs.single { grid-template-columns:1fr; }
+.app:not(.workspace-app) .workspace-image-input { min-width:0; }
+.app:not(.workspace-app) .workspace-image-wrap { height:150px;position:relative;overflow:hidden;border-radius:10px;background:var(--surface-muted); }
+.app:not(.workspace-app) .workspace-image-action { position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:5px;border:0;border-radius:7px;padding:6px 8px;background:var(--surface);font-size:11px; }
+.app:not(.workspace-app) .workspace-input-caption { padding:8px 4px;font-size:11px; }
+.app:not(.workspace-app) .workspace-upload-empty { display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;width:100%;height:100%;border:0;background:transparent;color:var(--muted);font-size:11px; }
+.app:not(.workspace-app) .step-title { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px; }
+.app:not(.workspace-app) .step-title h2 { display:flex;align-items:center;gap:8px;margin:0;font-size:13px; }
+.app:not(.workspace-app) .step-index { display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-muted);color:var(--muted);font-size:11px;font-weight:400; }
+.app:not(.workspace-app) .step-title .select-field { min-width:0;max-width:52%;margin:0; }
+.app:not(.workspace-app) .step-title .select-field > span:first-child { display:none; }
+.app:not(.workspace-app) .step-title select { font-size:11px; }
+.app:not(.workspace-app) .prompt-box { overflow:hidden;border-radius:12px;background:var(--surface-muted); }
+.app:not(.workspace-app) .prompt-tools { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 4px; }
+.app:not(.workspace-app) :is(.language-tabs,.prompt-tools .button-row,.prompt-save) { display:flex;align-items:center;gap:6px; }
+.app:not(.workspace-app) :is(.quiet-button,.outline-button,.language-tabs button) { display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:6px;padding:6px 8px;background:transparent;font-size:11px; }
+.app:not(.workspace-app) .language-tabs button { color:var(--muted); }
+.app:not(.workspace-app) .language-tabs button.active { background:var(--surface);color:var(--ink);font-weight:600; }
+.app:not(.workspace-app) :is(.quiet-button,.language-tabs button):hover:not(:disabled) { background:var(--surface); }
+.app:not(.workspace-app) :is(.prompt-text,.prompt-draft) { width:100%;padding:14px 16px;line-height:1.9;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere; }
+.app:not(.workspace-app) .prompt-text { max-height:300px;overflow:auto;user-select:text; }
+.app:not(.workspace-app) .prompt-draft { display:block;min-height:245px;resize:vertical;border:0;background:var(--surface); }
+.app:not(.workspace-app) .negative { padding:10px 16px;border:0; }
+.app:not(.workspace-app) .negative summary { font-size:11px;color:var(--muted); }
+.app:not(.workspace-app) .negative p { margin:8px 0;font-size:12px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere; }
+.app:not(.workspace-app) .negative-draft { width:100%;min-height:70px;margin-top:8px;padding:10px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:12px; }
+.app:not(.workspace-app) .prompt-save { justify-content:flex-end;padding:8px 12px; }
+.app:not(.workspace-app) .prompt-save .outline-button { background:var(--surface); }
+.app:not(.workspace-app) .hint { margin:8px 12px;font-size:11px;color:var(--muted); }
+.app:not(.workspace-app) .empty-prompt { display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;min-height:92px;padding:20px 14px;border-radius:10px;background:var(--surface-muted);color:var(--muted);text-align:center;font-size:12px; }
+.app:not(.workspace-app) .empty-prompt .quiet-button { background:var(--surface); }

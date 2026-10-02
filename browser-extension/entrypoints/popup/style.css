@@ -4,7 +4,9 @@
 @import "./generation-ratio.css";
 @import "./image-viewer.css";
 @import "./image-preview.css";
+@import "./result-gallery.css";
 @import "./task-center.css";
+@import "./compact-editor.css";
 /* Warm surfaces and restrained accents keep the artwork in focus. */
 :root, :host {
  --paper: #faf9f6;
