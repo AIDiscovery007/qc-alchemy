@@ -1,10 +1,10 @@
 # QC-Reframe 贡献与维护指南
 
-本文约定开发、文档、GitHub 同步和发布流程，供维护者与新会话中的编码 Agent 使用。插件内的架构和设计约定见 [browser-extension/AGENTS.md](browser-extension/AGENTS.md)。具体任务以用户当前要求为准，已授权的步骤不重复询问。
+本文约定开发、文档、GitHub 同步和发布流程，供维护者与新会话中的编码 Agent 使用。监工身份、执行 agent 汇报规则和分工台账统一见 [AGENT.md](AGENT.md)；插件内的架构和设计约定见 [browser-extension/AGENTS.md](browser-extension/AGENTS.md)。具体任务以用户当前要求为准，已授权的步骤不重复询问。
 
 ## 新会话从这里开始
 
-1. 阅读本文、[插件开发指引](browser-extension/AGENTS.md)和[插件使用说明](browser-extension/README.md)。需要追溯某项功能时，再查看对应[更新日志](browser-extension/docs/releases/README.md)，不必读取全部历史。
+1. 阅读 [Agent 协作规则](AGENT.md)、本文、[插件开发指引](browser-extension/AGENTS.md)和[插件使用说明](browser-extension/README.md)。需要追溯某项功能时，再查看对应[更新日志](browser-extension/docs/releases/README.md)，不必读取全部历史。
 2. 检查 `git status --short`、当前分支、`git remote -v`、最近提交及 `browser-extension/package.json`。代码、版本号和实际运行状态优先于旧聊天中的完成描述。
 3. 明确本次问题、变更范围、验证方式，以及是否包含提交、推送或发布。探索前估计检索范围和输出量：少量定向读取直接完成；多模块调查只有在节省时间或上下文时才分工，返回精简结论与文件位置。
 4. 保留已有改动；不要通过重置、覆盖安装目录或清空本地数据来获得“干净环境”。需要新分支时使用 `codex/简短主题`；复用合适的当前分支，不擅自切换用户正在使用的工作区。
@@ -13,7 +13,7 @@
 
 ```text
 继续维护本仓库的 QC-Reframe 浏览器插件。
-先阅读 Contribution.md 和 browser-extension/AGENTS.md，再检查当前分支、改动和版本。
+先阅读 AGENT.md、Contribution.md 和 browser-extension/AGENTS.md，再检查当前分支、改动和版本。
 按需查阅 browser-extension/docs/releases/ 的历史记录。
 本次任务：<描述目标和验收条件>。
 交付范围：<本地实现 / 提交并推送 / 提交并发布新版本>。
@@ -30,7 +30,8 @@
 | [安装指引](browser-extension/docs/INSTALL_WITH_CODEX.md) | 可由其他用户的 Codex 执行的初始化、配对、升级和排错流程。 |
 | [版本目录](browser-extension/docs/releases/README.md) | 新版本使用 `v版本号.md`；写明变化、升级影响、验证和限制，截图放同目录，并更新索引。 |
 | [画廊](browser-extension/docs/gallery/README.md) | 经用户指定可公开的主体图、参考图、结果和 Prompt。不要自动收录私人历史。 |
-| 本文 / [AGENTS.md](browser-extension/AGENTS.md) | 本文维护协作与发布流程；AGENTS.md 维护实现约束、设计决策和代码入口。两者不重复保存完整版本史。 |
+| [AGENT.md](AGENT.md) | 监工身份、执行 agent 开工/完工汇报规则和分工进度台账。 |
+| 本文 / [插件 AGENTS.md](browser-extension/AGENTS.md) | 本文维护工程与发布流程；插件 AGENTS.md 维护实现约束、设计决策和代码入口。不重复维护 Agent 台账或完整版本史。 |
 
 功能变化同步更新当前用法及对应版本页；仅调整文档一般不升插件版本、不新建 Release。历史版本说明和截图保留当时的品牌及验证范围，不把旧截图标为新版实测。后续若改变架构或设计决策，同步修改 AGENTS.md；不要把临时调试记录写成长期规则。
 
