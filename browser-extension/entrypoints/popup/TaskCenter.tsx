@@ -101,8 +101,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
 
   return <dialog ref={dialog} className="task-center" aria-labelledby="task-center-title"
     onCancel={(event) => { event.preventDefault(); onClose(); }}
-    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}
-    onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}>
     <div className="modal-head"><img src={logo} alt="" /><h2 id="task-center-title">任务中心 · {running} 项执行中</h2>
       <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>

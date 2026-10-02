@@ -84,6 +84,8 @@
 
 ## UI 与品牌约定
 
+- 带蒙板的原生弹窗统一通过 `lib/motion-dialog.ts` 启用 `closedby="any"`，不支持时按蒙板边界和完整指针手势兼容处理；关闭请求复用各组件的 cancel 回调和忙碌保护。内部空白、内容操作和向外拖拽不触发关闭，叠层仅关闭最上层。
+
 当前设计保留 Raft 的暖白底色与亮色选中态，以留白、浅色表面和文字层级划分内容。页面不使用贯穿黑线、重复卡片描边、画布网点或硬阴影；仅表单输入与图片选中保留必要的浅色边界，浮层使用柔和阴影。样式以 [style.css](entrypoints/popup/style.css) 和 [shell.css](entrypoints/popup/shell.css) 为准；`design-extract-output/raft-build-prompts` 如存在仅作本地参考，不是依赖。
 
 - 主要色值：背景 `#faf9f6`、表面 `#fffefa`、次级表面 `#f0ede6`、文字 `#26241f`、浅边界 `#e5e1d8`、亮黄 `#ffd440`、粉色 `#fe7da8`、青色 `#27ccf3`。四路径选中态分别用黄、粉、青、紫（`#ccbafa`）。优先使用已有 CSS 变量，不平行建立第二套 token。
