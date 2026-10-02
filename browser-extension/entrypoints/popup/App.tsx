@@ -71,6 +71,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [references, setReferences] = useState<Record<string, Selection>>({});
   const [multiSubjectDrafts, setMultiSubjectDrafts] = useState<Record<string, MultiSubject[]>>({});
   const [swappedSubjectId, setSwappedSubjectId] = useState("");
+  const [subjectUnavailable, setSubjectUnavailable] = useState<Record<string, boolean>>({});
   const [subjectDrafts, setSubjectDrafts] = useState<Record<string, string>>({});
   const [promptDrafts, setPromptDrafts] = useState<Record<string, PromptDraft>>({});
   const [savingPrompt, setSavingPrompt] = useState("");
@@ -514,6 +515,31 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     : restoring ? "正在恢复原图…" : loadingProject ? "正在读取模板项目…" : cliBusy ? "Codex 正在升级…"
     : modelBusy ? "正在验证模型…" : busy ? "正在提交…" : undefined;
 
+  const instructionStale = !!result && taskInstruction(preferences.mode).trim() !== (job?.instruction ?? job?.reenact?.basePrompt ?? defaultInstructions[preferences.mode]).trim();
+  const genericPrompt = !!result && preferences.mode === "style" && !job?.reenact;
+  const needsPrompt = !result || instructionStale || (preferences.mode === "multi-reenact" && multiStale) || genericPrompt;
+  const reverseHint = !selection ? "先选择一张参考图。" : !selection.image ? "等待参考图读取完成。"
+    : subjectUnavailable[subjectKey(preferences.mode)] ? "主体图尚未就绪，请完成上传。"
+    : preferences.mode === "reenact" && !subjectImage("reenact") ? "先上传主体图。"
+    : preferences.mode === "multi-reenact" && (multiSubjects.length < 2 || multiSubjects.some(item => !item.subjectImage)) ? "请添加至少 2 张可用的主体图。"
+    : !taskInstruction(preferences.mode).trim() ? "填写任务指令后可生成提示词。"
+    : "";
+  const genericHint = genericPrompt && !subjectImage("style") ? "通用风格已就绪；上传主体图后可生成专属提示词。" : "";
+  const reverseDisabled = blocked || !!reverseHint || !!promptDraft;
+  const reverse = () => {
+    if (reverseDisabled) return;
+    const mode = preferences.mode;
+    void start(mode, mode === "multi-reenact" ? { subjects: multiSubjects, basePrompt: multiPrompt }
+      : mode !== "recreate" && subjectImage(mode) ? { subjectImage: subjectImage(mode), basePrompt: taskInstruction(mode) } : undefined);
+  };
+  const extractStyle = () => {
+    if (blocked || !selection?.image || promptDraft || !taskInstruction("style").trim()) return;
+    const image = subjectImage("style");
+    if (image) setSubjectDrafts(items => ({ ...items, [subjectKey("style")]: image }));
+    void start("style");
+  };
+  const promptRetry = workspace && <button type="button" className="quiet-button prompt-retry" aria-label="重新生成提示词" title={!result ? "生成提示词后可重新生成" : promptDraft ? "先保存或取消提示词编辑" : "重新生成提示词"} disabled={!result || reverseDisabled} onClick={reverse}><Icon name="retry" /></button>;
+
   const newVersion = versions[`${activeProject?.id}:${preferences.mode}`] === "new";
   const versionSelector = modeJobs(preferences.mode).length > 0 && <SelectField className="version-select" label="" aria-label="提示词版本" value={job?.id || "new"} disabled={busy}
               onChange={(e) => { setCopied(false); setVersions((items) => ({ ...items, [`${activeProject!.id}:${preferences.mode}`]: e.target.value })); }}>
@@ -548,7 +574,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   }, [workspace, narrow, drawerOpen, resultPane]);
   const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace}
                   drawerOpen={drawerOpen} onCollapse={closeResults} requestError={drawer.error} requestPending={drawer.pending}
-                  onRequestState={(pending, error) => dispatchDrawer({ type: pending ? "request" : "settled", key: drawerKey, error })} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (activeJob.mode === "multi-reenact" && multiStale)}
+                  onRequestState={(pending, error) => dispatchDrawer({ type: pending ? "request" : "settled", key: drawerKey, error })} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} hideActions={workspace && needsPrompt} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (workspace && needsPrompt) || (activeJob.mode === "multi-reenact" && multiStale)}
                   subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
                   inputPreview={multiPreview}
                   subjects={activeJob.mode === "multi-reenact" ? multiSubjects : undefined}
@@ -583,9 +609,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
         {!historyOpen && drawer.content && !drawerOpen && <button ref={resultReturn} className="outline-button result-return" aria-controls="workspace-results" aria-expanded={false} onClick={() => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}><Icon name="image" />{drawer.label}</button>}
-        {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><button className="quiet-button" aria-label="导出提示词" disabled={!result || !!promptDraft} onClick={exportResult}><Icon name="download" /><span>导出提示词</span></button></>}
+        {!historyOpen && <><span className="badge"><i className="online-dot" />{selectedModel || "未选择模型"}</span><SelectField className="mode-select" label="" aria-label="项目逆向路径" name="mode" value={preferences.mode} disabled={savingMode || busy} onChange={event => void saveMode(event.target.value as Mode)}>
+          {(["style", "recreate", "reenact", "multi-reenact"] as const).map(mode => <option key={mode} value={mode}>{modeName(mode)}</option>)}
+        </SelectField></>}
         <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
-        <button className="outline-button" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" />{activeCount ? `${activeCount} 项执行中` : "任务中心"}</button>
       </div></header>}
       {!workspace && !embedded && <header>
         <div className="brand">
@@ -685,7 +712,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 const next = { ...items }; delete next[job!.id]; return next;
               })}>重新读取主体图</button>
             </div>}
-            <div className="mode-switch" role="group" aria-label="项目逆向路径">
+            {!workspace && <div className="mode-switch" role="group" aria-label="项目逆向路径">
               <button
                 className={preferences.mode === "style" ? "active" : ""}
                 aria-pressed={preferences.mode === "style"}
@@ -710,7 +737,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               <button className={preferences.mode === "multi-reenact" ? "active" : ""} aria-pressed={preferences.mode === "multi-reenact"} disabled={savingMode || busy} onClick={() => saveMode("multi-reenact")}>
                 多图重演{activeProject && modeJob("multi-reenact") && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
               </button>
-            </div>
+            </div>}
             {selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection && preferences.mode === "recreate" && (
               <div className="workspace-inputs single"><ImageInput error={selection.error} image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} label="风格参考图" alt="本次选择的参考图片" /></div>
@@ -724,7 +751,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 )}
                 {selection && preferences.mode === "recreate" && (<>
                   <TaskInstruction value={taskInstruction("recreate")} disabled={blocked} onChange={value => changeInstruction("recreate", value)} />
-                  {!promptLoading && <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={cancelling}>
+                  {!workspace && !promptLoading && <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={cancelling}>
                   <button
                     className={workspace ? "outline-button" : "primary"}
                     disabled={blocked || !selection.image}
@@ -751,33 +778,34 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               return <SubjectForm workspace={workspace} key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
                 selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
                 instruction={taskInstruction(mode)} onInstructionChange={value => changeInstruction(mode, value)}
+                onAvailabilityChange={available => setSubjectUnavailable(items => ({ ...items, [subjectKey(mode)]: !available }))}
                 subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
-                active={preferences.mode === mode} disabled={blocked || !selection.image}
+                active={preferences.mode === mode} disabled={blocked || !selection.image || (workspace && !!promptDraft)}
                 status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
-                hideAction={promptLoading && preferences.mode === mode} cancelling={cancelling}
+                hideAction={workspace || promptLoading && preferences.mode === mode} cancelling={cancelling}
                 submitting={busy} onSubmit={(input) => start(mode, input)}
                 onReferenceRotate={(image, instruction) => applyReferenceRotation(image, mode, instruction)}
                 onSwap={instruction => void swapImages(mode, instruction)}
-                onExtract={mode === "style" ? () => start("style") : undefined} />;
+                onExtract={mode === "style" ? extractStyle : undefined} />;
             })}
             {selection && <MultiSubjectForm key={multiKey} image={selection.image} imageError={selection.error} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
               active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
               hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
-              hideAction={promptLoading && preferences.mode === "multi-reenact"} cancelling={cancelling}
+              hideAction={workspace || promptLoading && preferences.mode === "multi-reenact"} cancelling={cancelling}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
               onInstruction={value => changeInstruction("multi-reenact", value)}
               onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              <div className="step-title"><h2><span className="step-index">2</span>雕琢提示词</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}
-                action={promptLoading && <button type="button" className="quiet-button" disabled={cancelling} onClick={cancel}>{cancelling ? "正在取消…" : "取消"}</button>}>
+              <div className="step-title"><h2><span className="step-index">2</span>雕琢提示词{promptRetry}</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}
+                action={!workspace && promptLoading && <button type="button" className="quiet-button" disabled={cancelling} onClick={cancel}>{cancelling ? "正在取消…" : "取消"}</button>}>
                 {running ? job.stage || "正在逆向提示词…" : job?.status === "failed" ? "逆向失败，请重试。" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}
               </LoadingPlaceholder>
             </section>}
 
             {result && activeJob && (
               <section className="result" aria-label={`${modeName(activeJob.mode)}提示词`}>
-                <PromptEditor result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={versionSelector}
+                <PromptEditor result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={versionSelector} retry={promptRetry} onExport={workspace ? exportResult : undefined}
                   onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
                   onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} />
                 {!workspace && activeJob.mode === "style" && !activeJob.reenact && (
@@ -785,15 +813,23 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                 )}
                 {!workspace && promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
                 {workspace ? resultPane && generationPanel && createPortal(generationPanel, resultPane) : generationPanel}
-                <button className="secondary prompt-export" disabled={!!promptDraft} onClick={exportResult}>
+                {!workspace && <button className="secondary prompt-export" disabled={!!promptDraft} onClick={exportResult}>
                   <Icon name="download" />导出 Markdown
-                </button>
+                </button>}
               </section>
             )}
           </>
         )}
       </main>
-      {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>{!result && <button className="primary generate-button" disabled><Icon name="image" />生成图片<Icon name="arrow" /></button>}{promptDraft && <p className="hint">先保存或取消修改，再生成图片。</p>}</div>}
+      {workspace && !historyOpen && <div className="composer-footer" ref={setGenerationActions}>
+        {needsPrompt && <>
+          <button className="primary generate-button" disabled={running ? cancelling : reverseDisabled || !!genericHint} aria-busy={busy || running} onClick={running ? cancel : reverse}>
+            <Icon name={running ? "close" : "edit"} />{running ? cancelling ? "正在取消…" : "取消生成提示词" : busy ? "正在提交…" : result ? genericPrompt ? "生成专属提示词" : "更新提示词" : "生成提示词"}{!running && <Icon name="arrow" />}
+          </button>
+          {(!running && (reverseStatus || reverseHint || genericHint || (result && !genericPrompt))) && <p className="hint" role="status">{reverseStatus || reverseHint || genericHint || "输入已调整，更新提示词后再生成图片。"}</p>}
+        </>}
+        {promptDraft && <p className="hint">先保存或取消修改，再生成图片或导出。</p>}
+      </div>}
       </div>
       {workspace && !historyOpen && <div className="result-drawer-slot"><aside id="workspace-results" className="workspace-results" ref={setResultPane} aria-label="生成结果抽屉" aria-hidden={!drawerOpen} inert={!drawerOpen} /></div>}
       </div>

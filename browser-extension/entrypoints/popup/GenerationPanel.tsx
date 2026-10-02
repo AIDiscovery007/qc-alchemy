@@ -15,9 +15,9 @@ const ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 
 export const GenerationEffectContext = createContext<ComponentType<{ running: boolean; image: string; failed: boolean }> | null>(null);
 
-export default function GenerationPanel({ job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, versionNumber = 1, drawerOpen = true, onCollapse, onRequestState, requestError = "", requestPending = false }: {
+export default function GenerationPanel({ job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, hideActions = false, versionNumber = 1, drawerOpen = true, onCollapse, onRequestState, requestError = "", requestPending = false }: {
   requestPending?: boolean; requestError?: string; drawerOpen?: boolean; onCollapse?(): void; onRequestState?(pending: boolean, error?: string): void;
-  inputPreview?: ReactNode; workspace?: boolean; actionsTarget?: HTMLElement | null; versionNumber?: number;
+  inputPreview?: ReactNode; workspace?: boolean; hideActions?: boolean; actionsTarget?: HTMLElement | null; versionNumber?: number;
   job: Job; lang: "zh" | "en"; disabled: boolean; subjectImage?: string; subjects?: MultiSubject[]; onUpdate(job: Job, subjectImage?: string, subjects?: MultiSubject[]): void;
 }) {
   const GenerationEffect = useContext(GenerationEffectContext);
@@ -140,7 +140,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   </button>;
   const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : !inputsReady ? multi ? "请添加至少 2 张可用的主体图。" : "请先上传可用的主体图。" : "";
   const generationControls = <>{ratioControls}{generateButton}{workspace && warning && <p className="hint">{warning}</p>}{workspace && error && <p className="error" role="alert">{error}</p>}</>;
-  const action = actionsTarget ? createPortal(generationControls, actionsTarget) : workspace ? generationControls : <>{ratioControls}<AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction></>;
+  const action = hideActions ? null : actionsTarget ? createPortal(generationControls, actionsTarget) : workspace ? generationControls : <>{ratioControls}<AsyncAction status={running?.stage || (busy ? "正在提交…" : undefined)} onCancel={running ? () => act(true) : undefined} cancelling={busy}>{generateButton}</AsyncAction></>;
   const dimensions = image && asset?.width && asset?.height ? <p className="generation-dimensions">{asset.width} × {asset.height} px · {imageRatio(asset.width, asset.height)}</p> : null;
   const comparisonInputs = original?.key === assetKey ? multi ? <div className="multi-comparison-inputs">
     {original.subjects?.map((subject, index) => <figure key={subject.id}><ImagePreview src={subject.subjectImage} alt={`本次主体 ${index + 1}`} loading="lazy" /><figcaption>主体 {index + 1} · {subject.role}{subject.detail && <small>{subject.detail}</small>}</figcaption></figure>)}

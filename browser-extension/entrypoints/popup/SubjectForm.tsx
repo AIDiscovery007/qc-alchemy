@@ -6,7 +6,7 @@ import ImageInput from "../workspace/ImageInput";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
-export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, onSwap, onReferenceRotate, instruction, onInstructionChange, status, onCancel, hideAction = false, cancelling = false, workspace = false }: {
+export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onAvailabilityChange, onSubjectChange, onSubmit, onExtract, onSwap, onReferenceRotate, instruction, onInstructionChange, status, onCancel, hideAction = false, cancelling = false, workspace = false }: {
   workspace?: boolean;
   status?: string; hideAction?: boolean; cancelling?: boolean;
   onCancel?: () => void;
@@ -20,6 +20,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   submitting: boolean;
   subjectImage: string;
   onSubjectChange: (image: string) => void;
+  onAvailabilityChange?: (available: boolean) => void;
   onSubmit: (input: SubjectInput) => void;
   onExtract?: () => void;
   onSwap: (instruction: string) => void;
@@ -35,6 +36,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   const upload = async (file?: File) => {
     if (!file) return;
     const revision = ++uploadRevision.current;
+    onAvailabilityChange?.(false);
     onSubjectChange("");
     setUploading(true);
     setError("");
@@ -43,7 +45,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
         throw new Error("请上传 PNG、JPEG 或 WebP 主体图");
       if (file.size > 20 * 1024 * 1024) throw new Error("原图最多 20 MB，请缩小后上传");
       const image = await normalizeImage(file, 2 * 1024 * 1024);
-      if (revision === uploadRevision.current) onSubjectChange(image);
+      if (revision === uploadRevision.current) { onSubjectChange(image); onAvailabilityChange?.(true); }
     } catch (e) {
       if (revision === uploadRevision.current)
         setError((e as Error).message || "无法读取主体图，请换一张图片");
@@ -73,9 +75,9 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
         {submitting ? "正在提交…" : job?.status === "running" ? "正在生成提示词…" : workspace ? job?.result ? "重新逆向提示词" : "逆向提示词" : `生成${style ? "风格转换" : "主体重演"}提示词`}
       </button>
       </AsyncAction>
-      {onExtract && <button className={workspace ? "text-link" : "secondary"} disabled={disabled} onClick={onExtract}
-        title="按任务指令提取参考图的通用风格，不使用主体图">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
       </div>}
+      {onExtract && (workspace ? !!subjectImage : !hideAction) && <button type="button" className={workspace ? "text-link" : "secondary"} disabled={disabled || uploading || !selection.image || !basePrompt.trim()} onClick={onExtract}
+        title="按任务指令提取参考图的通用风格，不使用主体图">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
       {subjectImage && !basePrompt.trim() && <p className="fine" role="status">填写任务指令后可生成提示词。</p>}
     </section>
   );
