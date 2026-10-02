@@ -291,17 +291,19 @@ test("reruns the current or historical image with the explicitly selected mode",
     if (url.endsWith(`/jobs/${oldJob}/reference`)) return { ok: true, json: async () => historical };
     assert.ok(url.endsWith("/jobs"));
     submitted.push(JSON.parse(options.body));
-    return { ok: true, json: async () => ({ id: `new-${submitted.length}`, mode: submitted.at(-1).mode, status: "running", stage: "started" }) };
+    return { ok: true, json: async () => ({ id: `new-${submitted.length}`, mode: submitted.at(-1).mode, instruction: submitted.at(-1).instruction, status: "running", stage: "started" }) };
   });
   const storage = { preferences: { token: "secret", mode: "style" }, selection: { id: "current", image: "current-image", sourceUrl: "https://example.com/current", capture: "original" } };
   chrome.storage.local.get = async () => storage;
   chrome.storage.local.set = async (value) => Object.assign(storage, value);
   const sender = { id: "test", frameId: 0, url: "https://www.pinterest.com/", tab: { id: 4, windowId: 1 } };
   const send = (message) => new Promise(resolve => handlers.message(message, sender, resolve));
-  const current = await send({ type: "alchemy:start", id: "current", mode: "recreate" });
+  const current = await send({ type: "alchemy:start", id: "current", mode: "recreate", instruction: "保留构图，移除文字" });
   assert.equal(current.value.job.mode, "recreate");
   assert.equal(submitted[0].image, "current-image");
   assert.equal(submitted[0].mode, "recreate");
+  assert.equal(submitted[0].instruction, "保留构图，移除文字");
+  assert.equal(storage.selection.instruction, "保留构图，移除文字");
   assert.equal(storage.selection.jobId, "new-1");
   const restored = await send({ type: "alchemy:reference", id: oldJob });
   assert.equal(restored.value.image, "historical-image");
@@ -331,10 +333,18 @@ test("reruns the current or historical image with the explicitly selected mode",
   assert.equal(storage.selection.reenact.subjectImage, "style-subject");
   assert.match((await send({ type: "alchemy:start", id: storage.selection.id, mode: "style", reenact: { basePrompt: "missing subject" } })).error, /主体图/);
   assert.equal(submitted.length, 4);
-  await send({ type: "alchemy:start", id: storage.selection.id, mode: "style" });
+  await send({ type: "alchemy:start", id: storage.selection.id, mode: "style", instruction: "只提取配色" });
+  assert.equal(submitted[4].instruction, "只提取配色");
+  assert.equal(storage.selection.instruction, "只提取配色");
   assert.equal(submitted[4].reenact, undefined, "generic extraction must not receive stale subject inputs");
   assert.equal(storage.selection.reenact, undefined);
   await send({ type: "alchemy:start", id: storage.selection.id, mode: "recreate", reenact: transfer });
+  assert.equal(submitted[5].instruction, undefined, "omitting instructions must not reuse the previous path's instruction");
+  for (const mode of ["style", "recreate", "reenact", "multi-reenact"]) {
+    for (const instruction of [null, 42, {}, "x".repeat(20001)])
+      assert.match((await send({ type: "alchemy:start", id: storage.selection.id, mode, instruction })).error, /任务指令/);
+  }
+  assert.equal(submitted.length, 6, "invalid instructions must not reach the bridge");
   assert.equal(submitted[5].reenact, undefined, "recreation uses only the reference even if subject inputs are supplied");
 });
 

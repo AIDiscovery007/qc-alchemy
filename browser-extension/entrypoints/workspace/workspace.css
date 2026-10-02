@@ -46,8 +46,8 @@
 .workspace-app .step-title { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom: 16px; }
 .workspace-app .step-title h2 { font-size: 13px;display:flex;align-items:center;gap: 9px; }
 .workspace-app .step-index { display:grid;place-items:center;width:19px;height:19px;border: 0;border-radius:50%;font-size:10px;font-weight:400; background: var(--surface-muted); color: var(--muted); }
-.workspace-app .reenact-form > .prompt-label { margin:15px 0 7px;display:block;font-size:10px;font-weight:600; }
-.workspace-app .reenact-form > textarea { width:100%;padding:10px 12px;resize:vertical;min-height:65px;line-height:1.7;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;font-weight:400; }
+.workspace-app .task-instruction > label { margin:15px 0 7px;display:block;font-size:10px;font-weight:600; }
+.workspace-app .task-instruction > textarea { width:100%;padding:10px 12px;resize:vertical;min-height:65px;line-height:1.7;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;font-weight:400; }
 .workspace-app .button-row { display:flex;align-items:center;gap:8px;margin-top:12px; }
 .workspace-app .button-row .outline-button { flex:1;border-color: transparent;background: var(--surface-muted);font-weight:600;min-height:38px; }
 .workspace-app .text-link { padding:0;border:0;background:none;font-size:10px;text-decoration:underline;text-underline-offset:3px;white-space:nowrap; }

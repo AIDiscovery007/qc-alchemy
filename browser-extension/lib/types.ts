@@ -17,6 +17,7 @@ export type Selection = {
   stage?: string;
   error?: string;
   jobId?: string;
+  instruction?: string;
   reenact?: SubjectInput; // Shared two-image input; retain the saved field name.
   subjectError?: string;
   generationSubjectImage?: string;
@@ -36,6 +37,7 @@ export type Job = {
   imageAsset?: string;
   subjectAsset?: string;
   mode: Mode;
+  instruction?: string;
   status: "running" | "completed" | "failed" | "cancelled";
   stage: string;
   createdAt: string;

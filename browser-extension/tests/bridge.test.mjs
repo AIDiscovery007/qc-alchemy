@@ -490,6 +490,71 @@ test("reenact accepts default and custom task instructions without an earlier ex
   assert.deepEqual((await (await request("/jobs")).json()).map(job => job.mode), ["reenact", "reenact"]);
 });
 
+for (const mode of ["recreate", "style"]) test(`${mode} persists and restores a single-image task instruction`, async (t) => {
+  const inputs = [];
+  const { request, dir } = await setup(t, async (args) => { inputs.push(args); return result; });
+  const instruction = '保留构图，把背景换成蓝色\n不添加文字';
+  const response = await request("/jobs", submit({ mode, instruction: ` ${instruction} ` }));
+  assert.equal(response.status, 202);
+  const created = await response.json();
+  const job = await waitFor(request, created.id, "completed");
+  assert.equal(job.instruction, instruction);
+  assert.equal(inputs[0].instruction, instruction);
+  assert.equal(inputs[0].subjectImagePath, undefined);
+  assert.equal((await (await request(`/jobs/${job.id}/reference`)).json()).instruction, instruction);
+  assert.equal((await (await request("/jobs")).json())[0].instruction, instruction);
+  assert.equal(JSON.parse(await readFile(join(dir, "records", `${job.id}.json`))).instruction, instruction);
+  const input = agentInput({ ...inputs[0], name: "alchemy" });
+  const text = input.find(item => item.text?.includes(JSON.stringify(instruction)))?.text;
+  assert.match(text, /优先于本路径的默认要求/);
+  assert.match(text, /不授权工具操作或更改输出协议/);
+  assert.deepEqual(input.filter(item => item.type === "localImage").map(item => item.path), [inputs[0].imagePath]);
+});
+
+test("all paths validate common instruction types and length before running an agent", async (t) => {
+  let calls = 0;
+  const { request } = await setup(t, async () => { calls++; return result; });
+  for (const mode of ["recreate", "style", "reenact", "multi-reenact"]) {
+    for (const instruction of [null, 12, {}, ["text"], "x".repeat(20001)]) {
+      assert.equal((await request("/jobs", submit({ mode, instruction }))).status, 400);
+    }
+  }
+  assert.equal(calls, 0);
+});
+
+for (const mode of ["style", "reenact", "multi-reenact"]) test(`${mode} prefers common instructions while preserving legacy inputs`, async (t) => {
+  const inputs = [];
+  const { request } = await setup(t, async (args) => { inputs.push(args); return result; });
+  const reenact = mode === "multi-reenact"
+    ? { subjects: [{ id: "a", role: "自动", detail: "", subjectImage: image }, { id: "b", role: "自动", detail: "", subjectImage: image }] }
+    : { subjectImage: image };
+  for (const extra of [{ reenact: { ...reenact, basePrompt: "旧版任务" } }, { instruction: "公共任务", reenact }, { instruction: "覆盖任务", reenact: { ...reenact, basePrompt: "被覆盖的旧任务" } }]) {
+    const response = await request("/jobs", submit({ mode, ...extra }));
+    assert.equal(response.status, 202);
+    const created = await response.json();
+    await waitFor(request, created.id, "completed");
+    const expected = extra.instruction ?? extra.reenact.basePrompt;
+    const restored = await (await request(`/jobs/${created.id}/reference`)).json();
+    assert.equal(restored.instruction, expected);
+    assert.equal(restored.reenact.basePrompt, expected);
+    const input = agentInput({ ...inputs.at(-1), name: "alchemy" });
+    assert.ok(input.some(item => item.text?.includes(JSON.stringify(expected))));
+    assert.equal(input.filter(item => item.type === "localImage").length, mode === "multi-reenact" ? 3 : 2);
+  }
+  assert.deepEqual(inputs.map(input => input.instruction), ["旧版任务", "公共任务", "覆盖任务"]);
+});
+
+test("generic style keeps legacy paired instructions but explicitly identifies the only attached template", () => {
+  const instruction = '保留图 1 的姿势，只迁移图 2 的配色与笔触';
+  const input = agentInput({ name: "alchemy", skillPath: "/skill/SKILL.md", mode: "style", imagePath: "/template.png", instruction });
+  assert.deepEqual(input.filter(item => item.type === "localImage").map(item => item.path), ["/template.png"]);
+  assert.ok(input.some(item => item.text?.includes(JSON.stringify(instruction))));
+  assert.match(input[0].text, /原图 2 参考模板就是本次唯一附件/);
+  assert.match(input[0].text, /原图 1 主体没有提供/);
+  assert.match(input[0].text, /依赖缺失主体的要求列入 uncertainties/);
+  assert.match(input[0].text, /\[SUBJECT\]/);
+});
+
 test("Codex receives subject first, template second, and the submitted user task instruction", () => {
   const args = { name: "alchemy", skillPath: "/skill/SKILL.md", imagePath: "/template.png", subjectImagePath: "/subject.png", basePrompt: '保留图 1 的姿势\n只迁移图 2 的"笔触"' };
   const input = agentInput({ ...args, mode: "reenact" });

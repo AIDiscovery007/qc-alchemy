@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { withCodex } from "../bridge/codex-rpc.mjs";
 import { runAgent, runCodex } from "../bridge/agent.mjs";
 import { readModelCatalog } from "../bridge/models.mjs";
+import { runGeneration } from "../bridge/generation.mjs";
 
 async function fakeCodex(t, turnCode) {
   const dir = await mkdtemp(join(tmpdir(), "alchemy-inspection-rpc-"));
@@ -35,9 +36,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
 });
 `, { mode: 0o700 });
   const previous = process.env.CODEX_BIN;
+  const previousPersistence = process.env.ALCHEMY_PERSIST_CODEX_SESSIONS;
+  delete process.env.ALCHEMY_PERSIST_CODEX_SESSIONS;
   process.env.CODEX_BIN = file;
   t.after(async () => {
     if (previous === undefined) delete process.env.CODEX_BIN; else process.env.CODEX_BIN = previous;
+    if (previousPersistence === undefined) delete process.env.ALCHEMY_PERSIST_CODEX_SESSIONS; else process.env.ALCHEMY_PERSIST_CODEX_SESSIONS = previousPersistence;
     await rm(dir, { recursive: true, force: true });
   });
   return { dir, calls: async () => (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse) };
@@ -46,6 +50,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
 test("runAgent registers input-scoped inspection and RPC delivers actual ordered image pixels and recoverable tool errors", async t => {
   const { dir, calls } = await fakeCodex(t, `
     expectedReplies = 3;
+    send({method:'item/started',params:{threadId:'other',item:{type:'dynamicToolCall',tool:'alchemy_inspect_image',arguments:{image:99}}}});
+    send({method:'item/started',params:{threadId:'test',item:{type:'dynamicToolCall',tool:'alchemy_inspect_image',arguments:{image:1}}}});
+    send({method:'item/started',params:{threadId:'test',item:{type:'dynamicToolCall',tool:'alchemy_inspect_image',arguments:{image:2,bbox:{x:0,y:0,width:1,height:1},scale:3}}}});
+    send({method:'item/completed',params:{threadId:'test',item:{type:'dynamicToolCall',tool:'alchemy_inspect_image',success:false,contentItems:[{type:'inputText',text:'invalid bbox'}]}}});
     send({id:'bad',method:'item/tool/call',params:{threadId:'test',turnId:'t',callId:'bad',tool:'alchemy_inspect_image',arguments:{image:3}}});
     send({id:'first',method:'item/tool/call',params:{threadId:'test',turnId:'t',callId:'first',tool:'alchemy_inspect_image',arguments:{image:1,bbox:{x:0,y:0,width:1,height:1},scale:2}}});
     send({id:'last',method:'item/tool/call',params:{threadId:'test',turnId:'t',callId:'last',tool:'alchemy_inspect_image',arguments:{image:2}}});
@@ -58,13 +66,19 @@ test("runAgent registers input-scoped inspection and RPC delivers actual ordered
   await sharp({ create: { width: 1, height: 1, channels: 3, background: "blue" } }).png().toFile(imagePath);
   const catalog = await readModelCatalog(dir);
   const modelSettings = { ...catalog.models[0], accountKey: catalog.accountKey, provider: catalog.provider };
-  const result = await runAgent({ mode: "reenact", imagePath, subjectImagePath, basePrompt: "保留主体", skillPath, cwd: dir, modelSettings });
+  const stages = [];
+  const result = await runAgent({ mode: "reenact", imagePath, subjectImagePath, basePrompt: "保留主体", skillPath, cwd: dir, modelSettings, onProgress: ({ stage }) => stages.push(stage) });
   assert.equal(result.promptEn, "cat");
+  assert.ok(stages.includes("正在查看图 1整体…"));
+  assert.ok(stages.includes("正在检查图 2局部 · 目标放大 3 倍…"));
+  assert.ok(stages.includes("图片检查失败：invalid bbox"));
+  assert.ok(stages.every(stage => !stage.includes("99")));
   const messages = await calls();
   assert.equal(messages.filter(m => m.method === "initialize").at(-1).params.capabilities.experimentalApi, true);
   const start = messages.find(m => m.method === "thread/start").params;
   assert.equal(start.sandbox, "read-only");
   assert.equal(start.approvalPolicy, "never");
+  assert.equal(start.ephemeral, true);
   assert.deepEqual(start.dynamicTools.map(s => [s.name, s.type, s.inputSchema.properties.image.maximum]), [["alchemy_inspect_image", "function", 2]]);
   assert.equal(messages.find(m => m.id === "bad").result.success, false);
   for (const [id, rgb] of [["first", [255, 0, 0]], ["last", [0, 0, 255]]]) {
@@ -86,6 +100,52 @@ test("generation and probe never register inspection or opt into experimental to
   const messages = await calls();
   assert.ok(messages.filter(m => m.method === "initialize").every(m => m.params.capabilities === undefined));
   assert.ok(messages.filter(m => m.method === "thread/start").every(m => m.params.dynamicTools === undefined && m.params.sandbox === "read-only" && m.params.approvalPolicy === "never"));
+  assert.ok(messages.filter(m => m.method === "thread/start").every(m => m.params.ephemeral === true));
+});
+
+test("explicit session debugging keeps task history but model probes remain ephemeral", async t => {
+  const { dir, calls } = await fakeCodex(t, "done();");
+  const catalog = await readModelCatalog(dir);
+  const modelSettings = { ...catalog.models[0], accountKey: catalog.accountKey, provider: catalog.provider };
+  process.env.ALCHEMY_PERSIST_CODEX_SESSIONS = "1";
+  for (const options of [{}, { generation: true }, { probe: true }])
+    await runCodex({ cwd: dir, input: [], modelSettings, ...options });
+  assert.deepEqual((await calls()).filter(m => m.method === "thread/start").map(m => m.params.ephemeral), [false, false, true]);
+});
+
+for (const source of ["base64", "savedPath"]) test(`ephemeral generation returns real image bytes from ${source} without reading thread history`, async t => {
+  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+  const { dir, calls } = await fakeCodex(t, `
+    if (!start.ephemeral) throw Error('expected ephemeral thread');
+    send({method:'item/completed',params:{threadId:'test',item:{type:'imageGeneration',status:'completed',
+      ${source === "savedPath" ? "savedPath:process.env.CODEX_HOME+'/generated_images/test.png'" : `result:${JSON.stringify(png.toString("base64"))}`}
+    }}});
+    done();
+  `);
+  const previousHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = dir;
+  t.after(() => { if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome; });
+  await mkdir(join(dir, "generated_images"));
+  await writeFile(join(dir, "generated_images/test.png"), png);
+  const skillPath = join(dir, "SKILL.md");
+  await writeFile(skillPath, "---\nname: imagegen\n---\nTest");
+  const catalog = await readModelCatalog(dir);
+  const modelSettings = { ...catalog.models[0], accountKey: catalog.accountKey, provider: catalog.provider };
+  const result = await runGeneration({ prompt: "red square", skillPath, cwd: dir, modelSettings });
+  assert.deepEqual(result.bytes, png);
+  assert.equal(result.extension, "png");
+  assert.ok((await calls()).every(m => !["thread/read", "thread/resume"].includes(m.method)));
+});
+
+for (const outcome of ["failed", "cancelled"]) test(`a ${outcome} task does not fall back to a persistent thread`, async t => {
+  const { dir, calls } = await fakeCodex(t, `send({method:'turn/completed',params:{threadId:'test',turn:{status:'failed',error:{message:'test failure'}}}});`);
+  const catalog = await readModelCatalog(dir);
+  const modelSettings = { ...catalog.models[0], accountKey: catalog.accountKey, provider: catalog.provider };
+  const controller = new AbortController();
+  await assert.rejects(runCodex({ cwd: dir, input: [], modelSettings, signal: controller.signal,
+    onProgress: ({ threadId }) => { if (threadId && outcome === "cancelled") controller.abort(); },
+  }), outcome === "cancelled" ? /取消/ : /test failure/);
+  assert.deepEqual((await calls()).filter(m => m.method === "thread/start").map(m => m.params.ephemeral), [true]);
 });
 
 for (const [label, method, params] of [

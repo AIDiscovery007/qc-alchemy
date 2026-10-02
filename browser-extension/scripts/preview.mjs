@@ -238,7 +238,7 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:start') {
             const project=projects.find(p=>p.id===message.projectId);
-            const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',reenact:message.reenact?structuredClone(message.reenact):undefined};
+            const next={id:'preview-'+Date.now(),projectId:project.id,mode:message.mode,status:'running',stage:'正在逆向…',createdAt:new Date().toISOString(),sourceUrl:project.sourceUrl,capture:'original',instruction:message.instruction,reenact:message.reenact?structuredClone(message.reenact):undefined};
             project.jobs.unshift(next);touch(project);data.selection={...selection(project),jobId:next.id,reenact:structuredClone(message.reenact)};
             setTimeout(()=>{if(next.status==='running'){next.status='completed';next.stage='逆向完成';next.result={...${JSON.stringify(result)},title:message.mode+' 新提示词',promptZh:'当前路径 '+message.mode+' 的独立提示词',promptEn:'Use the supplied subjects and reference template.'};touch(project);}},1500);
             return {ok:true,value:{selection:data.selection,job:structuredClone(next)}};

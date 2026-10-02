@@ -127,7 +127,7 @@ export default defineBackground(() => {
     if (typeof id !== "string" || !/^[\da-f]{64}$/.test(id)) throw new Error("无效项目");
     return bridge<Selection>(`/projects/${id}/reference`, token);
   };
-  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: SubjectInput, projectId?: string) => {
+  const start = async (id: string, mode: Mode, referenceJobId?: string, reenact?: SubjectInput, projectId?: string, instruction?: string) => {
     if (selecting) throw new Error("正在处理图片，请稍候");
     selecting = true;
     try {
@@ -135,7 +135,9 @@ export default defineBackground(() => {
         "preferences",
         "selection",
       ])) as { preferences?: Preferences; selection?: Selection };
+      if (instruction !== undefined && (typeof instruction !== "string" || instruction.length > 20000)) throw new Error("任务指令最多 20000 字符");
       if (!modes.includes(mode)) throw new Error("无效模式");
+      if (reenact && instruction !== undefined) reenact = { ...reenact, basePrompt: instruction };
       if ((mode === "reenact" || (mode === "style" && reenact !== undefined)) && (typeof reenact?.subjectImage !== "string" || !reenact.subjectImage || typeof reenact.basePrompt !== "string" || !reenact.basePrompt.trim()))
         throw new Error("请上传主体图并填写任务指令");
       if (mode === "multi-reenact" && (!validSubjects(reenact?.subjects) || typeof reenact?.basePrompt !== "string" || !reenact.basePrompt.trim() || reenact.basePrompt.length > 20000))
@@ -151,10 +153,11 @@ export default defineBackground(() => {
         mode,
         sourceUrl: selection.sourceUrl,
         capture: selection.capture,
+        instruction,
         projectId: selection.projectId,
         reenact: mode !== "recreate" ? reenact : undefined,
       });
-      const next = { ...selection, projectId: job.projectId || selection.projectId, jobId: job.id, stage: job.stage, error: undefined,
+      const next = { ...selection, projectId: job.projectId || selection.projectId, jobId: job.id, stage: job.stage, error: undefined, instruction: job.instruction,
         reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined, generationSubjectImage: undefined, generationSubjects: undefined };
       if (!projectId || stored.selection?.projectId === projectId)
         await browser.storage.local.set({ selection: mode === "multi-reenact" ? { ...next, reenact: { basePrompt: reenact!.basePrompt } } : next });
@@ -363,7 +366,7 @@ export default defineBackground(() => {
           : bridge(`${path}/${message.generationId}/cancel`, token, {});
       }
       case "alchemy:start":
-        return start(message.id, message.mode, message.referenceJobId, message.reenact, message.projectId);
+        return start(message.id, message.mode, message.referenceJobId, message.reenact, message.projectId, message.instruction);
     }
   };
   browser.runtime.onMessage.addListener((message, sender, reply) => {

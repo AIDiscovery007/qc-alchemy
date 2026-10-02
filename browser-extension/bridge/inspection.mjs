@@ -1,6 +1,32 @@
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 
+// Included verbatim in the tool instructions so code-mode callers need not guess the return shape.
+export function showInspection(result, text, image) {
+  if (typeof result === "string") {
+    const start = result.indexOf("data:image/");
+    if (start < 0) { text(result); return; }
+    const url = result.slice(start).trim();
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(url)) throw new Error("Invalid inspection image payload; do not print it as text.");
+    if (start) text(result.slice(0, start).trim());
+    image(url);
+  } else if (Array.isArray(result)) {
+    for (const item of result) showInspection(item, text, image);
+  } else if (result?.contentItems || result?.content) {
+    showInspection(result.contentItems || result.content, text, image);
+  } else if (result?.type === "inputImage") {
+    image(result.imageUrl);
+  } else if (result?.type === "input_image") {
+    image(result.image_url);
+  } else if (result?.type === "image") {
+    image(result);
+  } else if (["inputText", "input_text", "text"].includes(result?.type)) {
+    showInspection(result.text, text, image);
+  } else {
+    throw new Error("Unknown inspection result shape; do not dump image data as text.");
+  }
+}
+
 // Paths come only from the actual localImage input list, never tool arguments.
 export function createImageInspection(imagePaths) {
   const paths = [...imagePaths];
@@ -8,7 +34,11 @@ export function createImageInspection(imagePaths) {
     spec: {
       type: "function",
       name: "alchemy_inspect_image",
-      description: "Read an input image or crop and magnify a detail. First inspect each image without bbox to learn its oriented dimensions. Then inspect key regions using bbox in those original oriented pixels, never preview pixels. Returns actual PNG pixels and metadata. Optional sample reports original ROI sRGB statistics, not semantic colour labels. Nearest-neighbour enlargement reveals existing pixels only; it cannot recover missing detail. Read-only, no files or network.",
+      description: `Read an input image or crop and magnify a detail. First inspect each image without bbox to learn its oriented dimensions. Then inspect key regions using bbox in those original oriented pixels, never preview pixels. Returns actual PNG pixels and metadata. Optional sample reports original ROI sRGB statistics, not semantic colour labels. Nearest-neighbour enlargement reveals existing pixels only; it cannot recover missing detail. Read-only, no files or network.
+When called via functions.exec, the result may be a STRING containing metadata followed by a PNG data URL, or structured image blocks. A successful call alone does not display the image. NEVER text(), stringify(), or log the whole result or base64. Use the following tested helper in each exec cell, passing the exec text and image helpers. It displays both supported return formats without another inspection call:
+${showInspection.toString()}
+showInspection(await tools.alchemy_inspect_image({image: 1}), text, image);
+Retain the result in the current cell if display handling fails; repair the display without calling the image tool again. Batch independent regions when useful; revisit images only for a visual question or the final whole-image check.`,
       inputSchema: {
         type: "object", additionalProperties: false,
         properties: {

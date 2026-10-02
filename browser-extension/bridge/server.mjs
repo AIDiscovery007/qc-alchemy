@@ -592,7 +592,7 @@ export async function createBridge({
               subjectError = error.message;
             }
           }
-          json(200, { id: job.id, jobId: job.id, projectId: job.projectId, image, sourceUrl: job.sourceUrl, capture: job.capture, reenact, subjectError, generationSubjectImage });
+          json(200, { id: job.id, jobId: job.id, projectId: job.projectId, image, sourceUrl: job.sourceUrl, capture: job.capture, instruction: job.instruction ?? job.reenact?.basePrompt, reenact, subjectError, generationSubjectImage });
           return;
         }
         if (req.method === "POST" && idMatch[2] === "/cancel") {
@@ -616,20 +616,23 @@ export async function createBridge({
       if (models.busy) throw bad("正在验证模型，请稍候", 409);
       const body = await readBody(req);
       if (!["style", "recreate", "reenact", "multi-reenact"].includes(body.mode)) throw bad("无效逆向模式");
+      const submittedInstruction = body.instruction ?? body.reenact?.basePrompt;
+      if (body.instruction === null || (submittedInstruction !== undefined && typeof submittedInstruction !== "string")) throw bad("任务指令必须是文本");
+      if (submittedInstruction?.length > 20000) throw bad("任务指令最多 20000 字符");
+      const instruction = submittedInstruction?.trim();
       const { bytes, extension } = decodeImage(body.image);
       const projectId = projectIdFor(bytes);
       if (body.projectId !== undefined && body.projectId !== projectId) throw bad("参考图与项目不一致，请重新选择项目");
       let subject, reenact, decodedSubjects;
       const multi = body.mode === "multi-reenact";
       if (multi) {
-        if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim() || body.reenact.basePrompt.length > 20000)
+        if (!body.reenact || !instruction)
           throw bad("多图重演需要任务指令，最多 20000 字符");
         decodedSubjects = decodeSubjects(body.reenact.subjects, bytes.length);
-        reenact = { basePrompt: body.reenact.basePrompt.trim() };
+        reenact = { basePrompt: instruction };
       } else if (body.mode === "reenact" || (body.mode === "style" && body.reenact !== undefined)) {
-        if (!body.reenact || typeof body.reenact.basePrompt !== "string" || !body.reenact.basePrompt.trim())
+        if (!body.reenact || !instruction)
           throw bad("双图任务需要主体图和任务指令");
-        if (body.reenact.basePrompt.length > 20000) throw bad("任务指令最多 20000 字符");
         subject = decodeImage(body.reenact.subjectImage);
         // Keep the paired images within the extension's storage quota.
         if (bytes.length > 4 * 1024 * 1024 || subject.bytes.length > 2 * 1024 * 1024)
@@ -641,7 +644,7 @@ export async function createBridge({
           if (!bytes.equals(decodeImage(await storedImage(source)).bytes))
             throw bad("参考图与 Prompt 的来源不一致，请重新选择历史记录");
         }
-        reenact = { basePrompt: body.reenact.basePrompt.trim(), ...(promptSourceJobId ? { promptSourceJobId } : {}) };
+        reenact = { basePrompt: instruction, ...(promptSourceJobId ? { promptSourceJobId } : {}) };
       }
       try {
         await readFile(skillPath);
@@ -671,6 +674,7 @@ export async function createBridge({
         createdAt: new Date().toISOString(),
         sourceUrl,
         capture: body.capture === "screenshot" ? "screenshot" : "original",
+        ...(instruction !== undefined ? { instruction } : {}),
         ...(reenact ? { reenact } : {}),
       };
       try {
@@ -689,6 +693,7 @@ export async function createBridge({
             subjectImagePaths: reenact?.subjects?.map((item) => images.path(item.subjectAsset)),
             subjects: reenact?.subjects,
             basePrompt: reenact?.basePrompt,
+            instruction: job.instruction,
             mode: job.mode,
             skillPath,
             cwd: root,

@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { normalizeImage } from "../../lib/image";
 import type { MultiSubject, SubjectInput } from "../../lib/types";
 import Icon from "./Icon";
+import TaskInstruction from "./TaskInstruction";
 import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
 import { ImagePreviewButton } from "./ImagePreview";
-
-export const multiInstruction = "将各主体融合在同一画面中，重演参考模板的画风、构图、姿态与光影，保留每张主体图指定的特征。";
 
 export default function MultiSubjectForm({ image, subjects, instruction, active, disabled, status, submitting, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
   image?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
@@ -79,8 +78,7 @@ export default function MultiSubjectForm({ image, subjects, instruction, active,
       </div></div>}
     </div>
     {error && <p className="error" role="alert">{error}</p>}
-    <label className="instruction-label" htmlFor="multi-instruction">任务指令</label>
-    <textarea id="multi-instruction" rows={3} maxLength={20000} disabled={locked} value={instruction} placeholder="描述这些主体如何出现在同一画面…" onChange={event => onInstruction(event.target.value)} />
+    <TaskInstruction value={instruction} disabled={locked} onChange={onInstruction} />
     <AsyncAction className="multi-reverse" status={uploading ? "正在读取主体图…" : status} onCancel={onCancel} cancelling={submitting}>
       <button className="outline-button" disabled={locked || !image || subjects.length < 2 || subjects.some(item => !item.subjectImage) || !instruction.trim()} onClick={() => onSubmit({ subjects, basePrompt: instruction })}><Icon name="edit" />{hasPrompt ? "重新逆向提示词" : "逆向提示词"}</button>
     </AsyncAction>

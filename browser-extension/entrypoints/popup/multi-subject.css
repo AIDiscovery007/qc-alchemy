@@ -15,7 +15,6 @@
 .multi-subject-form .role-fields .select-field > span:first-child { display:none; }
 .multi-subject-form .role-fields select { height:40px;background:var(--paper);font-size:11px; }
 .multi-subject-form .role-fields input { min-width:0;width:100%;padding:7px 0 2px;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:10px;border-radius:0; }
-.multi-subject-form .instruction-label { display:block;margin:20px 0 8px;font-size:11px;font-weight:600; }
 .multi-subject-form .composition-layout .template-card { position:relative; }
 .multi-subject-form .composition-layout .template-replace { height:230px;background:#e9e4d9; }
 .multi-subject-form .composition-layout .template-card > span { position:absolute;left:10px;bottom:10px;border: 0;border-radius:5px;background:var(--surface);padding:3px 9px;font-size:10px; }
@@ -35,7 +34,6 @@
 .multi-subject-form .template-replace:disabled { opacity:1; }
 .multi-subject-form .template-replace:disabled .replace-label { display:none; }
 .multi-subject-form .add-subject { min-height:66px;border: 0;border-radius:10px;background: var(--surface-muted);color:var(--muted);font-size:11px; }
-.multi-subject-form > textarea { width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);resize:vertical;line-height:1.8;font-size:12px; }
 .multi-subject-form .multi-reverse { margin-top:10px; }
 .multi-subject-form .multi-reverse button { width:100%;min-height:38px;border: 1px solid transparent;border-radius:7px;background: var(--surface-muted);font-size:11px; }
 .multi-subject-form .input-status,.multi-subject-count { color:var(--muted);font-size:10px; }

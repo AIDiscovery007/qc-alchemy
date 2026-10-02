@@ -84,11 +84,11 @@ p { margin: 8px 0 14px; }
 .file-picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .file-picker:has(input:disabled) { color: var(--muted); border-color: var(--line); background: #ece7dc; }
 .file-picker input:disabled { cursor: not-allowed; }
-.prompt-label { display: block; font-size: 12px; font-weight: 700; margin: 16px 0 8px; }
-.reenact-form textarea, .settings input { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-.reenact-form textarea { display: block; resize: vertical; min-height: 108px; max-height: 420px; padding: 12px; font-size: 12px; line-height: 1.8; }
-.reenact-form textarea::placeholder { color: var(--muted); }
-.reenact-form textarea:disabled { background: #f0ece3; }
+.task-instruction > label { display: block; font-size: 12px; font-weight: 700; margin: 16px 0 8px; }
+.task-instruction textarea, .settings input { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.task-instruction textarea { display: block; resize: vertical; min-height: 108px; max-height: 420px; padding: 12px; font-size: 12px; line-height: 1.8; }
+.task-instruction textarea::placeholder { color: var(--muted); }
+.task-instruction textarea:disabled { background: #f0ece3; }
 .primary, .secondary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px; padding: 10px 12px; margin-top: 12px; border: 1px solid transparent; border-radius: 10px; font-size: 12px; font-weight: 600; line-height: 1.6; }
 .primary { background: var(--yellow); box-shadow: none; }
 .secondary { background: var(--surface-muted); }

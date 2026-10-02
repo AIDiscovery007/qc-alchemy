@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import TaskInstruction from "./TaskInstruction";
 import AsyncAction from "./AsyncAction";
 import ImageInput from "../workspace/ImageInput";
 import ImagePreview from "./ImagePreview";
 import { normalizeImage } from "../../lib/image";
 import type { Job, SubjectInput, Selection } from "../../lib/types";
 
-const defaultPrompts = {
-  style: "以图 1 为主体原图，保留其主体身份、内容、姿态、表情、服饰、构图与背景结构，仅迁移图 2 的配色、光影、笔触和材质表现，生成风格转换提示词。",
-  reenact: "以图 1 为主体，以图 2 为风格参考模板，生成基于图 1 的风格转换与主体重演提示词。",
-};
-
 export default function SubjectForm({ mode, selection, job, active, disabled, submitting, subjectImage, onSubjectChange, onSubmit, onExtract, onSwap, onReferenceRotate, instruction, onInstructionChange, status, onCancel, workspace = false }: {
   workspace?: boolean;
   status?: string;
   onCancel?: () => void;
-  instruction?: string;
-  onInstructionChange?: (value: string) => void;
+  instruction: string;
+  onInstructionChange: (value: string) => void;
   mode: "style" | "reenact";
   selection: Selection;
   job?: Job;
@@ -31,18 +27,10 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
   onReferenceRotate(image: string, instruction: string): Promise<void>;
 }) {
   const style = mode === "style";
-  const defaultPrompt = defaultPrompts[mode];
-  const [basePrompt, setBasePrompt] = useState(instruction ?? defaultPrompt);
+  const basePrompt = instruction;
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
-  const promptEdited = useRef(false);
   const uploadRevision = useRef(0);
-  const saved = job?.mode === mode ? selection.reenact || job.reenact : undefined;
-  const originalPrompt = saved?.basePrompt ?? defaultPrompt;
-
-  useEffect(() => {
-    if (!promptEdited.current) setBasePrompt(instruction ?? originalPrompt);
-  }, [originalPrompt, instruction]);
   useEffect(() => () => { uploadRevision.current++; }, []);
 
   const upload = async (file?: File) => {
@@ -93,10 +81,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
       </div>
       {error && <div className="error" role="alert">{error}</div>}
       {selection.subjectError && !subjectImage && <p className="fine">{selection.subjectError}</p>}
-      <label className="prompt-label" htmlFor={`${mode}-prompt`}>任务指令</label>
-      <textarea id={`${mode}-prompt`} rows={workspace ? 2 : 4} maxLength={20000} value={basePrompt} disabled={disabled}
-        placeholder="描述你想怎样结合两张图，例如：保留图 1 的姿势，只迁移图 2 的配色与笔触。"
-        onChange={(e) => { promptEdited.current = true; setBasePrompt(e.target.value); onInstructionChange?.(e.target.value); }} />
+      <TaskInstruction value={basePrompt} disabled={disabled} onChange={onInstructionChange} />
       <div className={workspace ? "button-row" : undefined}>
       <AsyncAction status={status} onCancel={onCancel} cancelling={submitting}>
       <button className={workspace ? "outline-button" : "primary"} disabled={disabled || uploading || !selection.image || !subjectImage || !basePrompt.trim()} aria-busy={submitting}
@@ -106,7 +91,7 @@ export default function SubjectForm({ mode, selection, job, active, disabled, su
       </button>
       </AsyncAction>
       {onExtract && <button className={workspace ? "text-link" : "secondary"} disabled={disabled} onClick={onExtract}
-        title="仅分析参考图，不使用主体图和任务指令">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
+        title="按任务指令提取参考图的通用风格，不使用主体图">{workspace ? "仅提取通用风格" : "仅用图 2 提取通用风格"}</button>}
       </div>
       {subjectImage && !basePrompt.trim() && <p className="fine" role="status">填写任务指令后可生成提示词。</p>}
     </section>

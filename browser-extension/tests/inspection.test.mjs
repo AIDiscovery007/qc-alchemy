@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
+import { runInNewContext } from "node:vm";
 import { createImageInspection } from "../bridge/inspection.mjs";
 
 async function fixture(t, bytes) {
@@ -15,6 +16,34 @@ async function fixture(t, bytes) {
 }
 const decode = result => Buffer.from(result.contentItems.find(c => c.type === "inputImage").imageUrl.split(",")[1], "base64");
 const info = result => JSON.parse(result.contentItems[0].text);
+
+test("the published exec helper displays flattened and structured results without leaking image bytes into text", async t => {
+  const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+  const { tool } = await fixture(t, bytes);
+  const result = await tool.call({ image: 1 });
+  const metadata = result.contentItems[0].text;
+  const url = result.contentItems[1].imageUrl;
+  const source = tool.spec.description.split("function showInspection")[1].split("\nshowInspection(await")[0];
+  const show = runInNewContext(`(function showInspection${source})`);
+  const block = { type: "image", mimeType: "image/png", data: url.split(",")[1] };
+  for (const [input, expectedImage] of [
+    [`${metadata}\n${url}\n`, url],
+    [result, url],
+    [[{ type: "input_text", text: metadata }, { type: "input_image", image_url: url }], url],
+    [{ content: [{ type: "text", text: metadata }, block] }, block],
+  ]) {
+    const texts = [], images = [];
+    show(input, value => texts.push(value), value => images.push(value));
+    assert.deepEqual(texts, [metadata]);
+    assert.deepEqual(images, [expectedImage]);
+  }
+  const texts = [], images = [];
+  show({ success: false, contentItems: [{ type: "inputText", text: "invalid bbox" }] }, value => texts.push(value), value => images.push(value));
+  assert.deepEqual(texts, ["invalid bbox"]);
+  assert.deepEqual(images, []);
+  for (const input of [{ unknown: url }, `${metadata}\n${url}\ntruncated`])
+    assert.throws(() => show(input, () => assert.fail("must not dump payload"), () => assert.fail("must not display invalid payload")), /payload|shape/);
+});
 
 test("inspection returns actual cropped nearest-neighbour pixels, alpha and honest colour metadata without writing files", async t => {
   const pixels = Buffer.from([255,0,0,255, 0,255,0,255, 0,0,255,128, 255,255,255,255]);

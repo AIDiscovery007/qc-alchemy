@@ -16,7 +16,8 @@ import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection, Multi
 import ProjectHistory from "./ProjectHistory";
 import SubjectForm from "./SubjectForm";
 import MultiInputPreview from "./MultiInputPreview";
-import MultiSubjectForm, { multiInstruction } from "./MultiSubjectForm";
+import TaskInstruction, { defaultInstructions } from "./TaskInstruction";
+import MultiSubjectForm from "./MultiSubjectForm";
 import AsyncAction from "./AsyncAction";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
@@ -96,16 +97,26 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     const saved = savedJob && references[savedJob.id];
     return subjectDrafts[subjectKey(mode)] ?? saved?.generationSubjectImage ?? saved?.reenact?.subjectImage ?? "";
   };
+  const instructionKey = (mode: Mode) => `${subjectKey(mode)}:${modeJob(mode)?.id || "new"}`;
+  const taskInstruction = (mode: Mode) => {
+    const saved = modeJob(mode);
+    return instructions[instructionKey(mode)] ?? saved?.instruction ?? saved?.reenact?.basePrompt ?? defaultInstructions[mode];
+  };
+  const changeInstruction = (mode: Mode, value: string) => {
+    const key = subjectKey(mode), version = modeJob(mode)?.id || "new";
+    setVersions(items => ({ ...items, [key]: version }));
+    setInstructions(items => ({ ...items, [`${key}:${version}`]: value }));
+  };
   const multiJob = modeJob("multi-reenact");
   const multiKey = `${subjectKey("multi-reenact")}:${multiJob?.id || "new"}`;
   const multiReference = multiJob && references[multiJob.id];
   const multiSubjects = multiSubjectDrafts[multiKey] ?? multiReference?.generationSubjects ?? multiReference?.reenact?.subjects ?? [];
-  const multiPrompt = instructions[multiKey] ?? multiReference?.reenact?.basePrompt ?? multiJob?.reenact?.basePrompt ?? multiInstruction;
+  const multiPrompt = taskInstruction("multi-reenact");
   const savedMulti = multiReference?.reenact?.subjects || [];
   const multiStale = !!multiJob?.result && (multiSubjects.length !== savedMulti.length || multiSubjects.some((item, index) => {
     const saved = savedMulti[index];
     return !saved || item.id !== saved.id || item.subjectImage !== saved.subjectImage || item.role !== saved.role || item.detail !== saved.detail;
-  }) || multiPrompt.trim() !== multiJob.reenact?.basePrompt.trim());
+  }) || multiPrompt.trim() !== (multiJob.instruction ?? multiJob.reenact?.basePrompt)?.trim());
   const job = modeJob(preferences.mode);
   const activeJob = job;
   const running = job?.status === "running";
@@ -283,7 +294,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       setVersions(items => ({ ...items, [key]: "new" }));
       if (mode === "multi-reenact") setMultiSubjectDrafts(items => ({ ...items, [`${key}:new`]: multiSubjects }));
       else if (mode !== "recreate") setSubjectDrafts(items => ({ ...items, [key]: subjectImage(mode) }));
-      if (instruction !== undefined) setInstructions(items => ({ ...items, [mode === "multi-reenact" ? `${key}:new` : key]: instruction }));
+      if (instruction !== undefined) setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
       setSelection(next); setError(""); setHistoryOpen(false); setMobilePane("edit");
     } finally { setBusy(false); }
@@ -303,7 +314,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           ? { ...item, subjectImage: subject, role: "自动", detail: "" } : item) }));
         setSwappedSubjectId(subjectId!);
       } else setSubjectDrafts(items => ({ ...items, [key]: subject }));
-      setInstructions(items => ({ ...items, [mode === "multi-reenact" ? `${key}:new` : key]: instruction }));
+      setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
       setSelection(next); setHistoryOpen(false); setMobilePane("edit");
     } catch (e) { setError((e as Error).message || "无法互换图片，请重试"); }
@@ -356,7 +367,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     setError("");
     try {
       const value = await request<{ selection: Selection; job: Job }>({
-        type: "alchemy:start", id: selection.id, projectId: activeProject.id, mode, reenact,
+        type: "alchemy:start", id: selection.id, projectId: activeProject.id, mode, reenact, instruction: taskInstruction(mode),
       });
       selectionRevision.current++;
       setSelection((current) => current?.id === selection.id ? value.selection : current);
@@ -652,8 +663,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             </div>
             {workspace && selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
             {selection?.image && preferences.mode === "recreate" && (
-              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} label="风格参考图" alt="本次选择的参考图片" /></div> : <figure className="image-card">
-                <ImagePreview src={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate") }} alt="本次选择的参考图片" />
+              workspace ? <div className="workspace-inputs single"><ImageInput image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} label="风格参考图" alt="本次选择的参考图片" /></div> : <figure className="image-card">
+                <ImagePreview src={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} alt="本次选择的参考图片" />
                 <figcaption>
                   <span>参考模板</span>
                   {selection.capture === "screenshot" && <span>屏幕截取</span>}
@@ -668,7 +679,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                     {job?.error || selection?.error}
                   </div>
                 )}
-                {selection && preferences.mode === "recreate" && (
+                {selection && preferences.mode === "recreate" && (<>
+                  <TaskInstruction value={taskInstruction("recreate")} disabled={blocked} onChange={value => changeInstruction("recreate", value)} />
                   <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={busy}>
                   <button
                     className={workspace ? "outline-button" : "primary"}
@@ -686,7 +698,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                           : workspace ? result ? "重新逆向提示词" : "逆向提示词" : "生成复刻提示词"}
                   </button>
                   </AsyncAction>
-                )}
+                </>)}
               </>
             )}
 
@@ -695,7 +707,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               const savedReference = savedJob && references[savedJob.id];
               return <SubjectForm workspace={workspace} key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
                 selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
-                instruction={instructions[subjectKey(mode)]} onInstructionChange={(value) => setInstructions(items => ({ ...items, [subjectKey(mode)]: value }))}
+                instruction={taskInstruction(mode)} onInstructionChange={value => changeInstruction(mode, value)}
                 subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
                 active={preferences.mode === mode} disabled={blocked || !selection.image}
                 status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
@@ -708,7 +720,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
               active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
               submitting={busy} hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
               onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
-              onInstruction={value => setInstructions(items => ({ ...items, [multiKey]: value }))}
+              onInstruction={value => changeInstruction("multi-reenact", value)}
               onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
               onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
             {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
