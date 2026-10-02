@@ -1,6 +1,6 @@
-# 用 Codex 安装 QC-Reframe 0.1.24
+# 用 Codex 安装 QC-Reframe 0.1.25
 
-这是供用户及其 Codex 执行的本地安装流程。版本为 `0.1.24`，发行标签为 `v0.1.24`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
+这是供用户及其 Codex 执行的本地安装流程。版本为 `0.1.25`，发行标签为 `v0.1.25`。请完成能够执行的步骤，再集中列出需要用户操作的剩余步骤。
 
 [← 首页](../../README.md) · [功能导览](FEATURES.md) · [使用手册](../README.md)
 
@@ -9,10 +9,10 @@
 在 **Codex 桌面 App 的本地聊天**里复制发送：
 
 ```text
-请帮我安装并启动 QC-Reframe 0.1.24：
+请帮我安装并启动 QC-Reframe 0.1.25：
 https://github.com/AIDiscovery007/qc-reframe
 
-请获取仓库的 v0.1.24 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
+请获取仓库的 v0.1.25 标签，先阅读 browser-extension/docs/INSTALL_WITH_CODEX.md，
 先确认插件实际使用的本机 Codex CLI 已更新到最新版本，再完成环境检查、初始化、构建、本机服务启动和配对准备，
 优先在我的 Codex 内置浏览器里使用。能自动完成的步骤请直接完成。
 需要我登录或在浏览器界面确认加载扩展时，再给我准确的文件路径和最短操作步骤。
@@ -30,7 +30,7 @@ https://github.com/AIDiscovery007/qc-reframe
 优先复用用户已有的同一安装目录；没有时，在用户可写且准备长期保留的位置执行：
 
 ```bash
-git clone --branch v0.1.24 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
+git clone --branch v0.1.25 --single-branch https://github.com/AIDiscovery007/qc-reframe.git
 cd qc-reframe/browser-extension
 ```
 
@@ -60,7 +60,7 @@ npm run status
 
 `start` 在后台运行 bridge，关闭启动终端后仍可使用；它会先验证带配对令牌的 `/health`。重复启动同一版本会复用服务。若端口被其他服务、旧版本或另一份安装占用，会停止启动流程并说明原因，不强行结束别人的进程。不要通过修改端口来绕过冲突，浏览器端默认连接 `43187`。
 
-`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.24"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
+`status` 应显示 `service: "qc-alchemy"`、`version: "0.1.25"`、`ready: true`。这只证明 bridge 与 Alchemy skill 就绪；`doctor` 另检查 CLI 登录。它们不会实际调用模型，因此不代表生图能力已完成实测。
 
 imagegen 默认读取 `$CODEX_HOME/skills/.system/imagegen/SKILL.md`，未设置 `CODEX_HOME` 时读取 `~/.codex/skills/.system/imagegen/SKILL.md`。如果找不到，让 Codex 查找用户实际安装的 imagegen skill 并设置路径；不要创建一个同名空文件充当已安装。缺失 imagegen 不妨碍提示词逆向，但生图不可用。找到 skill 也不代表账户一定支持内置 `image_gen`。
 
@@ -89,7 +89,7 @@ npm run setup
 
 1. 打开 `chrome://extensions`。
 2. 开启开发者模式，选择“加载已解压的扩展程序”。
-3. 选择 `.output/chrome-mv3`，确认列表显示 QC-Reframe **0.1.24**。
+3. 选择 `.output/chrome-mv3`，确认列表显示 QC-Reframe **0.1.25**。
 
 请用户自行确认浏览器展示的权限。安装到 Chrome 与安装到 Codex 内置浏览器是两份独立安装。
 
@@ -106,7 +106,7 @@ npm run pair
 验收分开报告：
 
 - 服务状态：认证的健康检查成功、版本与 skill 就绪。
-- 扩展状态：实际加载 0.1.24，悬停图片后出现 R 标志，点击可展开“立即逆向 / 加入 Reframe / 打开工作台”。
+- 扩展状态：实际加载 0.1.25，悬停图片后出现 R 标志，点击可展开“立即逆向 / 加入 Reframe / 打开工作台”。
 - 配对状态：点击悬浮入口，面板显示连接成功，并能显示选中的参考图。
 
 配对后在「插件模型」选择候选项，点击「验证并使用」才保存。该操作发送一次简短请求，会消耗少量模型额度；用户仅要求安装时，保留为手动步骤并说明尚未验证。
@@ -115,7 +115,9 @@ npm run pair
 
 ## 日常启动、升级和排错
 
-从 v0.1.23 升级到 v0.1.24 需同步更新完整仓库及本机 bridge；任务结束后重启服务、重新加载扩展，再刷新工作台和网页。本次不新增数据迁移，无需重新配对；仅替换 Chrome ZIP 不会更新 bridge 或运行 skill。
+从 v0.1.24 升级到 v0.1.25，本机 bridge、运行 skill 和依赖未变，无需数据迁移或重新配对。更新浏览器端后，重新加载原扩展，再刷新已打开的工作台和网页即可使用新界面。
+
+完整仓库升级仍按下方流程在任务结束后停止、更新并重启服务，使健康检查显示新版本；管理脚本会拒绝复用版本号不同的旧服务。若仅替换本次 Chrome ZIP，可继续使用 v0.1.24 bridge，服务状态仍显示旧版本，不代表扩展未更新。首次安装或从更早版本升级仍需完整仓库，不能仅靠 Chrome ZIP 完成。
 
 - 配对后在「连接设置 → 插件模型」选择模型并点击「验证并使用」。这会发送一次简短请求，消耗少量模型额度；用户仅要求安装时，保留为手动步骤，不自动验证。不要通过修改 Codex 全局模型来修复插件兼容性。
 - `model is not supported when using Codex with a ChatGPT account`：刷新插件模型列表，选择其他模型并验证。CLI 登录成功或目录中出现模型名称，都不等于实际调用成功。切换账号、登录状态或提供方后重新验证。
@@ -126,7 +128,7 @@ npm run pair
 - `doctor` 失败：按输出处理 CLI、登录或 skill；可在明确替换路径后重新运行 `npm run setup`，不会清空项目。
 - 端口冲突：确认服务所属目录；旧版本先停止再启动。不要杀死不明进程或删除 token 来尝试修复。
 - 第一次启动被打断且留下 `.local/runtime/start.lock`：先确认没有启动命令还在执行，再移除该空目录，保留其他 `.local` 文件。
-- 升级：完成任务 → 停止服务 → 获取目标版本 → `npm run setup` → `npm start` → 重新加载浏览器扩展 → 刷新原网页。
+- 升级：完成任务 → 停止服务 → 获取目标版本 → `npm run setup` → `npm start` → 重新加载浏览器扩展 → 刷新工作台和原网页。
 - 网页仍显示旧 logo 或提示扩展失效：重新加载扩展后还需刷新网页。
 - 提示词能生成但图片不能生成：检查 imagegen skill、Codex 账户/模型的内置生图支持及额度，不切换成未经用户配置的模型 API。
 

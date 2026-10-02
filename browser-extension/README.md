@@ -1,8 +1,8 @@
 # QC-Reframe for Chrome
 
-功能概览见 [功能导览](docs/FEATURES.md)。首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.24**。迭代记录见 [更新日志](docs/releases/README.md)。
+功能概览见 [功能导览](docs/FEATURES.md)。首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.25**。迭代记录见 [更新日志](docs/releases/README.md)。
 
-本版变化见 [v0.1.24 更新说明](docs/releases/v0.1.24.md)。从 v0.1.23 升级需更新完整仓库，待任务结束后重启本机 bridge、重新加载扩展，再刷新工作台与网页；本次不新增项目、图片或配对数据迁移，现有记录兼容读取。Chrome ZIP 仅含浏览器端，不含 bridge 和运行 skill。
+本版变化见 [v0.1.25 更新说明](docs/releases/v0.1.25.md)。从 v0.1.24 升级不涉及 bridge、运行技能或依赖变更，无需数据迁移或重新配对。重新加载扩展后刷新工作台与网页即可使用新界面；完整仓库升级按安装指引在任务结束后重启 bridge，使服务版本号同步。Chrome ZIP 仅含浏览器端，不含 bridge 和运行 skill。
 
 开发与后续维护请先阅读 [贡献指南](../Contribution.md) 和 [AGENTS.md](AGENTS.md)。
 
@@ -40,7 +40,7 @@
 
 App 内置和无法确认来源的自定义安装只显示版本及原安装方式的更新指引，不尝试覆盖。CLI 缺失或未登录时仍可通过 `npm start` 启动本机管理服务；首次 `setup` 与 `doctor` 保留严格环境检查。升级命令只由本机服务固定生成，不接受网页传入命令或路径，不使用 sudo。关闭工作台不会取消任务或升级。
 
-本次升级增加了 CLI 上下文校验，原有模型选择需要重新验证一次。外部更新 CLI 后，同路径二进制或 npm 包版本变化也会使旧验证失效。
+模型选择与 CLI 上下文关联；外部更新 CLI 后，同路径二进制或 npm 包版本变化会使旧验证失效，需要重新验证。仅从 v0.1.24 更新至本版不会新增模型验证要求。
 
 ## 先收集，稍后逆向
 
