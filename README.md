@@ -1,51 +1,64 @@
 ![QC-Reframe — 把灵感，变成你的下一张图。](browser-extension/docs/media/hero.svg)
 
-**在 Codex 内置浏览器里选图，用本机 Codex CLI 逆向提示词，再让 Codex 直接生图。**
+**选一张参考图，用你的 Codex 细查逆向，再直接生成图片。**
 
-从单图细查到多图编排，把收集、逆向、生成和本机管理连成一条创作流程。沿用你的 Codex 登录与额度，无需另外填写模型 API Key。
+在浏览器里收集灵感，在本机工作台调整主体、提示词与结果。沿用 Codex 登录和额度，无需另外填写模型 API Key。
 
-**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md)**　 /　 [功能导览](browser-extension/docs/FEATURES.md)　 /　 [效果画廊](browser-extension/docs/gallery/README.md)　 /　 [v0.2.0 · 下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.2.0)
+**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　·　[下载 v0.2.0](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.2.0)　·　[效果画廊](browser-extension/docs/gallery/README.md)　·　[使用手册](browser-extension/README.md)
 
-## 看见参考，做出自己的版本
+## 新工作台，让画面成为主角
 
-保留你的主体，让参考图提供构图、姿态与视觉语言。
+![v0.2.0 工作台：参考画布、主体图条、紧凑工具栏和水彩生成结果](browser-extension/docs/media/v0.2.0-workspace.png)
 
-| 01 · 你的主体 | 02 · 参考模板 | 03 · Codex 生成 |
+*当前 v0.2.0 构建的示例预览，使用已公开的[水彩陶瓷杯案例](browser-extension/docs/gallery/watercolor-mug/README.md)，不执行模型调用。*
+
+图片完整适应固定画布，图条切换主体与参考。四种逆向路径、图片操作和提示词版本集中在下方工具栏；生成结果在另一侧展开，便于对照和继续创作。
+
+**提示词，需要时展开。** 中英文、复制、编辑、导出和目标尺寸都在内容旁；收起后把空间还给画布。拖动横条可回弹或收起，也支持按钮、键盘和减少动态效果。
+
+<details>
+<summary><strong>展开查看：提示词面板与目标尺寸</strong></summary>
+
+![v0.2.0 提示词面板展开：语言、编辑、目标尺寸与生图操作](browser-extension/docs/media/v0.2.0-prompt-sheet.png)
+
+*同一示例工作台的展开状态。提示词版本、输入草稿与生成历史分别保留。*
+
+</details>
+
+## 随手开始，随时接回工作台
+
+网页悬浮面板与工具栏弹窗采用相同的画布、图条和紧凑操作。上传、互换、逆向、复制和快捷生图留在手边；复杂编辑、多图编排、尺寸设置与历史管理，进入工作台继续。
+
+<p align="center">
+  <img src="browser-extension/docs/media/v0.2.0-popup.png" width="320" alt="v0.2.0 工具栏弹窗：主体与参考准备、任务指令和快捷逆向" />
+  &nbsp;
+  <img src="browser-extension/docs/media/v0.2.0-floating.png" width="320" alt="v0.2.0 网页悬浮面板：参考图和完整复刻快捷入口" />
+</p>
+
+*左：工具栏弹窗。右：网页悬浮面板。均为当前构建与公开素材的示例预览；窄屏按顺序阅读。*
+
+打开工作台时，**当前项目、模式、提示词版本与未提交输入一起接续**。关闭面板不取消已提交任务，多个项目可并行推进。
+
+## 保留你的主体，演绎参考的画面
+
+| 你的主体 | 参考模板 | 实际生成 |
 | :---: | :---: | :---: |
-| <img src="browser-extension/docs/gallery/urban-poster/subject.png" width="260" alt="主体原图：黑发人物" /> | <img src="browser-extension/docs/gallery/urban-poster/reference.png" width="260" alt="参考模板：巨型字形都市海报" /> | <img src="browser-extension/docs/gallery/urban-poster/result.png" width="260" alt="主体重演结果：巨型字形都市海报" /> |
+| <a href="browser-extension/docs/gallery/urban-poster/README.md"><img src="browser-extension/docs/gallery/urban-poster/subject.png" width="260" alt="主体原图：黑发人物" /></a> | <a href="browser-extension/docs/gallery/urban-poster/README.md"><img src="browser-extension/docs/gallery/urban-poster/reference.png" width="260" alt="参考模板：巨型字形都市海报" /></a> | <a href="browser-extension/docs/gallery/urban-poster/README.md"><img src="browser-extension/docs/gallery/urban-poster/result.png" width="260" alt="Codex生成：主体演绎红黑白都市海报" /></a> |
 
-**[都市海报 · 查看完整 Prompt →](browser-extension/docs/gallery/urban-poster/README.md)**　插件内逆向，并调用 Codex imagegen 生成。
+**[都市海报 · 查看完整 Prompt →](browser-extension/docs/gallery/urban-poster/README.md)**　通过插件逆向并调用 Codex imagegen 生成的公开案例，不是本次界面预览合成的效果。
 
-更多风格：[水彩肖像](browser-extension/docs/gallery/watercolor-portrait/README.md) · [水彩陶瓷杯](browser-extension/docs/gallery/watercolor-mug/README.md) · [完整画廊](browser-extension/docs/gallery/README.md)
+更多案例：[水彩肖像](browser-extension/docs/gallery/watercolor-portrait/README.md) · [水彩陶瓷杯](browser-extension/docs/gallery/watercolor-mug/README.md) · [完整画廊](browser-extension/docs/gallery/README.md)
 
-## 创作需要的，都接上了
+四条路径按意图分工：**提取风格**保留主体结构、迁移画法；**完整复刻**把参考变成可执行文字；**主体重演**保留身份、重演画面；**多图重演**编排 2–6 张主体与参考模板。
 
-| Codex 驱动 | 从灵感到成图 | 本机工作流 |
-| :--- | :--- | :--- |
-| **[Codex 全流程](browser-extension/docs/FEATURES.md#codex-全流程)**<br>内置浏览器选图，CLI 直接交互，Codex 内置工具直接生图。 | **[单图到多图](browser-extension/docs/FEATURES.md#单图到多图)**<br>四条创作路径；2–6 张主体配合参考模板，编排后融合生图。 | **[多任务并行](browser-extension/docs/FEATURES.md#多任务并行)**<br>多个逆向与生图任务同时推进，独立查看进度、取消和取回结果。 |
-| **[先放大细看，再写词](browser-extension/docs/FEATURES.md#先放大细看再写词)**<br>内置 Alchemy skill，整图定位、局部放大、细节核查与整图回看。 | **[浮窗三种入口](browser-extension/docs/FEATURES.md#浮窗三种入口)**<br>立即逆向、先加入再逆向，或直接打开工作台。 | **[图片直接在本机打开](browser-extension/docs/FEATURES.md#图片直接在本机打开)**<br>复制图片路径；macOS 一键打开图片、在 Finder 定位。 |
-| **[CLI 版本探针](browser-extension/docs/FEATURES.md#cli-版本探针)**<br>检测实际版本与安装来源，支持的安装方式可一键升级。 | **[图片方向就地调整](browser-extension/docs/FEATURES.md#图片方向就地调整)**<br>预览中旋转、应用，直接用于后续逆向与生图，省去下载再上传。 | **[成果留在本机](browser-extension/docs/FEATURES.md#成果留在本机)**<br>图片、提示词、项目记录与日志存入本机目录，随时继续创作。 |
-
-## 小浮窗起步，工作台继续
-
-轻量选图，宽屏编排。项目、提示词版本和生成记录贯通，关闭面板后任务仍继续运行。
-
-![QC-Reframe 工作台：输入画面、提示词与生成结果](browser-extension/docs/releases/v0.1.23-workspace.jpg)
-
-*v0.1.23 示例界面，使用公开画廊素材，展示简洁的创作工作台。[工作台与更多功能截图 →](browser-extension/docs/FEATURES.md)*
+内置 Alchemy skill 从整图定位、局部放大到细节核查，关注人物神态、微动作与整体氛围。提示词、图片和项目留在本机，可继续编辑与生成。[了解更多能力 →](browser-extension/docs/FEATURES.md)
 
 ## 开始你的第一张图
 
-**[把安装交给 Codex →](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　复制安装指令，完成环境检查、本机服务启动与浏览器配对。也可按同页步骤手动安装。
+**[把安装交给 Codex →](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　复制安装指令，完成环境检查、本机服务启动与浏览器配对；同页也有手动安装和升级步骤。
 
-需要已登录的 Codex CLI、Node.js 22.15+ 和可加载 MV3 扩展的浏览器。已在 macOS 的 Codex 内置浏览器验证，也保留 Chrome 使用路径；生图需账户支持内置生图能力。**首次安装需要完整仓库，Release 中的 Chrome ZIP 仅含浏览器端。**
+需要已登录的 Codex CLI、Node.js 22.15+ 和可加载 MV3 扩展的浏览器。Codex 内置浏览器已有使用验证，也保留 Chrome 路径；生图需账户支持内置生图能力。**首次安装需要完整仓库，Chrome ZIP 仅含浏览器端。**
 
-| 想做什么 | 从这里开始 |
-| :--- | :--- |
-| 安装、升级或排错 | [安装指南](browser-extension/docs/INSTALL_WITH_CODEX.md) |
-| 了解功能与创作路径 | [功能导览](browser-extension/docs/FEATURES.md) |
-| 找效果、参考图与可复制的 Prompt | [效果画廊](browser-extension/docs/gallery/README.md) |
-| 查询操作细节与开发命令 | [使用手册](browser-extension/README.md) · [贡献指南](Contribution.md) |
-| 查看版本变化 | [更新日志](browser-extension/docs/releases/README.md) · [Releases](https://github.com/AIDiscovery007/qc-reframe/releases) |
+[安装与排错](browser-extension/docs/INSTALL_WITH_CODEX.md) · [功能导览](browser-extension/docs/FEATURES.md) · [版本变化](browser-extension/docs/releases/README.md) · [贡献指南](Contribution.md)
 
-本机保存，模型按你的 Codex 配置调用；不代表离线推理。逆向用于近似复刻与风格迁移，不保证恢复原始 Prompt。浏览器扩展支持与其他使用边界见[安装指南](browser-extension/docs/INSTALL_WITH_CODEX.md)及[使用手册](browser-extension/README.md#图片与数据)。
+本机保存不代表离线推理；选中的图片按你的 Codex 配置交给模型。逆向用于近似复刻与风格迁移，不保证恢复原始 Prompt。[数据与使用边界 →](browser-extension/README.md#图片与数据)
