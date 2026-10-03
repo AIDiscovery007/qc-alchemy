@@ -6,10 +6,11 @@
 
 后续待发布改动见 [unreleased](unreleased.md)。
 
-最新版本：[v0.1.26 · 工作台操作精简与生成流程梳理](v0.1.26.md)。
+最新版本：[v0.2.0 · 画布工作台与轻量创作入口](v0.2.0.md)。
 
 | 版本 | 更新内容 | 详情 |
 | --- | --- | --- |
+| 0.2.0 | 画布与图条、拖拽提示词面板、轻量入口统一与草稿接续、人物和整体氛围提示词 | [版本说明](v0.2.0.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.2.0) |
 | 0.1.26 | 路径下拉选择、提示词工具归位、统一生成主操作与显式通用风格入口 | [版本说明](v0.1.26.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.26) |
 | 0.1.25 | 推挤式结果抽屉、可收起项目栏、统一输入区、蒙板关闭与按需帮助 | [版本说明](v0.1.25.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.25) |
 | 0.1.24 | 统一任务指令、后台临时会话、项目列表、全局动效、留白画廊与悬窗交互对齐 | [版本说明](v0.1.24.md) · [下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.24) |

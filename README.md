@@ -4,7 +4,7 @@
 
 从单图细查到多图编排，把收集、逆向、生成和本机管理连成一条创作流程。沿用你的 Codex 登录与额度，无需另外填写模型 API Key。
 
-**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md)**　 /　 [功能导览](browser-extension/docs/FEATURES.md)　 /　 [效果画廊](browser-extension/docs/gallery/README.md)　 /　 [v0.1.26 · 下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.1.26)
+**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md)**　 /　 [功能导览](browser-extension/docs/FEATURES.md)　 /　 [效果画廊](browser-extension/docs/gallery/README.md)　 /　 [v0.2.0 · 下载](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.2.0)
 
 ## 看见参考，做出自己的版本
 

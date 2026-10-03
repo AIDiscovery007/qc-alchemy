@@ -1,8 +1,8 @@
 # QC-Reframe for Chrome
 
-功能概览见 [功能导览](docs/FEATURES.md)。首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.1.26**。迭代记录见 [更新日志](docs/releases/README.md)。
+功能概览见 [功能导览](docs/FEATURES.md)。首次安装请先看 [项目首页](../README.md) 和 [交给 Codex 执行的初始化流程](docs/INSTALL_WITH_CODEX.md)。当前发布版本：**0.2.0**。迭代记录见 [更新日志](docs/releases/README.md)。
 
-本版变化见 [v0.1.26 更新说明](docs/releases/v0.1.26.md)。从 v0.1.25 升级不涉及 bridge、运行技能或依赖变更，无需数据迁移或重新配对。重新加载扩展后刷新工作台与网页即可使用新界面；完整仓库升级按安装指引在任务结束后重启 bridge，使服务版本号同步。Chrome ZIP 仅含浏览器端，不含 bridge 和运行 skill。
+本版变化见 [v0.2.0 更新说明](docs/releases/v0.2.0.md)。从 v0.1.26 升级无需数据迁移或重新配对；本机 bridge 与运行技能中的提示词规则已更新，应在任务结束后更新完整仓库并重启服务，再重新加载原扩展、刷新工作台与网页。新规则在重新逆向后应用，历史记录不改写。Chrome ZIP 仅含浏览器端，不含 bridge 和运行 skill。
 
 开发与后续维护请先阅读 [贡献指南](../Contribution.md) 和 [AGENTS.md](AGENTS.md)。
 
