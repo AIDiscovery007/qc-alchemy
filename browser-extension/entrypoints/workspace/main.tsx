@@ -8,6 +8,7 @@ import "../popup/style.css";
 import "./workspace.css";
 import "./project-library.css";
 import "./results.css";
+import "./canvas-workspace.css";
 
 document.documentElement.classList.add("embedded", "workspace-page");
 ReactDOM.createRoot(document.getElementById("root")!).render(<GenerationEffectContext value={GenerationEffect}><LoadingEffectContext value={LoadingEffect}><App workspace /></LoadingEffectContext></GenerationEffectContext>);

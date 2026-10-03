@@ -121,7 +121,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
 
   const ratioControls = <div className="generation-ratio">
     <div className="generation-ratio-fields">
-      <SelectField label="图片比例" value={ratio} disabled={disabled || busy || !!running} aria-describedby={validRatio ? undefined : ratioHintId} onChange={event => setRatio(event.target.value)}>
+      <SelectField label={workspace ? "目标尺寸" : "图片比例"} title="按宽高比例生成，实际像素以结果为准" value={ratio} disabled={disabled || busy || !!running} aria-describedby={validRatio ? undefined : ratioHintId} onChange={event => setRatio(event.target.value)}>
         <option value="auto">自动</option>
         {ratios.map(value => <option key={value} value={value}>{value}</option>)}
         <option value="custom">自定义</option>

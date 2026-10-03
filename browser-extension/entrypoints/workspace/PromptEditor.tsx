@@ -3,12 +3,12 @@ import type { Result } from "../../lib/types";
 import Icon from "../popup/Icon";
 
 type Draft = Pick<Result, "promptZh" | "promptEn" | "negativePrompt">;
-export default function PromptEditor({ result, draft, lang, copied, saving, disabled, versionSelector, retry, onExport, onLanguage, onCopy, onEdit, onDraft, onSave, onCancel }: {
-  result: Result; draft?: Draft; lang: "zh" | "en"; copied: boolean; saving: boolean; disabled: boolean; versionSelector: ReactNode; retry?: ReactNode; onExport?(): void;
+export default function PromptEditor({ sheet = false, result, draft, lang, copied, saving, disabled, versionSelector, retry, onExport, onLanguage, onCopy, onEdit, onDraft, onSave, onCancel }: {
+  sheet?: boolean; result: Result; draft?: Draft; lang: "zh" | "en"; copied: boolean; saving: boolean; disabled: boolean; versionSelector: ReactNode; retry?: ReactNode; onExport?(): void;
   onLanguage(lang: "zh" | "en"): void; onCopy(): void; onEdit(): void; onDraft(draft: Draft): void; onSave(): void; onCancel(): void;
 }) {
   return <>
-    <div className="step-title"><h2><span className="step-index">2</span>雕琢提示词{retry}</h2>{versionSelector}</div>
+    {!sheet && <div className="step-title"><h2><span className="step-index">2</span>雕琢提示词{retry}</h2>{versionSelector}</div>}
     <div className="prompt-box">
       <div className="prompt-tools"><div className="language-tabs"><button className={lang === "zh" ? "active" : ""} aria-pressed={lang === "zh"} onClick={() => onLanguage("zh")}>中文</button><button className={lang === "en" ? "active" : ""} aria-pressed={lang === "en"} onClick={() => onLanguage("en")}>English</button></div>
         <div className="button-row"><button className="quiet-button" data-copied={copied} aria-label={copied ? "已复制" : "复制提示词"} title={copied ? "已复制" : "复制提示词"} onClick={onCopy}><Icon key={String(copied)} name={copied ? "check" : "copy"} /></button><span className="copy-announcement" role="status">{copied ? "已复制提示词" : ""}</span>{onExport && <button className="quiet-button" aria-label="导出提示词" title={draft ? "先保存或取消修改后导出" : "导出提示词"} disabled={!!draft} onClick={onExport}><Icon name="download" /></button>}{!draft && <button className="quiet-button" aria-label="编辑提示词" title="编辑提示词" onClick={onEdit}><Icon name="edit" /></button>}</div>

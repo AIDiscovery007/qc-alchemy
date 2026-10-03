@@ -1,0 +1,161 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { Mode, MultiSubject } from "../../lib/types";
+import { normalizeImage } from "../../lib/image";
+import Icon from "../popup/Icon";
+import SelectField from "../popup/SelectField";
+import TaskInstruction from "../popup/TaskInstruction";
+import LoadingPlaceholder from "../popup/LoadingPlaceholder";
+import { ImagePreviewButton } from "../popup/ImagePreview";
+import PromptSheet from "./PromptSheet";
+
+const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
+export default function CanvasWorkspace({ contextKey, mode, image, subjectImage, subjects, selected, onSelect, instruction, disabled, modeDisabled, reverseDisabled, running, cancelling, status, error, stale, hasPrompt, promptEditing, reduced, versions, prompt, generationActions, onMode, onInstruction, onSubject, onAvailability, onSubjects, onReference, onReferenceRotate, onSwap, onReverse, onExtract, onCancel, onRetryReference }: {
+  contextKey: string; mode: Mode; image?: string; subjectImage: string; subjects: MultiSubject[]; selected: string; onSelect(id: string): void;
+  instruction: string; disabled: boolean; modeDisabled: boolean; reverseDisabled: boolean; running: boolean; cancelling: boolean;
+  status?: string; error?: string; stale: boolean; hasPrompt: boolean; promptEditing: boolean; reduced: boolean;
+  versions: ReactNode; prompt: ReactNode; generationActions(element: HTMLDivElement | null): void;
+  onMode(mode: Mode): void; onInstruction(value: string): void; onSubject(image: string): void; onAvailability(available: boolean): void;
+  onSubjects(subjects: MultiSubject[]): void; onReference(image: string): Promise<void>; onReferenceRotate(image: string): Promise<void>; onSwap(id?: string): void;
+  onReverse(): void; onExtract(): void; onCancel(): void; onRetryReference?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const upload = useRef<HTMLInputElement>(null);
+  const target = useRef("");
+  const revision = useRef(0);
+  const scope = useRef(contextKey);
+  scope.current = contextKey;
+  const previous = useRef({ contextKey, running, hasPrompt });
+  const trigger = useRef<HTMLButtonElement>(null);
+  const generate = useRef<HTMLButtonElement>(null);
+  const modeControl = useRef<HTMLDivElement>(null);
+  const inputArea = useRef<HTMLDivElement>(null);
+  const settingsTrigger = useRef<HTMLButtonElement>(null);
+  const settingsPanel = useRef<HTMLDivElement>(null);
+  const current = mode === "multi-reenact" ? subjects.find(item => item.id === selected) : undefined;
+  const isSubject = mode !== "recreate" && (mode === "multi-reenact" ? !!current : selected === "subject");
+  const currentImage = isSubject ? current?.subjectImage ?? subjectImage : image;
+  const index = current ? subjects.indexOf(current) : -1;
+  const label = isSubject ? current ? `主体 ${index + 1}` : "主体图" : mode === "style" || mode === "recreate" ? "参考图" : "参考模板";
+  const locked = disabled || uploading || open;
+  useEffect(() => {
+    const before = previous.current;
+    if (before.contextKey !== contextKey) { setOpen(false); setSettings(false); setUploadError(""); setUploading(false); revision.current++; }
+    if (hasPrompt && before.contextKey === contextKey && before.running && !running) setOpen(true);
+    if (!hasPrompt) setOpen(false);
+    previous.current = { contextKey, running, hasPrompt };
+  }, [contextKey, running, hasPrompt]);
+  useEffect(() => () => { revision.current++; }, []);
+  useEffect(() => {
+    if (!settings) return;
+    settingsPanel.current?.querySelector('select')?.focus();
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !settingsPanel.current?.contains(event.target) && !settingsTrigger.current?.contains(event.target)) setSettings(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [settings]);
+  const select = (id: string) => { onSelect(id); setSettings(false); };
+  const choose = (id: string) => { target.current = id; upload.current?.click(); };
+  const readFiles = async (files: File[]) => {
+    if (!files.length || locked) return;
+    const id = target.current;
+    const multi = mode === "multi-reenact";
+    if (id === "add" && subjects.length + files.length > 6) { setUploadError("最多添加 6 张主体图"); return; }
+    const attempt = ++revision.current, context = contextKey;
+    const pending = id === "add" ? files.map(() => ({ id: crypto.randomUUID(), subjectImage: "", role: "自动", detail: "" })) : [];
+    const next = id === "add" ? [...subjects, ...pending] : subjects.map(item => item.id === id ? { ...item, subjectImage: "" } : item);
+    if (id !== "reference") {
+      if (multi) onSubjects(next);
+      else { onAvailability(false); onSubject(""); }
+      onSelect(id === "add" ? pending[0]!.id : id);
+    }
+    setUploading(true); setUploadError("");
+    try {
+      const images = await Promise.all((id === "add" ? files : files.slice(0, 1)).map(file => {
+        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024) throw new Error("请选择 20 MB 以内的 PNG、JPEG 或 WebP");
+        return normalizeImage(file, (id === "reference" ? 4 : 2) * 1024 * 1024);
+      }));
+      if (attempt !== revision.current || context !== scope.current) return;
+      if (id === "reference") await onReference(images[0]!);
+      else if (multi) {
+        onSubjects(next.map(item => {
+          const position = id === "add" ? pending.findIndex(subject => subject.id === item.id) : item.id === id ? 0 : -1;
+          return position < 0 ? item : { ...item, subjectImage: images[position]! };
+        }));
+        onSelect(id === "add" ? pending[0]!.id : id);
+      } else { onSubject(images[0]!); onAvailability(true); onSelect("subject"); }
+    } catch (reason) { if (attempt === revision.current && context === scope.current) setUploadError((reason as Error).message); }
+    finally { if (attempt === revision.current && context === scope.current) setUploading(false); }
+  };
+  const remove = () => {
+    if (current) {
+      onSubjects(subjects.filter(item => item.id !== current.id)); onSelect("reference");
+      queueMicrotask(() => inputArea.current?.querySelector<HTMLButtonElement>('[aria-label="查看参考图"]')?.focus({ preventScroll: true }));
+    }
+    else { onSubject(""); onAvailability(true); }
+    setSettings(false); setUploadError("");
+  };
+  const update = (patch: Partial<MultiSubject>) => onSubjects(subjects.map(item => item.id === current?.id ? { ...item, ...patch } : item));
+  const reorder = (delta: number) => {
+    if (index < 0 || index + delta < 0 || index + delta >= subjects.length) return;
+    const next = [...subjects]; [next[index], next[index + delta]] = [next[index + delta]!, next[index]!]; onSubjects(next);
+    settingsPanel.current?.querySelector('select')?.focus();
+  };
+  const returnFocus = () => {
+    const destination = hasPrompt ? trigger.current : generate.current;
+    inputArea.current?.removeAttribute('inert');
+    return destination?.disabled ? modeControl.current?.querySelector('select') || null : destination;
+  };
+  const sheetOpen = open && hasPrompt;
+  return <section className="canvas-workspace" aria-label={`${modes[mode]}工作区`}>
+    <div className="canvas-floating-tools" role="group" aria-label="画布工具栏" ref={modeControl}>
+      <SelectField label="逆向模式" aria-label="逆向模式" value={mode} disabled={modeDisabled || uploading} onChange={event => { setOpen(false); setSettings(false); onMode(event.target.value as Mode); }}>
+        {(Object.keys(modes) as Mode[]).map(key => <option key={key} value={key}>{modes[key]}</option>)}
+      </SelectField>
+      <span className="canvas-tool-divider" />
+      <button className="quiet-button" disabled={locked} aria-label={currentImage ? "替换当前图片" : "上传当前图片"} title={currentImage ? "替换当前图片" : "上传当前图片"} onClick={() => choose(isSubject ? current?.id || "subject" : "reference")}><Icon name="image" /><span>{currentImage ? "替换" : "上传"}</span></button>
+      {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="互换主体与参考" title="互换主体与参考" disabled={locked || !image || (mode === "multi-reenact" ? !current?.subjectImage : !subjectImage)} onClick={() => onSwap(current?.id)}><Icon name="swap" /></button>}
+      {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="移除主体" title="移除主体" disabled={locked || !isSubject} onClick={remove}><Icon name="trash" /></button>}
+      {mode === "multi-reenact" && <button ref={settingsTrigger} className="quiet-button canvas-icon-tool" aria-label="主体设置" title="主体设置" aria-expanded={settings} disabled={locked || !current} onClick={() => setSettings(!settings)}><Icon name="settings" /></button>}
+      {versions && <><span className="canvas-tool-divider" /><div className="canvas-versions">{versions}</div></>}
+      {hasPrompt && <button ref={trigger} className="quiet-button canvas-prompt-link" aria-label={sheetOpen ? "收起提示词" : "展开提示词"} aria-expanded={sheetOpen} aria-controls="workspace-prompt-sheet" onClick={() => { setSettings(false); setOpen(!sheetOpen); }}><Icon name={sheetOpen ? "chevronDown" : "edit"} /><span>{sheetOpen ? "收起" : "提示词"}</span><i className={stale ? "canvas-stale-dot" : "canvas-ready-dot"} /></button>}
+      {settings && current && <div ref={settingsPanel} className="canvas-subject-settings" role="group" aria-label="主体设置" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setSettings(false); settingsTrigger.current?.focus(); } }}>
+        <div className="canvas-subject-head"><strong>{label}</strong><button className="quiet-button" aria-label="关闭主体设置" onClick={() => { setSettings(false); settingsTrigger.current?.focus(); }}><Icon name="close" /></button></div>
+        <SelectField label="用途" aria-label="主体用途" disabled={locked} value={current.role} onChange={event => update({ role: event.target.value })}>{["自动", "人物", "物品", "服饰", "场景", "细节"].map(role => <option key={role}>{role}</option>)}</SelectField>
+        <input aria-label="主体保留特征" placeholder="保留特征" maxLength={2000} disabled={locked} value={current.detail} onChange={event => update({ detail: event.target.value })} />
+        <button className="quiet-button" aria-label="主体前移" disabled={locked || index === 0} onClick={() => reorder(-1)}>←</button><button className="quiet-button" aria-label="主体后移" disabled={locked || index === subjects.length - 1} onClick={() => reorder(1)}>→</button>
+      </div>}
+    </div>
+    <div className="canvas-input" ref={inputArea} inert={sheetOpen}>
+      <div className="canvas-stage">
+        <div className="canvas-large" aria-label="图片展示区" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); target.current = isSubject ? current?.id || "subject" : "reference"; void readFiles([...event.dataTransfer.files]); }}>
+          {currentImage ? <><img src={currentImage} alt={label} /><ImagePreviewButton src={currentImage} alt={label} className="canvas-preview" rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} /></>
+            : !isSubject ? <LoadingPlaceholder active={!error}>{error || "正在读取参考图…"}</LoadingPlaceholder>
+            : <button className="canvas-upload" disabled={locked} onClick={() => choose(current?.id || "subject")}><Icon name="plus" />上传{label}</button>}
+        </div>
+        <div className="canvas-filmstrip" role="group" aria-label="图片图条" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); target.current = mode === "multi-reenact" ? "add" : mode === "recreate" ? "reference" : "subject"; void readFiles([...event.dataTransfer.files]); }}>
+          {mode !== "recreate" && (mode === "multi-reenact" ? subjects.map((item, i) => <button key={item.id} aria-label={`查看主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => select(item.id)}>{item.subjectImage ? <img src={item.subjectImage} alt="" /> : <Icon name="plus" />}主体 {i + 1}</button>) : <button aria-label="查看主体图" aria-pressed={isSubject} onClick={() => select("subject")}>{subjectImage ? <img src={subjectImage} alt="" /> : <Icon name="plus" />}主体图{mode === "style" ? " · 可选" : ""}</button>)}
+          {mode === "multi-reenact" && <button disabled={locked || subjects.length >= 6} aria-label="添加主体图" onClick={() => choose("add")}><Icon name="plus" /></button>}
+          <button aria-label="查看参考图" aria-pressed={!isSubject} onClick={() => select("reference")}>{image ? <img src={image} alt="" /> : <Icon name="image" />}参考图</button>
+        </div>
+      </div>
+      <div className="canvas-composer">
+        <TaskInstruction value={instruction} disabled={disabled || uploading || promptEditing} onChange={onInstruction} />
+        <div className="canvas-composer-bar">
+          <span className={uploadError || error ? "canvas-error" : ""} role={uploadError || error ? "alert" : "status"} title={uploadError || error || status}>{uploadError || error || (uploading ? "正在读取图片…" : status || (stale ? "提示词待更新" : ""))}{onRetryReference && <button className="text-button" onClick={onRetryReference}>重试</button>}</span>
+          {mode === "style" && subjectImage && <button className="quiet-button canvas-generic" disabled={locked || promptEditing || !instruction.trim()} title="不使用主体图，仅提取通用风格" onClick={onExtract}>仅提取风格</button>}
+          <button ref={generate} className="primary canvas-generate" disabled={running ? cancelling : reverseDisabled || uploading} aria-busy={running} onClick={running ? onCancel : onReverse}><Icon name={running ? "close" : hasPrompt ? "retry" : "edit"} />{running ? cancelling ? "正在取消…" : "取消" : hasPrompt ? stale ? "更新提示词" : "重新生成" : "生成提示词"}{!running && <Icon name="arrow" />}</button>
+        </div>
+      </div>
+    </div>
+    <input hidden ref={upload} type="file" accept="image/png,image/jpeg,image/webp" multiple={mode === "multi-reenact"} aria-label="上传画布图片" onChange={event => { void readFiles([...event.target.files || []]); event.target.value = ""; }} />
+    <PromptSheet open={sheetOpen} onOpenChange={setOpen} returnFocus={returnFocus} reduced={reduced}>
+      {stale && <div className="canvas-prompt-notice"><span role="status">{status || "提示词待更新"}</span><button className="text-button" onClick={() => setOpen(false)}>返回输入</button></div>}
+      <div className="canvas-prompt-content">{prompt}</div>
+      <div className="canvas-generation-actions" ref={generationActions} />
+    </PromptSheet>
+  </section>;
+}

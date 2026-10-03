@@ -31,7 +31,7 @@
 | [版本目录](browser-extension/docs/releases/README.md) | 新版本使用 `v版本号.md`；写明变化、升级影响、验证和限制，截图放同目录，并更新索引。 |
 | [画廊](browser-extension/docs/gallery/README.md) | 经用户指定可公开的主体图、参考图、结果和 Prompt。不要自动收录私人历史。 |
 | [AGENTS.md](AGENTS.md) | 统一协作准则及稳定岗位索引，不存具体任职或发布记录。 |
-| [.agents/roles/](.agents/roles/) | 三个稳定岗位的职责、边界及输入输出；[assignments.md](.agents/roles/assignments.md) 单独维护当前任职与日志索引。 |
+| [.agents/roles/](.agents/roles/) | 稳定岗位的职责、边界及输入输出；[assignments.md](.agents/roles/assignments.md) 单独维护当前任职与日志索引。 |
 | [agent-logs/](agent-logs/) | 每个会话一份稳定日志，记录任务目标、范围、状态、交叉点、关键结果、复核和提交证据；发版清理动态任职登记时保留日志，历史流水查 Git。 |
 | 本文 / [插件 AGENTS.md](browser-extension/AGENTS.md) | 本文维护工程与发布流程；插件 AGENTS.md 维护实现约束、设计决策和代码入口。不重复维护 Agent 台账或完整版本史。 |
 
