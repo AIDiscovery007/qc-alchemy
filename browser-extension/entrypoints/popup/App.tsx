@@ -11,6 +11,7 @@ import NewProject from "../workspace/NewProject";
 import CanvasWorkspace from "../workspace/CanvasWorkspace";
 import PromptEditor from "../workspace/PromptEditor";
 import RecentProject from "../workspace/RecentProject";
+import ResultGallery from "../workspace/ResultGallery";
 import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
 import HiddenProjectsToggle from "./HiddenProjectsToggle";
@@ -51,7 +52,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const editor = useRef<HTMLDivElement>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState<boolean>();
   const [smallSidebar, setSmallSidebar] = useState(() => matchMedia("(max-width: 860px)").matches);
-  const sidebarCollapsed = !(sidebarExpanded ?? !smallSidebar);
+  const sidebarCollapsed = smallSidebar || !(sidebarExpanded ?? true);
   const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 650px)").matches);
   const [draftReady, setDraftReady] = useState(false);
   const [draftError, setDraftError] = useState("");
@@ -66,6 +67,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>([]);
   const showHidden = !!preferences.showHiddenProjects;
   const visibilityRevision = useRef(0);
+  const visibilityPending = useRef(false);
+  const visibilityFeedback = useRef<HTMLDivElement>(null);
+  const [visibilityNotice, setVisibilityNotice] = useState<{ ids: string[]; hidden: boolean; undone: boolean }>();
+  const [visibilityError, setVisibilityError] = useState("");
   const selection = !showHidden && storedSelection?.projectId && hiddenProjectIds.includes(storedSelection.projectId) ? undefined : storedSelection;
   const [project, setProject] = useState<Project>();
   const projectSnapshot = useRef<Project | undefined>(undefined);
@@ -89,6 +94,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const deletingProjects = useRef(false);
   const [settings, setSettings] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const library = useProjectLibrary(preferences.paired, historyOpen, workspace, dataRevision, showHidden);
   const visibleProject = (item: ProjectSummary) => showHidden || (!item.hidden && !hiddenProjectIds.includes(item.id));
   const recentProjects = library.recent.items.filter(visibleProject);
@@ -200,7 +206,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           const next = { ...value.selection,
             image: value.selection.image || (previous?.id === value.selection.id ? previous.image : undefined),
           };
-          if (previous?.id !== next.id) { if (!firstRefresh) setHistoryOpen(false); setError(""); }
+          if (previous?.id !== next.id) { if (!firstRefresh) { setHistoryOpen(false); setGalleryOpen(false); } setError(""); }
           previous = next;
           setSelection(next);
         }
@@ -393,7 +399,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         setInstructions(items => ({ ...items, [key]: multiPrompt }));
       }
       selectionRevision.current++;
-      setSelection(next); setHistoryOpen(false); setNewProjectOpen(false);
+      setSelection(next); setHistoryOpen(false); setGalleryOpen(false); setNewProjectOpen(false);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -411,7 +417,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       else if (mode !== "recreate") setSubjectDrafts(items => ({ ...items, [key]: subjectImage(mode) }));
       if (instruction !== undefined) setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
-      setSelection(next); setError(""); setHistoryOpen(false);
+      setSelection(next); setError(""); setHistoryOpen(false); setGalleryOpen(false);
     } finally { setBusy(false); }
   };
   const applyReferenceRotation = async (image: string, mode: Mode, instruction?: string) => {
@@ -435,7 +441,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       } else setSubjectDrafts(items => ({ ...items, [key]: subject }));
       setInstructions(items => ({ ...items, [`${key}:new`]: instruction }));
       selectionRevision.current++;
-      setSelection(next); setHistoryOpen(false);
+      setSelection(next); setHistoryOpen(false); setGalleryOpen(false);
     } catch (e) { setError((e as Error).message || "无法互换图片，请重试"); }
     finally { setBusy(false); }
   };
@@ -498,6 +504,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     finally { setBusy(false); }
   };
   const showHistory = () => {
+    setGalleryOpen(false);
     setHistoryOpen(value => !value);
     setError("");
   };
@@ -508,7 +515,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       const next = await request<Selection>({ type: "alchemy:open-project", id: item.id });
       selectionRevision.current++;
       setSelection(next);
-      setHistoryOpen(false);
+      setHistoryOpen(false); setGalleryOpen(false);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -532,33 +539,61 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       setReferenceErrors((items) => Object.fromEntries(Object.entries(items).filter(([id]) => !removedJobs.includes(id))));
     } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
   };
-  const setProjectsHidden = async (ids: string[], hidden: boolean) => {
-    setBusy(true);
-    selectionRevision.current++;
+  const setProjectsHidden = async (ids: string[], hidden: boolean, undo = false) => {
+    if (visibilityPending.current) return [];
+    const changed = [...new Set(ids)].filter(id => hiddenProjectIds.includes(id) !== hidden);
+    if (!changed.length) {
+      if (undo) { setVisibilityNotice(undefined); setVisibilityError("项目状态已恢复，无需撤销。"); }
+      return [];
+    }
+    visibilityPending.current = true;
+    const focus = document.activeElement;
+    setBusy(true); setVisibilityError("");
+    const revision = ++selectionRevision.current;
     projectRevision.current++;
     deletingProjects.current = true;
     try {
-      const { updatedIds } = await request<{ updatedIds: string[] }>({ type: "alchemy:set-project-hidden", ids, hidden });
+      const response = await request<{ updatedIds: string[] }>({ type: "alchemy:set-project-hidden", ids: changed, hidden });
+      const updatedIds = [...new Set(response.updatedIds)].filter(id => changed.includes(id));
       setHiddenProjectIds(previous => hidden ? [...new Set([...previous, ...updatedIds])] : previous.filter(id => !updatedIds.includes(id)));
-      if (project && updatedIds.includes(project.id)) setProject({ ...project, hidden });
-      if (hidden && !showHidden && selection?.projectId && updatedIds.includes(selection.projectId)) { setSelection(undefined); setProject(undefined); }
+      setProject(current => current && updatedIds.includes(current.id) ? { ...current, hidden } : current);
+      if (hidden && !showHidden && selection?.projectId && updatedIds.includes(selection.projectId) && revision === selectionRevision.current) {
+        setSelection(undefined); setProject(undefined); setHistoryOpen(true);
+      }
+      if (updatedIds.length) {
+        const remaining = changed.filter(id => !updatedIds.includes(id));
+        setVisibilityNotice(undo && remaining.length ? { ids: remaining, hidden: !hidden, undone: false } : { ids: updatedIds, hidden, undone: undo });
+        if (undo && remaining.length) setVisibilityError(`还有 ${remaining.length} 个项目未撤销，请重试。`);
+        requestAnimationFrame(() => { if (focus && (!focus.isConnected || focus.matches(":disabled"))) visibilityFeedback.current?.focus(); });
+      }
       library.refresh();
       setRefreshNonce(value => value + 1);
-    } finally { deletingProjects.current = false; selectionRevision.current++; projectRevision.current++; setBusy(false); }
+      if (!updatedIds.length) {
+        setVisibilityNotice(undefined);
+        throw new Error("项目状态未变化，请刷新后重试。");
+      }
+      return updatedIds;
+    } finally {
+      visibilityPending.current = false; deletingProjects.current = false;
+      selectionRevision.current++; projectRevision.current++; setBusy(false);
+    }
   };
   const toggleHiddenProjects = async () => {
-    setBusy(true); setError("");
+    if (visibilityPending.current) return;
+    visibilityPending.current = true;
+    setBusy(true); setVisibilityError("");
     visibilityRevision.current++;
     projectRevision.current++;
+    const revision = selectionRevision.current;
     try {
       const shown = await request<boolean>({ type: "alchemy:show-hidden-projects", show: !showHidden });
       visibilityRevision.current++;
       setPreferences(previous => ({ ...previous, showHiddenProjects: shown }));
-      if (!shown && (project?.hidden || (selection?.projectId && hiddenProjectIds.includes(selection.projectId)))) {
+      if (!shown && revision === selectionRevision.current && (project?.hidden || (selection?.projectId && hiddenProjectIds.includes(selection.projectId)))) {
         selectionRevision.current++; setSelection(undefined); setProject(undefined); setHistoryOpen(true);
       }
-    } catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    } catch (e) { setVisibilityError((e as Error).message); }
+    finally { visibilityPending.current = false; setBusy(false); }
   };
   const cancel = async () => {
     if (!job || !running || pendingCancellations.current.has(job.id)) return;
@@ -651,7 +686,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
             </SelectField>;
   const multiPreview = preferences.mode === "multi-reenact" ? <MultiInputPreview image={selection?.image} subjects={multiSubjects} /> : undefined;
   const drawer = resultDrawerView(drawers, drawerKey, activeJob?.generations);
-  const drawerOpen = workspace && !historyOpen && drawer.open;
+  const drawerOpen = workspace && !historyOpen && !galleryOpen && drawer.open;
   const closeResults = () => {
     dispatchDrawer({ type: "toggle", key: drawerKey, open: false, seen: drawer.completed });
     requestAnimationFrame(() => resultReturn.current?.focus({ preventScroll: true }));
@@ -703,17 +738,19 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div><button className="quiet-button sidebar-toggle" aria-label={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} title={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={() => setSidebarExpanded(sidebarCollapsed)}><Icon name="sidebar" /></button></div>
         <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
         <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
+        <button className={`nav-action ${galleryOpen ? "active" : ""}`} aria-label="作品画廊" onClick={() => { setGalleryOpen(true); setHistoryOpen(false); setError(""); }}><Icon name="image" /><span>作品画廊</span></button>
         <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{library.recent.total}</span></button>
         <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span>{reminders.unread.length > 0 && <span className="reminder-dot" data-failed={reminders.unread.some(item => item.status === "failed")} role="img" aria-label={`${reminders.unread.length} 项结果未查看`} />}{activeCount > 0 && <span className="count">{activeCount}</span>}</button>
         <div className="sidebar-label">最近项目</div>
-        <div className="project-nav">{recentProjects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
+        <div className="project-nav">{recentProjects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && !galleryOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
         <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"}</div></div>
       </aside>}
       <div className={workspace ? "workspace-main" : "compact-main"}>
-      {workspace && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
+      {workspace && !galleryOpen && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
         {!historyOpen && drawer.content && !drawerOpen && <button ref={resultReturn} className="outline-button result-return" aria-controls="workspace-results" aria-expanded={false} onClick={() => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}><Icon name="image" />{drawer.label}</button>}
-        <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
+        {historyOpen ? <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} /> : activeProject && <button type="button" className="text-button project-visibility-action" disabled={busy || !connected}
+          onClick={() => void setProjectsHidden([activeProject.id], !activeProject.hidden).catch(error => setVisibilityError(error.message))}>{activeProject.hidden ? "恢复项目" : "隐藏项目"}</button>}
       </div></header>}
       {!workspace && !embedded && <header>
         <div className="brand">
@@ -781,11 +818,16 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <button className="text-button" onClick={() => workspace ? setSettings(true) : void openWorkspace()}>选择模型</button>
       </div>}
 
+      {!tasksOpen && visibilityError && <div className="error" role="alert">{visibilityError}</div>}
+      {visibilityNotice && <div ref={visibilityFeedback} className="project-visibility-feedback" tabIndex={-1}>
+        <span role="status">{visibilityNotice.undone ? "已撤销 · " : ""}{visibilityNotice.hidden ? "已隐藏" : "已恢复"} {visibilityNotice.ids.length} 个项目</span>
+        {!visibilityNotice.undone && <button type="button" className="text-button" disabled={busy} onClick={() => void setProjectsHidden(visibilityNotice.ids, !visibilityNotice.hidden, true).catch(error => setVisibilityError(error.message))}>撤销</button>}
+      </div>}
       {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
       {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
-      {workspace && tasksOpen && <TaskCenter unread={reminders.unread} onNoticeOpen={openNotice} showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId, generationId) => {
+      {workspace && tasksOpen && <TaskCenter visibilityError={visibilityError} unread={reminders.unread} onNoticeOpen={openNotice} showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId, generationId) => {
         const next = await request<Selection>({ type: "alchemy:open-project", id: projectId });
-        selectionRevision.current++; setSelection(next); setHistoryOpen(false);
+        selectionRevision.current++; setSelection(next); setHistoryOpen(false); setGalleryOpen(false);
         setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
         if (generationId) {
           setTargetGeneration({ jobId, id: generationId });
@@ -796,12 +838,26 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         }
         await saveMode(mode);
       }} />}
-      <div className={workspace ? "workspace-body" : undefined} data-results-open={drawerOpen} data-history={historyOpen}>
+      {workspace && galleryOpen ? <ResultGallery connected={connected} revision={dataRevision} showHidden={showHidden} hiddenProjectIds={hiddenProjectIds}
+        visibilityToggle={<HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />}
+        onOpen={async work => {
+          setBusy(true); modeRevision.current++;
+          try {
+            const next = await request<Selection>({ type: "alchemy:open-project", id: work.projectId });
+            await request({ type: "alchemy:mode", mode: work.mode });
+            selectionRevision.current++; setSelection(next); setHistoryOpen(false);
+            setPreferences(value => ({ ...value, mode: work.mode }));
+            setVersions(items => ({ ...items, [`${work.projectId}:${work.mode}`]: work.jobId }));
+            setTargetGeneration({ jobId: work.jobId, id: work.generationId });
+            dispatchDrawer({ type: "toggle", key: `${work.projectId}:${work.mode}:${work.jobId}`, open: true, seen: "" });
+            setGalleryOpen(false);
+          } finally { modeRevision.current++; setBusy(false); }
+        }} /> : <div className={workspace ? "workspace-body" : undefined} data-results-open={drawerOpen} data-history={historyOpen}>
       <div ref={editor} className={workspace ? "workspace-editor" : undefined} inert={workspace && narrow && drawerOpen}>
       {!workspace && draftError && <p className="error" role="alert">{draftError}</p>}
-      <main className={workspace && !historyOpen && selection ? "canvas-main" : undefined}>
+      <main className={workspace && !historyOpen && !galleryOpen && selection ? "canvas-main" : undefined}>
         {historyOpen ? (
-          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} />
+          <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} onToggleHidden={() => void toggleHiddenProjects()} />
         ) : workspace && selection ? <CanvasWorkspace onPromptRevealed={() => setTargetPrompt(undefined)} revealPrompt={targetPrompt?.jobId === activeJob?.id ? targetPrompt?.request : undefined} contextKey={drawerKey} mode={preferences.mode}
           image={selection.image} subjectImage={subjectImage(preferences.mode)} subjects={multiSubjects}
           selected={canvasSelections[subjectKey(preferences.mode)] || "reference"} onSelect={id => setCanvasSelections(items => ({ ...items, [subjectKey(preferences.mode)]: id }))}
@@ -836,10 +892,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         /> : <section className="empty"><span className="empty-mark"><Icon name="image" /></span><h1>选择一张参考图</h1></section>}
 
       </main>
-      {workspace && !historyOpen && resultPane && generationPanel && createPortal(generationPanel, resultPane)}
+      {workspace && !historyOpen && !galleryOpen && resultPane && generationPanel && createPortal(generationPanel, resultPane)}
       </div>
-      {workspace && !historyOpen && <div className="result-drawer-slot"><aside id="workspace-results" className="workspace-results" ref={setResultPane} aria-label="生成结果抽屉" aria-hidden={!drawerOpen} inert={!drawerOpen} /></div>}
-      </div>
+      {workspace && !historyOpen && !galleryOpen && <div className="result-drawer-slot"><aside id="workspace-results" className="workspace-results" ref={setResultPane} aria-label="生成结果抽屉" aria-hidden={!drawerOpen} inert={!drawerOpen} /></div>}
+      </div>}
       </div>
     </div>
   );

@@ -114,3 +114,27 @@ test("at most two source reads run concurrently and excessive queued requests fa
   await Promise.all(requests);
   assert.equal(maximum, 2);
 });
+
+test("legacy generation thumbnails validate paths, reject symlinks and collect only derived cache", async t => {
+  const { thumbnails, images, dataDir, cache } = await setup(t);
+  const generation = { id: "00000000-0000-0000-0000-000000000001", extension: "png" };
+  const source = images.generationPath(generation), bytes = await raster(960, 480);
+  await writeFile(source, bytes);
+  assert.deepEqual((await sharp(decode(await thumbnails.readGeneration(generation))).metadata()).width, 480);
+  for (const invalid of [{ ...generation, id: "../outside" }, { ...generation, extension: "png/../../token" }, { ...generation, imageAsset: "../private.png" }])
+    await assert.rejects(async () => thumbnails.readGeneration(invalid), /引用无效/);
+  const cacheFile = join(cache, `legacy-${generation.id}.png.webp`);
+  await rm(cacheFile);
+  await symlink(source, cacheFile);
+  await assert.rejects(thumbnails.readGeneration(generation), /缩略图文件无效/);
+  await rm(cacheFile);
+  await thumbnails.readGeneration(generation);
+  await rm(source);
+  await thumbnails.collect();
+  assert.deepEqual(await readdir(cache), []);
+  const outside = join(dataDir, "user-original.png");
+  await writeFile(outside, bytes);
+  await symlink(outside, source);
+  await assert.rejects(thumbnails.readGeneration(generation), /图片文件无效/);
+  assert.deepEqual(await readFile(outside), bytes);
+});

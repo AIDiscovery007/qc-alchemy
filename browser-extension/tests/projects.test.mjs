@@ -699,6 +699,7 @@ test("project visibility validates the whole batch and query, requires authentic
   const changed = await (await request("/projects/visibility", post({ ids: [first.id, first.id], hidden: true }))).json();
   assert.deepEqual(changed.updatedIds, [first.id]);
   const repeated = await (await request("/projects/visibility", body)).json();
+  assert.deepEqual(repeated.updatedIds, []);
   assert.equal(repeated.revision, changed.revision, "repeating an unchanged state does not invalidate the cache");
 });
 

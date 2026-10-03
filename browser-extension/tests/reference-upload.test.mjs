@@ -38,7 +38,7 @@ function fixture(overrides = {}) {
     useRef: () => referenceContext,
     request: async message => { requests.push(message); return next; },
     subjectImage: () => 'retained-subject', multiSubjects: [{ id: 'a', subjectImage: 'a', role: '人物', detail: '帽子' }, { id: 'b', subjectImage: 'b', role: '物品', detail: '' }],
-    setBusy: value => state.busy.push(value), setError: value => { state.error = value; }, setHistoryOpen: value => { state.historyOpen = value; },
+    setBusy: value => state.busy.push(value), setError: value => { state.error = value; }, setHistoryOpen: value => { state.historyOpen = value; }, setGalleryOpen: value => { state.galleryOpen = value; },
     setSelection: value => state.selections.push(value),
     setVersions: update => { state.versions = update(state.versions); },
     setSubjectDrafts: update => { state.subjects = update(state.subjects); },

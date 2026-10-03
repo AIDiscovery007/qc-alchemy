@@ -55,6 +55,5 @@
  .workspace-library-toolbar > div { flex-wrap: wrap; flex-shrink: 1; }
  .workspace-project-list .workspace-project-card { gap: 10px; padding: 10px 4px; }
  .workspace-project-list .workspace-project-open { gap: 10px; }
- .workspace-project-list .workspace-project-actions > button:first-child { display: none; }
  .workspace-project-list .workspace-project-actions button { padding: 8px; }
 }

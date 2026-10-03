@@ -90,6 +90,28 @@ test("visibility messages reject malformed or untrusted input before any bridge 
   assert.equal(bg.calls[0].token, "private-token");
 });
 
+test("gallery messages validate metadata queries and derive hidden access from the session", async () => {
+  const bg = background();
+  const message = { type: "alchemy:gallery", offset: 96, limit: 96, search: "花园", projectId, ratio: "portrait", sort: "oldest", includeHidden: true };
+  assert.equal((await bg.send(message)).ok, true);
+  let query = new URL(bg.calls.at(-1).path, "http://local");
+  assert.equal(query.pathname, "/gallery");
+  assert.equal(query.searchParams.get("includeHidden"), null);
+  assert.equal(query.searchParams.get("offset"), "96");
+  assert.equal(query.searchParams.get("search"), "花园");
+  assert.equal(bg.calls[0].token, "private-token");
+  await bg.send({ type: "alchemy:show-hidden-projects", show: true });
+  await bg.send(message);
+  query = new URL(bg.calls.at(-1).path, "http://local");
+  assert.equal(query.searchParams.get("includeHidden"), "true");
+  const count = bg.calls.length;
+  for (const invalid of [{ offset: -1 }, { limit: 101 }, { search: 5 }, { projectId: "../secret" }, { ratio: "wide" }, { sort: "random" }])
+    assert.match((await bg.send({ ...message, ...invalid })).error, /无效/);
+  assert.equal(await bg.send(message, { ...sender, id: "foreign" }), undefined);
+  assert.equal(await bg.send(message, { ...contentSender, frameId: 1 }), undefined);
+  assert.equal(bg.calls.length, count);
+});
+
 test("hiding conceals the selected project without deleting the selection and showing restores it", async () => {
   const bg = background({ preferences: { token: "private-token" }, selection: { id: "selected", projectId, image } });
   await bg.send({ type: "alchemy:set-project-hidden", ids: ["b".repeat(64)], hidden: true });
@@ -211,4 +233,23 @@ test('motion messages reject untrusted senders and invalid values without changi
   assert.equal((await bg.send({ type: 'alchemy:get-motion-preference' })).value, 'system');
   assert.equal(bg.runtimeMessages.length, 0);
   assert.equal(bg.tabMessages.length, 0);
+});
+
+// Run the real hook query through the background validator: the unselected project is not an ID.
+test("gallery hook default filters reach the bridge without an empty project ID", async () => {
+  const bg = background(), timers = [], effects = [], exports = {};
+  const hook = ts.transpileModule(await readFile(new URL("../entrypoints/workspace/useGallery.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  runInNewContext(hook, { exports, setTimeout: fn => { timers.push(fn); return 1; }, clearTimeout() {}, require: name => name === "react" ? {
+    useState: value => [value, () => {}], useRef: value => ({ current: value }), useEffect: fn => effects.push(fn),
+  } : { request: async message => { const reply = await bg.send(message); if (reply.error) throw new Error(reply.error); return reply.value; } } });
+  exports.default({ search: "", projectId: "", ratio: "all", sort: "newest" }, true, "r1", false);
+  effects.forEach(fn => fn());
+  await Promise.all(timers.map(fn => fn()));
+  assert.equal(bg.calls.length, 1);
+  const url = new URL(bg.calls[0].path, "http://local");
+  assert.equal(url.pathname, "/gallery");
+  assert.equal(url.searchParams.has("projectId"), false);
+  assert.equal(url.searchParams.get("limit"), "96");
 });

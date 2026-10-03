@@ -6,8 +6,9 @@ export function isReminderVisible(element: HTMLElement): boolean {
     if (!image.complete || !image.naturalWidth) return false;
     // ImagePreview positions this anchor over the rendered pixels, excluding contain letterboxing.
     const anchor = image.closest('.image-preview')?.querySelector<HTMLElement>('.image-preview-anchor:not([hidden])');
-    if (!anchor) return false;
-    ({ left, top, right, bottom } = anchor.getBoundingClientRect());
+    if (anchor) ({ left, top, right, bottom } = anchor.getBoundingClientRect());
+    // Gallery originals use intrinsic auto dimensions, so their element rect is the rendered image.
+    else if (!image.matches('[data-gallery-original]')) return false;
   }
   left = Math.max(left, 0); top = Math.max(top, 0);
   right = Math.min(right, innerWidth); bottom = Math.min(bottom, innerHeight);

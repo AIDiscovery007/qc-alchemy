@@ -11,6 +11,7 @@ import { createModelStore } from "./models.mjs";
 import { createCliManager } from "./cli.mjs";
 import { createImageStore } from "./images.mjs";
 import { createThumbnailStore } from "./thumbnails.mjs";
+import { createGalleryStore } from "./gallery.mjs";
 import { openGeneratedImage } from "./image-actions.mjs";
 import sharp from "sharp";
 import { migrateStorage } from "./storage.mjs";
@@ -192,6 +193,7 @@ export async function createBridge({
   for (const job of jobs.values()) taskFeed.update(job);
   await images.collect();
   await thumbnails.collect();
+  const gallery = createGalleryStore({ projects, images });
   let mutationTail = Promise.resolve();
   let collectionPending = false;
   const acquireMutation = async () => {
@@ -332,6 +334,20 @@ export async function createBridge({
         server.closeIdleConnections();
         return;
       }
+      if (req.method === "GET" && path === "/gallery") {
+        validateQuery(["offset", "limit", "search", "projectId", "ratio", "sort", "includeHidden"]);
+        const integer = (key, fallback, minimum, maximum) => {
+          const value = query.get(key);
+          if (value === null) return fallback;
+          if (!/^(0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < minimum || Number(value) > maximum) throw bad("无效画廊分页参数");
+          return Number(value);
+        };
+        const search = query.get("search") || "", projectId = query.get("projectId") || undefined;
+        const ratio = query.get("ratio") || "all", sort = query.get("sort") || "newest";
+        if (search.length > 200 || (projectId && !/^[a-f0-9]{64}$/.test(projectId)) || !["all", "portrait", "landscape", "square"].includes(ratio) || !["newest", "oldest"].includes(sort)) throw bad("无效画廊筛选参数");
+        json(200, await gallery.page({ offset: integer("offset", 0, 0, Number.MAX_SAFE_INTEGER), limit: integer("limit", 100, 1, 100), search, projectId, ratio, sort, includeHidden: includeHidden() }));
+        return;
+      }
       if (req.method === "GET" && path === "/projects") {
         validateQuery(["page", "limit", "q", "status", "includeHidden"]);
         const showHidden = includeHidden();
@@ -459,8 +475,9 @@ export async function createBridge({
         if (req.method === "GET" && generationMatch[3] === "thumbnail") {
           validateQuery([]);
           if (generation.status !== "completed") throw bad("图片尚未生成", 409);
-          if (!generation.imageAsset) throw bad("生成图片已不存在，请重新生成", 404);
-          json(200, { ...await thumbnails.read(generation.imageAsset), source: { kind: "generation", jobId: job.id, generationId: generation.id } });
+          try {
+            json(200, { ...await thumbnails.readGeneration(generation), source: { kind: "generation", jobId: job.id, generationId: generation.id } });
+          } catch (error) { if (error.code === "ENOENT") throw bad("生成图片已不存在，请重新生成", 404); throw error; }
           return;
         }
         if (req.method === "GET" && generationMatch[3] === "reference") {
@@ -476,8 +493,7 @@ export async function createBridge({
         if (fileAction || (req.method === "GET" && generationMatch[3] === "image")) {
           if (fileAction && Object.keys(await readBody(req)).length) throw bad("图片操作不接受路径或命令参数");
           if (generation.status !== "completed" || !["png", "jpeg", "webp"].includes(generation.extension)) throw bad("图片尚未生成", 409);
-          const imagePath = generation.imageAsset !== undefined ? images.path(generation.imageAsset)
-            : resolve(dataDir, `${generation.id}-generated.${generation.extension}`);
+          const imagePath = images.generationPath(generation);
           let bytes;
           try {
             if (generation.imageAsset !== undefined) bytes = await images.read(generation.imageAsset);

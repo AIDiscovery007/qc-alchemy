@@ -5,14 +5,15 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectSummary } from "../../lib/types";
 import ProjectItem from "./ProjectItem";
 import Icon from "./Icon";
+import HiddenProjectsToggle from "./HiddenProjectsToggle";
 
-export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, status, loading, loadError, onPage, onSearch, onStatus, onRetry, showHidden, onSetHidden }: {
+export default function ProjectHistory({ projects, busy, onOpen, onDelete, workspace = false, searchTarget, page, total, pageSize, search, status, loading, loadError, onPage, onSearch, onStatus, onRetry, showHidden, onSetHidden, onToggleHidden }: {
   page: number; total: number; pageSize: number; search: string; loading: boolean; loadError: string;
   status?: "unstarted"; onStatus(value: "unstarted" | undefined): void;
   onPage(page: number): void; onSearch(value: string): void; onRetry(): void;
   projects: ProjectSummary[]; busy: boolean; onOpen(project: ProjectSummary): void;
   onDelete(ids: string[]): Promise<void>;
-  showHidden: boolean; onSetHidden(ids: string[], hidden: boolean): Promise<void>;
+  showHidden: boolean; onSetHidden(ids: string[], hidden: boolean): Promise<string[]>; onToggleHidden(): void;
   workspace?: boolean; searchTarget?: HTMLElement | null;
 }) {
   const [managing, setManaging] = useState(false);
@@ -33,7 +34,7 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const unavailable = busy || loading || !!loadError;
   const listView = workspace && view === "list";
-  const selectable = !workspace || managing || listView;
+  const selectable = managing;
   const changeView = (value: "grid" | "list") => {
     setView(value);
     if (selected.length) setManaging(true);
@@ -63,19 +64,21 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
       heading.current?.focus();
     } catch (error) { setError((error as Error).message); }
   };
-  const setHidden = async (hidden: boolean) => {
+  const setHidden = async (hidden: boolean, items = checked) => {
     setError(""); setNotice("");
     setVisibilityAction(hidden);
-    const ids = checked.filter(project => !!project.hidden !== hidden).map(project => project.id);
+    const ids = items.filter(project => !!project.hidden !== hidden).map(project => project.id);
     try {
-      await onSetHidden(ids, hidden);
-      setSelected([]);
+      const updated = await onSetHidden(ids, hidden);
+      setSelected(previous => previous.filter(id => !updated.includes(id)));
+      const remaining = ids.filter(id => !updated.includes(id)).length;
+      if (remaining) setError(`还有 ${remaining} 个项目未更新，请重试。`);
     } catch (error) { setError((error as Error).message); }
     finally { setVisibilityAction(undefined); }
   };
   const items = visible.map((project) => <ProjectItem key={project.id} project={project} workspace={workspace} selectable={selectable} disabled={unavailable} selected={checked.some((item) => item.id === project.id)}
     onSelect={() => setSelected((ids) => ids.includes(project.id) ? ids.filter((id) => id !== project.id) : [...ids, project.id])}
-    onOpen={() => onOpen(project)} onDelete={() => confirm([project])} />);
+    onOpen={() => onOpen(project)} onSetHidden={() => void setHidden(!project.hidden, [project])} onDelete={() => confirm([project])} />);
   const searchInput = <input className="workspace-project-search" aria-label="搜索项目" type="search" value={search} maxLength={200} placeholder={status ? "搜索待逆向项目" : "搜索全部项目"} disabled={busy}
         onChange={(event) => { onSearch(event.target.value); setSelected([]); }} />;
   return <section className={`history${workspace ? " workspace-project-library" : ""}`}>
@@ -86,9 +89,12 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
         <button type="button" aria-label="卡片视图" aria-pressed={view === "grid"} onClick={() => changeView("grid")}><Icon name="grid" />卡片</button>
         <button type="button" aria-label="列表视图" aria-pressed={view === "list"} onClick={() => changeView("list")}><Icon name="list" />列表</button>
       </div>
-      {!!projects.length && !listView && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}</div>
+      {!!projects.length && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}</div>
     </div>}
-    {!workspace && <div className="history-search">{searchInput}</div>}
+    {!workspace && <div className="history-search">{searchInput}<div className="history-view-controls">
+      <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
+      {!!projects.length && <button className="text-button" disabled={busy} aria-pressed={managing} onClick={() => { setManaging(!managing); setSelected([]); }}>{managing ? "完成管理" : "批量管理"}</button>}
+    </div></div>}
     <div className="project-status-filter" role="group" aria-label="项目状态筛选">
       <button type="button" aria-pressed={!status} disabled={busy} onClick={() => onStatus(undefined)}>全部</button>
       <button type="button" aria-pressed={status === "unstarted"} disabled={busy} onClick={() => onStatus("unstarted")}>待逆向</button>
@@ -97,8 +103,8 @@ export default function ProjectHistory({ projects, busy, onOpen, onDelete, works
       <label><input ref={selectAll} className="project-checkbox" type="checkbox" checked={!!eligible.length && checked.length === eligible.length}
         disabled={unavailable || !eligible.length} onChange={(event) => setSelected(event.target.checked ? eligible.map((project) => project.id) : [])} />选择本页</label>
       <div className="history-management-actions">
-      <button className="icon-button" aria-label="隐藏所选" aria-busy={visibilityAction === true || undefined} disabled={unavailable || !checked.some(project => !project.hidden)} onClick={() => void setHidden(true)}><Icon name="eyeClosed" /></button>
-      {showHidden && <button className="icon-button" aria-label="取消隐藏" aria-busy={visibilityAction === false || undefined} disabled={unavailable || !checked.some(project => project.hidden)} onClick={() => void setHidden(false)}><Icon name="eye" /></button>}
+      <button className="text-button" aria-busy={visibilityAction === true || undefined} disabled={unavailable || !checked.some(project => !project.hidden)} onClick={() => void setHidden(true)}>隐藏所选</button>
+      {showHidden && <button className="text-button" aria-busy={visibilityAction === false || undefined} disabled={unavailable || !checked.some(project => project.hidden)} onClick={() => void setHidden(false)}>恢复所选</button>}
       <button className="text-button danger" disabled={unavailable || !checked.length || checked.some(project => project.busy)} onClick={() => confirm(checked)}>
         <Icon name="trash" />删除所选{checked.length ? ` (${checked.length})` : ""}
       </button>

@@ -2,6 +2,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, sep } from "node:path";
+import { galleryAsset, gallerySetup, galleryMessages } from "./gallery-preview.mjs";
 
 const port = Number(process.env.PREVIEW_PORT || 43188);
 const root = resolve(".output/chrome-mv3");
@@ -44,6 +45,7 @@ createServer(async (req, res) => {
     }
     const path = new URL(req.url, "http://127.0.0.1").pathname;
     res.setHeader("Cache-Control", "no-store");
+    if (galleryAsset(path, res)) return;
     if (path === "/hover-preview") {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end('<html><head><meta charset="UTF-8"><title>QC-Reframe · 动态避让预览</title></head><body style="margin:0"><iframe title="悬浮避让示例" src="/hover-fixture" style="display:block;width:100%;height:100vh;border:0"></iframe></body></html>');
@@ -149,7 +151,9 @@ createServer(async (req, res) => {
             return {id,title:sample.result.title,createdAt,updatedAt:createdAt,sourceUrl:'https://example.com/sample/'+index,capture:'original',jobs:index%5===4?[]:[sample]};
           }));
         }
+        ${gallerySetup}
         let showHiddenProjects=false;
+        let visibilityFailed=false, scopeFailed=false;
         if(previewOptions.has('hidden')) projects.slice(0,Number(previewOptions.get('hidden'))||1).forEach(p=>p.hidden=true);
         const visibleProjects=()=>projects.filter(p=>showHiddenProjects||!p.hidden);
         let projectsRevision=1;
@@ -173,7 +177,7 @@ createServer(async (req, res) => {
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
-        const data={preferences:{token:state==='empty'?'':'preview',mode:previewOptions.get('mode')|| (state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style')},selection:state==='empty'||state==='library'?undefined:selection(projects[0])};
+        const data={preferences:{token:state==='empty'?'':'preview',mode:previewOptions.get('mode')|| (state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style')},selection:state==='empty'||state==='library'||state==='works'?undefined:selection(projects[0])};
         if(previewOptions.has('reference') && data.selection) {
           data.selection.image='';
           setTimeout(()=>{
@@ -244,11 +248,18 @@ createServer(async (req, res) => {
             },1800);
             return {ok:true,value:structuredClone(models)};
           }
-          if(message.type==='alchemy:show-hidden-projects'){showHiddenProjects=message.show;return {ok:true,value:showHiddenProjects};}
+          if(message.type==='alchemy:show-hidden-projects'){
+            if(previewOptions.has('scopeDelay'))await new Promise(resolve=>setTimeout(resolve,Math.min(3000,Number(previewOptions.get('scopeDelay'))||0)));
+            if(previewOptions.get('scope')==='failed-once'&&!scopeFailed){scopeFailed=true;return {error:'示例：查看范围更新失败，请重试'};}
+            showHiddenProjects=message.show;return {ok:true,value:showHiddenProjects};
+          }
           if(message.type==='alchemy:set-project-hidden'){
-            if(previewOptions.get('visibility')==='failed')return {error:'示例：隐藏状态保存失败，请重试'};
-            projects.filter(p=>message.ids.includes(p.id)).forEach(p=>{p.hidden=message.hidden;touch(p);});
-            return {ok:true,value:{updatedIds:message.ids,hidden:message.hidden,revision:'preview-'+projectsRevision}};
+            if(previewOptions.get('visibility')==='failed'||previewOptions.get('visibility')==='failed-once'&&!visibilityFailed){visibilityFailed=true;return {error:'示例：隐藏状态保存失败，请重试'};}
+            if(previewOptions.has('visibilityDelay'))await new Promise(resolve=>setTimeout(resolve,Math.min(3000,Number(previewOptions.get('visibilityDelay'))||0)));
+            const updated=projects.filter(p=>message.ids.includes(p.id)&&!!p.hidden!==message.hidden);
+            if(previewOptions.get('visibility')==='partial')updated.splice(1);
+            updated.forEach(p=>{p.hidden=message.hidden;touch(p);});
+            return {ok:true,value:{updatedIds:updated.map(p=>p.id),hidden:message.hidden,revision:'preview-'+projectsRevision}};
           }
           if(message.type==='alchemy:projects')return {ok:true,value:await projectPage(message)};
           if(message.type==='alchemy:project'){
@@ -260,6 +271,7 @@ createServer(async (req, res) => {
             const project=projects.find(p=>p.id===message.id),cover=!message.reference&&summary(project).cover;
             return {ok:true,value:{image:cover?(state==='gallery'?gallery.result:template):project.image||template,source:cover?{kind:'generation',jobId:cover.jobId,generationId:cover.generationId}:{kind:'reference'}}};
           }
+          ${galleryMessages}
           if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template,source:{kind:'generation',jobId:message.id,generationId:message.generationId}}};
           if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,hiddenProjectIds:projects.filter(p=>p.hidden).map(p=>p.id),visibleActive:visibleProjects().flatMap(p=>p.jobs).reduce((n,j)=>n+Number(j.status==='running')+(j.generations||[]).filter(g=>g.status==='running').length,0),projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?visibleProjects().flatMap(p=>p.jobs):message.path==='/projects'?visibleProjects().map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {

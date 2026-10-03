@@ -11,9 +11,9 @@ import { logo } from "../../lib/brand";
 const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
 const statuses = { running: "进行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
 
-export default function TaskCenter({ unread, onNoticeOpen, onClose, onOpen, onUpdate, showHidden, hiddenProjectIds, busy, onToggleHidden }: {
+export default function TaskCenter({ unread, onNoticeOpen, onClose, onOpen, onUpdate, showHidden, hiddenProjectIds, busy, onToggleHidden, visibilityError }: {
   unread: TaskNotice[]; onNoticeOpen(notice: TaskNotice): void;
-  showHidden: boolean; hiddenProjectIds: string[]; busy: boolean; onToggleHidden(): void;
+  visibilityError?: string; showHidden: boolean; hiddenProjectIds: string[]; busy: boolean; onToggleHidden(): void;
   onClose(): void;
   onOpen(projectId: string, mode: Mode, jobId: string, generationId?: string): Promise<void>;
   onUpdate?(job: Job): void;
@@ -114,6 +114,7 @@ export default function TaskCenter({ unread, onNoticeOpen, onClose, onOpen, onUp
       </section>}
       {!loaded && <p className="hint task-scope" role="status">正在读取任务…</p>}
       {error && <div className="error" role="alert">{error}</div>}
+      {visibilityError && <div className="error" role="alert">{visibilityError}</div>}
       {actionError && <div className="error" role="alert">{actionError}</div>}
       {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>暂无任务</h3></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>

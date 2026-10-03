@@ -334,6 +334,19 @@ export default defineBackground(() => {
         if (typeof message.path !== "string" || !/^\/(health|models|cli\/status|jobs(?:\/[\w-]+)?|projects(?:\/[\da-f]{64})?)$/.test(message.path))
           throw new Error("无效请求");
         return bridge(`${message.path}${showHiddenProjects && ["/projects", "/jobs", "/health"].includes(message.path) ? "?includeHidden=true" : ""}`, token);
+      case "alchemy:gallery": {
+        const { offset = 0, limit = 100, search = "", projectId, ratio = "all", sort = "newest" } = message;
+        if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          typeof search !== "string" || search.length > 200 || (projectId !== undefined && (typeof projectId !== "string" || !/^[a-f0-9]{64}$/.test(projectId))) ||
+          !["all", "portrait", "landscape", "square"].includes(ratio) || !["newest", "oldest"].includes(sort)) throw new Error("无效画廊查询");
+        try {
+          return await bridge(`/gallery?${new URLSearchParams({ offset: String(offset), limit: String(limit), search, ratio, sort,
+            ...(projectId ? { projectId } : {}), ...(showHiddenProjects ? { includeHidden: "true" } : {}) })}`, token);
+        } catch (error) {
+          if ((error as Error).message === "Not found") throw new Error("本机服务尚未启用作品画廊，请重启本机服务后重试。已有作品仍保存在本机。");
+          throw error;
+        }
+      }
       case "alchemy:projects": {
         const { page = 1, limit = 24, q = "", status } = message;
         if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof q !== "string" || q.length > 200 || (status !== undefined && status !== "unstarted"))
@@ -471,7 +484,7 @@ export default defineBackground(() => {
       uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
       return true;
     }
-    if ((contentSender || extensionSender) && ["alchemy:get-motion-preference", "alchemy:set-motion-preference", "alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:quick-draft", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
+    if ((contentSender || extensionSender) && ["alchemy:get-motion-preference", "alchemy:set-motion-preference", "alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:gallery", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:quick-draft", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
       uiMessage(message, contentSender ? `tab:${sender.tab!.id}` : "popup").then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),

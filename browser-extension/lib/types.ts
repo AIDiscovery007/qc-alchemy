@@ -111,3 +111,28 @@ export type ModelCatalog = {
   models: { model: string; label: string; isDefault: boolean; status: "verified" | "unverified" | "unavailable" }[];
   verification?: { model: string; status: "running" | "completed" | "failed"; error?: string };
 };
+
+export type GalleryWork = {
+  id: string;
+  hidden?: boolean;
+  projectId: string;
+  projectTitle: string;
+  jobId: string;
+  generationId: string;
+  mode: Mode;
+  version: number;
+  title: string;
+  createdAt: string;
+  width: number;
+  height: number;
+};
+export type GalleryPage = {
+  items: GalleryWork[];
+  total: number;
+  totalWorks: number;
+  projectCount: number;
+  projects: { id: string; title: string }[];
+  revision: string;
+  offset: number;
+  limit: number;
+};

@@ -53,3 +53,18 @@ test('image loading and contain letterboxing do not count as viewing the result'
   image.closest = () => ({ querySelector: () => node(500, 680) });
   assert.equal(isReminderVisible(image), true);
 });
+
+test('gallery counts only decoded visible originals, never thumbnail or loading pixels', () => {
+  const image = node(200, 500, null, { tagName: 'IMG', complete: true, naturalWidth: 300,
+    closest: () => null, matches: selector => selector === '[data-gallery-original]' });
+  assert.equal(isReminderVisible(image), true);
+  image.complete = false;
+  assert.equal(isReminderVisible(image), false);
+  image.complete = true; image.naturalWidth = 0;
+  assert.equal(isReminderVisible(image), false);
+  image.naturalWidth = 300; image.matches = () => false;
+  assert.equal(isReminderVisible(image), false);
+  image.matches = selector => selector === '[data-gallery-original]';
+  image.getBoundingClientRect = node(1100, 1400).getBoundingClientRect;
+  assert.equal(isReminderVisible(image), false);
+});

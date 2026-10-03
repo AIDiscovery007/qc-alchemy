@@ -17,7 +17,10 @@ export function useTaskReminders(root: RefObject<HTMLDivElement | null>) {
       if (inFlight || stopped) return;
       inFlight = true;
       const visible = !document.hidden && document.hasFocus() && !!root.current?.getClientRects().length;
-      const seen = visible && !root.current?.querySelector('dialog[open]') ? [...(root.current?.querySelectorAll<HTMLElement>('[data-reminder-task]') || [])].filter(isReminderVisible).map(element => element.dataset.reminderTask!).filter(Boolean) : [];
+      const dialogs = [...(root.current?.querySelectorAll<HTMLDialogElement>('dialog[open]') || [])];
+      // A gallery original is the visible result; other modal contents still obscure result surfaces.
+      const scope = dialogs.length ? dialogs.length === 1 && dialogs[0]!.matches('.gallery-preview') ? dialogs[0] : null : root.current;
+      const seen = visible ? [...(scope?.querySelectorAll<HTMLElement>('[data-reminder-task]') || [])].filter(isReminderVisible).map(element => element.dataset.reminderTask!).filter(Boolean) : [];
       try {
         const next = await request<ReminderView>({ type: 'alchemy:reminder-view', viewId, visible, seen });
         if (!stopped && next) {

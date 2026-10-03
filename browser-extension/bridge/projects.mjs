@@ -49,6 +49,7 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
     jobProjects.set(job.id, job.projectId);
     invalidate(job.projectId);
   };
+  let visibilityTail = Promise.resolve();
   let saveTail = Promise.resolve();
   const save = (project) => {
     saveTail = saveTail.catch(() => {}).then(async () => {
@@ -143,15 +144,21 @@ export async function createProjectStore({ dataDir, legacyDir = dataDir, jobs, r
     get revision() { return revision(); },
     isHidden(id) { return records.get(id)?.hidden === true; },
     get hiddenProjectIds() { return [...records.values()].filter((project) => project.hidden).map((project) => project.id); },
-    async setHidden(ids, hidden) {
-      for (const id of ids) {
-        const project = records.get(id);
-        if (project.hidden === hidden) continue;
-        await save({ ...project, hidden });
-        project.hidden = hidden;
-        invalidate(id);
-      }
-      return ids;
+    setHidden(ids, hidden) {
+      // Check state inside the queue so concurrent windows cannot claim the same change.
+      visibilityTail = visibilityTail.catch(() => {}).then(async () => {
+        const updatedIds = [];
+        for (const id of ids) {
+          const project = records.get(id);
+          if (!project || project.hidden === hidden) continue;
+          await save({ ...project, hidden });
+          project.hidden = hidden;
+          invalidate(id);
+          updatedIds.push(id);
+        }
+        return updatedIds;
+      });
+      return visibilityTail;
     },
     async remove(ids) {
       const history = ids.flatMap(projectJobs);

@@ -3,9 +3,9 @@ import { request } from "../../lib/client";
 import type { ImageThumbnail, ProjectSummary } from "../../lib/types";
 import Icon from "./Icon";
 
-export default function ProjectItem({ project, disabled, selected, onSelect, onDelete, onOpen, workspace = false, selectable = true }: {
+export default function ProjectItem({ project, disabled, selected, onSelect, onDelete, onOpen, onSetHidden, workspace = false, selectable = true }: {
   project: ProjectSummary; disabled: boolean; selected: boolean;
-  onSelect(): void; onDelete(): void; onOpen(): void;
+  onSelect(): void; onDelete(): void; onOpen(): void; onSetHidden(): void;
   workspace?: boolean; selectable?: boolean;
 }) {
   const element = useRef<HTMLDivElement>(null);
@@ -27,6 +27,8 @@ export default function ProjectItem({ project, disabled, selected, onSelect, onD
     if (element.current) observer.observe(element.current);
     return () => { cancelled = true; observer.disconnect(); };
   }, [project.id, workspace, workspace ? project.cover?.generationId : undefined]);
+  const visibilityButton = <button type="button" className="text-button project-visibility-action" disabled={disabled} onClick={onSetHidden}
+    aria-label={`${project.hidden ? "恢复" : "隐藏"}项目：${project.title}`}>{project.hidden ? "恢复" : "隐藏"}</button>;
   if (workspace) {
     let source = "上传参考图";
     try { source = new URL(project.sourceUrl).hostname.replace(/^www\./, "") || source; } catch { /* Local uploads have no website. */ }
@@ -39,15 +41,15 @@ export default function ProjectItem({ project, disabled, selected, onSelect, onD
           <small className="workspace-project-updated">更新于 {new Date(project.updatedAt).toLocaleString("zh-CN")}</small></div>
       </button>
       <div className="workspace-project-actions">
-        <button disabled={disabled} onClick={onOpen}>{project.jobCount ? "继续创作" : "开始逆向"} <Icon name="arrow" /></button>
+        {visibilityButton}
         <button className="danger" disabled={disabled || project.busy} onClick={onDelete}
           title={project.busy ? "任务结束后可删除" : "删除项目"} aria-label={`删除项目：${project.title}`}><Icon name="trash" /></button>
       </div>
     </div>;
   }
   return <div ref={element} className="project-row" data-selected={selected}>
-    <input className="project-checkbox" type="checkbox" checked={selected} disabled={disabled}
-      aria-label={`选择项目：${project.title}`} title="选择项目" onChange={onSelect} />
+    {selectable && <input className="project-checkbox" type="checkbox" checked={selected} disabled={disabled}
+      aria-label={`选择项目：${project.title}`} title="选择项目" onChange={onSelect} />}
     <button className="history-item" disabled={disabled} onClick={onOpen} aria-label={`打开项目：${project.title}`}>
     {image ? <img className="project-thumbnail" src={image} alt="项目参考模板" decoding="async" /> : <span className="project-thumbnail placeholder">模板</span>}
     <span className="project-description"><strong>{project.title}</strong>
@@ -58,6 +60,7 @@ export default function ProjectItem({ project, disabled, selected, onSelect, onD
       }).join(' · ')}</small>}
     </span>
     </button>
+    {visibilityButton}
     <button className="icon-button danger" disabled={disabled || project.busy} onClick={onDelete}
       title={project.busy ? "任务结束后可删除" : "删除项目"} aria-label={`删除项目：${project.title}`}><Icon name="trash" /></button>
   </div>;

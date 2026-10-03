@@ -96,7 +96,7 @@ test('workspace handoff restores its own source and mode without polling back to
     pollWhileVisible: callback => { refresh = callback; return () => {}; },
     setPreferences: update => { state.preferences = update(state.preferences); },
     setSelection: value => state.selections.push(value), setInstructions: value => { state.drafts = value; },
-    setSubjectDrafts() {}, setMultiSubjectDrafts() {}, setPromptDrafts() {}, setVersions() {}, setLang() {}, setSettings() {}, setDraftReady() {}, setProject() {}, setHistoryOpen() {}, setError: value => assert.fail(value),
+    setSubjectDrafts() {}, setMultiSubjectDrafts() {}, setPromptDrafts() {}, setVersions() {}, setLang() {}, setSettings() {}, setDraftReady() {}, setProject() {}, setHistoryOpen() {}, setGalleryOpen() {}, setError: value => assert.fail(value),
   };
   evaluate(`const start = ${initialize};`, context, ['start']).start();
   await new Promise(resolve => setImmediate(resolve));

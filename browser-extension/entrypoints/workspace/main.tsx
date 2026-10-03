@@ -13,3 +13,5 @@ import "./canvas-workspace.css";
 document.documentElement.classList.add("embedded", "workspace-page");
 ReactDOM.createRoot(document.getElementById("root")!).render(<GenerationEffectContext value={GenerationEffect}><LoadingEffectContext value={LoadingEffect}><App workspace /></LoadingEffectContext></GenerationEffectContext>);
 import "../popup/settings-center.css";
+
+import "./gallery.css";

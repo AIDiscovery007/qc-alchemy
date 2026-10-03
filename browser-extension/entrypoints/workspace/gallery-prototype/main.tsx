@@ -20,7 +20,14 @@ function Picture({ work, full = false, priority = false }: { work: Work; full?: 
 function App() {
   const initial = new URLSearchParams(location.search).get('variant') || 'A';
   const [variant,setVariant] = useState(variants.includes(initial) ? initial : 'A');
-  const [large,setLarge] = useState(false), [query,setQuery] = useState(''), [ratio,setRatio] = useState('all'), [project,setProject] = useState('all'), [sort,setSort] = useState('new'), [dense,setDense] = useState(false), [page,setPage] = useState('gallery'), [collapsed,setCollapsed] = useState(innerWidth < 760);
+  const [large,setLarge] = useState(false), [query,setQuery] = useState(''), [ratio,setRatio] = useState('all'), [project,setProject] = useState('all'), [sort,setSort] = useState('new'), [dense,setDense] = useState(false), [page,setPage] = useState('gallery'), [collapsed,setCollapsed] = useState(false);
+  const [narrow,setNarrow] = useState(() => matchMedia('(max-width: 759px)').matches);
+  const sidebarCollapsed = narrow || collapsed;
+  useEffect(() => {
+    const media = matchMedia('(max-width: 759px)'), update = () => setNarrow(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const [current,setCurrent] = useState<Work | null>(null), [focus,setFocus] = useState(0), [debug,setDebug] = useState(false), [mounted,setMounted] = useState(0);
   const [viewport,setViewport] = useState({ top:0,height:800,width:1000 });
   const scroller = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null), opener = useRef<HTMLElement | null>(null), pending = useRef(0);
@@ -34,21 +41,36 @@ function App() {
     const cols = Math.max(1,Math.floor((width + gap) / (dense ? 180 : 235)));
     const cell = (width - gap * (cols - 1)) / cols, heights = Array(cols).fill(0);
     const rects = filtered.map(work => { const col = heights.indexOf(Math.min(...heights)), y = heights[col], height = cell * work.height / work.width + 52; heights[col] += height + gap; return { work,x:col * (cell + gap),y,width:cell,height }; });
-    return { rects,height:Math.max(0,...heights),cols,width };
+    return { rects,height:Math.max(0,...heights),cols,width,gap,items:filtered };
   },[filtered,viewport.width,dense]);
   const previousLayout = useRef<typeof position | null>(null);
+  const scrollSnapshot = useRef({ top:0, max:0 });
+  function rememberScroll() {
+    const el = scroller.current;
+    if (el) scrollSnapshot.current = { top:el.scrollTop, max:el.scrollHeight - el.clientHeight };
+  }
   useLayoutEffect(() => {
-    const old = previousLayout.current, el = scroller.current;
-    if (old && el && (old.width !== position.width || old.cols !== position.cols) && el.scrollTop > 0) {
-      const anchor = old.rects.find(r => r.y + r.height > el.scrollTop);
-      const next = anchor && position.rects.find(r => r.work.id === anchor.work.id);
-      if (anchor && next) { el.scrollTop = next.y + (el.scrollTop - anchor.y) * next.height / anchor.height; measure(); }
+    const old = previousLayout.current, el = scroller.current, { top,max } = scrollSnapshot.current;
+    if (variant === 'A' && old?.items === position.items && el && top > 0 &&
+        (old.width !== position.width || old.cols !== position.cols || old.gap !== position.gap)) {
+      // Use the pre-commit snapshot: the shorter DOM may already have clamped scrollTop.
+      if (Math.abs(max - top) < 2) el.scrollTop = el.scrollHeight;
+      else {
+        const anchor = old.rects.find(r => r.y + r.height > top);
+        const next = anchor && position.rects.find(r => r.work.id === anchor.work.id);
+        if (anchor && next) el.scrollTop = next.y + (top - anchor.y) * next.height / anchor.height;
+      }
+      measure();
     }
     previousLayout.current = position;
+    rememberScroll();
   }, [position]);
   const visible = position.rects.filter(r => r.y + r.height > viewport.top - 650 && r.y < viewport.top + viewport.height + 650);
   function measure() { const el = scroller.current; if (el) setViewport({ top:el.scrollTop,height:el.clientHeight,width:el.clientWidth }); }
-  function onScroll() { if (!pending.current) pending.current = requestAnimationFrame(() => { pending.current = 0; measure(); }); }
+  function onScroll() {
+    rememberScroll();
+    if (!pending.current) pending.current = requestAnimationFrame(() => { pending.current = 0; measure(); });
+  }
   useLayoutEffect(() => { measure(); const observer = new ResizeObserver(measure); if (scroller.current) observer.observe(scroller.current); return () => { observer.disconnect(); cancelAnimationFrame(pending.current); pending.current = 0; }; },[variant,page]);
   useEffect(() => { scroller.current?.scrollTo({top:0}); setFocus(0); },[query,project,ratio,sort,large,variant]);
   useEffect(() => setMounted(variant === 'A' ? visible.length : variant === 'B' ? Math.min(8,filtered.length) * Math.min(10,new Set(filtered.map(w => w.project)).size) : Math.min(12,filtered.length) + 1),[variant,visible.length,filtered.length]);
@@ -60,10 +82,10 @@ function App() {
   function goProject(work: Work) { close();setProject(String(work.project));setPage('project'); }
   const focused = (filtered[focus] || filtered[0])!;
   const thumbStart = Math.max(0,Math.min(focus - 3,filtered.length - 12));
-  return <div className="app workspace-app gallery-prototype" data-sidebar-collapsed={collapsed}>
+  return <div className="app workspace-app gallery-prototype" data-sidebar-collapsed={sidebarCollapsed}>
     <aside className="sidebar" aria-label="工作台导航">
-      <div className="logo-row"><img src="/assets/brand/reframe.svg" alt=""/><strong>QC-Reframe</strong><button className="icon-button sidebar-toggle" aria-label={collapsed ? '展开项目栏' : '收起项目栏'} onClick={() => setCollapsed(!collapsed)}><Icon name="sidebar"/></button></div>
-      <button className="new-project" onClick={() => setPage('new')}><Icon name="plus"/><span>新建项目</span></button>
+      <div className="logo-row"><img src="/assets/brand/reframe.svg" alt=""/><strong>QC-Reframe</strong><button className="icon-button sidebar-toggle" aria-label={sidebarCollapsed ? '展开项目栏' : '收起项目栏'} disabled={narrow} onClick={() => setCollapsed(!collapsed)}><Icon name="sidebar"/></button></div>
+      <button className="new-project" aria-label="新建项目" onClick={() => setPage('new')}><Icon name="plus"/><span>新建项目</span></button>
       <button className={`nav-action ${page === 'gallery' ? 'active' : ''}`} aria-label="作品画廊" onClick={() => {setPage('gallery');setProject('all');}}><Icon name="image"/><span>作品画廊</span></button>
       <button className={`nav-action ${page === 'projects' ? 'active' : ''}`} aria-label="全部项目" onClick={() => setPage('projects')}><Icon name="grid"/><span>全部项目</span><small className="count">10</small></button>
       <button className="nav-action" aria-label="任务中心" onClick={() => setPage('tasks')}><Icon name="clock"/><span>任务中心</span></button>

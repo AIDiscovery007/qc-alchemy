@@ -40,6 +40,11 @@ export async function createImageStore(dataDir, recordsDir = dataDir) {
     if (typeof asset !== "string" || !assetPattern.test(asset)) throw new Error("图片引用无效");
     return join(directory, asset);
   };
+  const generationPath = ({ id, imageAsset, extension }) => {
+    if (imageAsset !== undefined) return path(imageAsset);
+    if (typeof id !== "string" || !/^[\da-f-]{36}$/.test(id) || !["png", "jpeg", "webp"].includes(extension)) throw new Error("生成图片引用无效");
+    return join(dataDir, `${id}-generated.${extension}`);
+  };
   async function read(asset) {
     const file = path(asset);
     if (!(await lstat(file)).isFile()) throw new Error("图片文件无效");
@@ -85,7 +90,7 @@ export async function createImageStore(dataDir, recordsDir = dataDir) {
     return entries;
   }
   return {
-    put, read, path, legacy,
+    put, read, path, generationPath, legacy,
     async migrate() {
       // A damaged record may still own images. Leave all legacy files intact in that case.
       let all;
