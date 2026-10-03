@@ -30,7 +30,7 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html:not(.embedded) { width: 400px; height: 600px; }
+html:not(.embedded) { width: min(400px, 100vw); height: 600px; }
 body { margin: 0; min-width: 280px; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button, summary { cursor: pointer; }

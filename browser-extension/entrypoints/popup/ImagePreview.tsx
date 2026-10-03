@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ImgHTMLAttributes } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ImgHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { showMotionDialog } from "../../lib/motion-dialog";
 import { rotateImage } from "../../lib/image";
@@ -89,9 +89,37 @@ function PreviewDialog({ preview, rotation, onClose }: { preview: PreviewRequest
   </dialog>;
 }
 
-export default function ImagePreview({ src, alt, loadImage, className = "", imageClassName, disabled, rotation, ...props }: Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "alt" | "children"> & PreviewProps & { imageClassName?: string }) {
-  return <span className={`image-preview ${className}`}>
-    <img {...props} className={imageClassName} src={src} alt={alt} />
-    <span className="image-preview-actions"><ImagePreviewButton src={src} alt={alt} loadImage={loadImage} disabled={disabled} rotation={rotation} /></span>
+export default function ImagePreview({ src, alt, loadImage, className = "", imageClassName, disabled, rotation, imageButton, children, ...props }: Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "alt" | "children"> & PreviewProps & {
+  imageClassName?: string; imageButton?: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">; children?: ReactNode;
+}) {
+  const frame = useRef<HTMLSpanElement>(null);
+  const image = useRef<HTMLImageElement>(null);
+  const [bounds, setBounds] = useState<{ src: string; left: number; top: number; width: number; height: number }>();
+  useLayoutEffect(() => {
+    const img = image.current!, host = frame.current!;
+    const measure = () => {
+      if (!img.complete || !img.naturalWidth || !img.clientWidth || !img.clientHeight) { setBounds(undefined); return; }
+      const style = getComputedStyle(img), box = img.getBoundingClientRect(), outer = host.getBoundingClientRect();
+      const px = (value: string) => parseFloat(value) || 0;
+      const x = px(style.paddingLeft), y = px(style.paddingTop);
+      const contentWidth = img.clientWidth - x - px(style.paddingRight), contentHeight = img.clientHeight - y - px(style.paddingBottom);
+      // All preview images are centered. Cover fills the content box; contain leaves letterboxing.
+      const scale = Math.min(contentWidth / img.naturalWidth, contentHeight / img.naturalHeight, style.objectFit === "scale-down" ? 1 : Infinity);
+      const contained = style.objectFit === "contain" || style.objectFit === "scale-down";
+      const width = contained ? img.naturalWidth * scale : contentWidth, height = contained ? img.naturalHeight * scale : contentHeight;
+      const next = { src, left: box.left - outer.left + img.clientLeft + x + (contentWidth - width) / 2, top: box.top - outer.top + img.clientTop + y + (contentHeight - height) / 2, width, height };
+      setBounds(previous => previous && Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(host); observer.observe(img);
+    img.addEventListener("load", measure); img.addEventListener("error", measure); measure();
+    return () => { observer.disconnect(); img.removeEventListener("load", measure); img.removeEventListener("error", measure); };
+  }, [src]);
+  const picture = <><img {...props} ref={image} className={imageClassName} src={src} alt={alt} />{children}</>;
+  return <span ref={frame} className={`image-preview ${className}`}>
+    {imageButton ? <button {...imageButton} type="button" className={`image-preview-select ${imageButton.className || ""}`}>{picture}</button> : picture}
+    <span className="image-preview-anchor" hidden={bounds?.src !== src} style={bounds && { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}>
+      <ImagePreviewButton src={src} alt={alt} loadImage={loadImage} disabled={disabled || bounds?.src !== src} rotation={rotation} />
+    </span>
   </span>;
 }

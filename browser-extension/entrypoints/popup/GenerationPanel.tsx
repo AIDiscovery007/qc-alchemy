@@ -1,6 +1,6 @@
 import { showMotionDialog } from "../../lib/motion-dialog";
 import ImageFileActions from "./ImageFileActions";
-import ImagePreview, { ImagePreviewButton } from "./ImagePreview";
+import ImagePreview from "./ImagePreview";
 import LoadingPlaceholder from "./LoadingPlaceholder";
 import { createPortal } from "react-dom";
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
@@ -160,7 +160,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     <div className="preview-canvas">{workspace && error && (image || running) && <p className="error result-request-error" role="alert">{error}</p>}{!workspace && !generation && inputPreview}{submitting ? workspace && drawerOpen ? <LoadingPlaceholder className="generation-submitting">正在提交生成请求…</LoadingPlaceholder> : null : image ? compare ? <div className="compare-images">
       {comparisonInputs}
       <figure><ImagePreview src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <img className="generation-result-image" src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError || error) ? <div className="empty-canvas">
+    </div> : <ImagePreview className="generation-result-preview" imageClassName="generation-result-image" src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError || error) ? <div className="empty-canvas">
       <Icon name="image" />
       <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
       <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || error || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
@@ -171,7 +171,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     <div className="result-caption"><strong>{generation ? `版本 ${versionNumber} · ${generation.status === "completed" ? "图片" : "记录"} ${generations.indexOf(generation) + 1}` : "图片待生成"}</strong>{dimensions}</div>
     <div className="result-history" aria-label="生成记录">{generations.map((item, index) => <GenerationThumbnail key={`${job.id}:${item.id}`} jobId={job.id} generation={item} index={index} active={generation?.id === item.id} image={generation?.id === item.id ? image : ""} onSelect={() => { setSelected(item.id); setCompare(false); }} />)}</div>
     {copyNotice}
-    {(workspace || generation) && <div className="result-bottom" role="group" aria-label="图片操作">{image && !compare && <ImagePreviewButton src={image} alt={`${job.result!.title} · 生成结果`} />}<ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} compact iconOnly={workspace} /><button className="outline-button copy-path-button result-icon-action" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={copied === assetKey ? "已复制路径" : "复制图片路径"} aria-label={copied === assetKey ? "已复制路径" : "复制图片路径"}><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} /></button>
+    {(workspace || generation) && <div className="result-bottom" role="group" aria-label="图片操作"><ImageFileActions key={assetKey} jobId={job.id} generationId={generation?.id} disabled={!image} compact iconOnly={workspace} /><button className="outline-button copy-path-button result-icon-action" data-copied={copied === assetKey} disabled={!image} onClick={copyPath} title={copied === assetKey ? "已复制路径" : "复制图片路径"} aria-label={copied === assetKey ? "已复制路径" : "复制图片路径"}><Icon key={String(copied === assetKey)} name={copied === assetKey ? "check" : "copy"} /></button>
       <button className="outline-button result-icon-action" disabled={!generation} title="生成信息" aria-label="生成信息" onClick={() => generation && setModal(generation)}><ResultIcon name="info" /></button><span className="result-action-status" role="status">{copied === assetKey ? "已复制路径" : ""}</span></div>}
     </div>
     {modal && <dialog className="result-dialog modal" ref={infoDialog} aria-label="本次生成信息"

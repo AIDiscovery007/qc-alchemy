@@ -6,6 +6,7 @@
 .app .preview-canvas {flex:1;min-height:150px;margin:0 22px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border: 0;border-radius: 4px;background-color: transparent;background-image: none;background-size:12px 12px}
 .app .preview-canvas>button{border:0;background:none;padding:16px;width:100%;height:100%;min-height:0}
 .app .preview-canvas>button img{width:100%;height:100%;object-fit:contain;border-radius:3px}
+.app .generation-result-preview { width:100%;height:100%; }
 .app .generation-result-image { display:block;width:100%;height:100%;min-height:0;padding:16px;object-fit:contain; }
 .app .result-caption{padding:8px 22px;display:flex;justify-content:center;flex-wrap:wrap;align-items:center;font-size:10px;color:var(--muted)}
 .app .result-caption strong{color:var(--ink);font-weight:500}
@@ -22,7 +23,6 @@
 .app .generated-pane .result-bottom button { flex:0 0 auto;width:auto;min-height:34px;margin:0;padding:7px 10px;background:none;border:0; }
 .app .generated-pane .result-bottom button:hover:not(:disabled) { background:var(--surface-muted); }
 .app .generated-pane .result-bottom .result-icon-action { width:36px;min-width:36px;padding:7px; }
-.app .generated-pane .result-bottom .image-preview-trigger { width:34px;height:34px;min-height:34px;padding:8px; }
 .app .result-action-status { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
 .app .result-caption .generation-dimensions { font-size:10px; }
 .app .result-caption strong { color:var(--muted); }
@@ -76,6 +76,7 @@
 .app .compact-results .result-toolbar { padding:0 0 12px; }
 .app .compact-results .generation-ratio { margin-bottom:8px; }
 .app .compact-results .preview-canvas { flex:none; min-height:0; margin:16px 0 0; }
+.app .compact-results .generation-result-preview { height:auto; }
 .app .compact-results .generation-result-image { height:auto;max-height:440px; }
 .app .compact-results .compare-images { height:auto; padding:0; align-items:flex-start; }
 .app .compact-results .compare-images .image-preview { width:100%; }

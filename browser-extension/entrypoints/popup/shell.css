@@ -15,7 +15,7 @@
 .pick-collect[aria-busy="true"] { cursor: progress; }
 @keyframes collect-breathe { 50% { opacity: .3; } }
 .notice[data-state="saving"] strong::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: currentColor; animation: collect-breathe 1100ms ease-in-out infinite; }
-.panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); display: flex; flex-direction: column; pointer-events: auto; border: 0; border-radius: 20px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow-floating); }
+.panel { position: fixed; top: 12px; right: 12px; height: min(680px, calc(100dvh - 24px)); width: min(400px, calc(100vw - 24px)); display: flex; flex-direction: column; pointer-events: auto; border: 0; border-radius: 20px; overflow: hidden; background: var(--paper); box-shadow: var(--shadow-floating); }
 .bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 0; background: var(--paper); font: 700 13px/1 var(--font); color: var(--ink); }
 .bar > span { display: flex; align-items: center; gap: 8px; letter-spacing: -.25px; }
 .bar img { width: 24px; height: 24px; }

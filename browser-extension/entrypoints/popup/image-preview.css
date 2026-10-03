@@ -1,11 +1,11 @@
-.image-preview { display:grid;grid-template-rows:minmax(0,1fr) auto;gap:6px;min-width:0;min-height:0; }
-.image-preview > img { display:block;width:100%;min-height:0;object-fit:contain; }
-.image-preview-actions { display:flex;align-items:center;justify-content:center;gap:4px;flex:none; }
-.image-preview-trigger { display:inline-flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;padding:8px;border:0;border-radius:7px;background:transparent;color:var(--ink);cursor:zoom-in; }
+.image-preview { display:block;position:relative;min-width:0;min-height:0; }
+.image-preview img { display:block;width:100%;min-height:0;object-fit:contain;object-position:center; }
+.image-preview-anchor { position:absolute;pointer-events:none; }
+.app .image-preview-trigger { position:absolute;right:4px;bottom:4px;display:inline-flex;align-items:center;justify-content:center;pointer-events:auto;width:34px;height:34px;min-height:34px;padding:8px;border:1px solid #776f5d55;border-radius:7px;background:var(--surface);color:var(--ink);box-shadow:0 1px 8px #0003;cursor:zoom-in; }
 .image-preview-trigger .ui-icon { width:16px;height:16px; }
-.image-preview-trigger:disabled { opacity:.35;cursor:default; }
-.image-preview-trigger:focus-visible { background:var(--yellow); }
-@media (hover:hover) and (pointer:fine) { .image-preview-trigger:hover:not(:disabled) { background:var(--surface-muted); } }
+.app .image-preview-trigger:disabled { opacity:.45;cursor:default; }
+.app .image-preview-trigger:focus-visible { background:var(--yellow);outline:2px solid var(--ink);outline-offset:1px; }
+@media (hover:hover) and (pointer:fine) { .app .image-preview-trigger:hover:not(:disabled) { background:var(--surface-muted); } }
 .modal.image-preview-dialog { width: min(1050px, calc(100% - 24px)); height: calc(100dvh - 48px); max-width: none; max-height: none; padding: 0; margin: auto; border: 0; border-radius: 18px; background: var(--paper); color: var(--ink); box-shadow: var(--shadow-floating); overflow: hidden; }
 .modal.image-preview-dialog[open] { display: flex; flex-direction: column; }
 .modal.image-preview-dialog::backdrop { background: #2b241f66; }

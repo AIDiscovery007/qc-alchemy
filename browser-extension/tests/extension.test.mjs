@@ -208,7 +208,7 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
     storage: {
       session: {
         set: async (value) => Object.assign(sessionStorage, structuredClone(value)),
-        get: async (key) => ({ [key]: structuredClone(sessionStorage[key]) }),
+        get: async (key) => key === null ? structuredClone(sessionStorage) : ({ [key]: structuredClone(sessionStorage[key]) }),
         remove: async (key) => { delete sessionStorage[key]; },
       },
       local: {
@@ -439,7 +439,9 @@ test("workspace handoff preserves drafts only in session storage and is consumed
   const id = url.searchParams.get("handoff");
   assert.match(id, /^[\da-f-]{36}$/);
   assert.equal(url.searchParams.size, 1, "drafts and credentials must not appear in the URL");
-  assert.deepEqual(sessionStorage[`workspace:${id}`], { mode: "reenact", draft });
+  const expected = { source: "quick:tab:4", mode: "reenact", selection: { id: selection.id, projectId: selection.projectId, sourceUrl: "", capture: undefined }, draft, createdAt: sessionStorage[`workspace:${id}`].createdAt };
+  assert.equal(typeof expected.createdAt, "number");
+  assert.deepEqual(sessionStorage[`workspace:${id}`], expected);
   assert.ok(!JSON.stringify(sessionStorage).includes("saved-reference"), "handoff must not duplicate the durable reference image");
   assert.ok(!JSON.stringify(sessionStorage).includes("private-token"));
   for (const sender of [content, { ...workspace, id: "other" }, { ...workspace, url: "chrome-extension://test.evil/workspace.html" }])
@@ -447,7 +449,7 @@ test("workspace handoff preserves drafts only in session storage and is consumed
   assert.ok(sessionStorage[`workspace:${id}`], "rejected readers must not consume a draft");
   const restored = await send({ type: "alchemy:workspace-handoff", id }, workspace);
   assert.equal(restored.ok, true);
-  assert.deepEqual(restored.value, { mode: "reenact", draft });
+  assert.deepEqual(restored.value, expected);
   assert.equal(sessionStorage[`workspace:${id}`], undefined);
   assert.equal((await send({ type: "alchemy:workspace-handoff", id }, workspace)).value, undefined, "handoff is one use");
   assert.ok((await send({ type: "alchemy:workspace-handoff", id: "../preferences" }, workspace)).error);
@@ -465,7 +467,8 @@ test("workspace rejects invalid drafts and removes a handoff if opening the tab 
   assert.equal(Object.keys(sessionStorage).length, 0);
   chrome.tabs.create = async () => { throw new Error("Cannot open tab"); };
   assert.match((await send({ type: "alchemy:open-workspace", draft: { subject: "unsaved" } })).error, /Cannot open tab/);
-  assert.equal(Object.keys(sessionStorage).length, 0, "failed opens must not leave image drafts in session storage");
+  assert.equal(Object.keys(sessionStorage).filter(key => key.startsWith("workspace:")).length, 0, "failed opens must not leave orphaned handoffs");
+  assert.equal(sessionStorage["quick:popup"].draft.subject, "unsaved", "the source draft stays recoverable");
 });
 
 test("reference uploads validate image input and register an authenticated project without starting inference", async () => {
@@ -825,4 +828,97 @@ test("workspace handoff carries ordered multi-image drafts and rejects malformed
   for (const multiSubjectDrafts of [null, [], "invalid", { project: null }, { project: [{ ...subject, subjectImage: "file:///private" }] }])
     assert.ok((await send({ type: "alchemy:open-workspace", draft: { multiSubjectDrafts } })).error);
   assert.equal(tabs.length, 1);
+});
+
+
+test("explicit handoff pins source, mode and version despite another surface's selection", async () => {
+  const { handlers, chrome, tabs, sessionStorage } = await background(() => assert.fail("handoff must not start tasks or read global project assets"));
+  chrome.storage.local.get = async () => ({ preferences: { token: "secret", mode: "recreate" }, selection: { id: "B", projectId: "b".repeat(64) } });
+  const sender = { id: "test", url: "chrome-extension://test/popup.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  for (const version of ["older-version", "shown-latest-version", "new"]) {
+    const context = { mode: "style", selection: { id: "A", projectId: "a".repeat(64), sourceUrl: "https://example.com/a.png" } };
+    const draft = { versions: { [`${context.selection.projectId}:style`]: version }, instructions: { [`${context.selection.projectId}:style:${version}`]: "unsaved" } };
+    assert.equal((await send({ type: "alchemy:open-workspace", context, draft })).ok, true);
+    const id = new URL(tabs.at(-1).url).searchParams.get("handoff");
+    const stored = sessionStorage[`workspace:${id}`];
+    assert.equal(stored.selection.id, "A");
+    assert.equal(stored.mode, "style");
+    assert.deepEqual(stored.draft.versions, draft.versions);
+    assert.equal(stored.draft.instructions[`${context.selection.projectId}:style:${version}`], "unsaved");
+  }
+  assert.equal((await send({ type: "alchemy:open-workspace", context: { mode: "recreate", selection: null } })).ok, true);
+  const id = new URL(tabs.at(-1).url).searchParams.get("handoff");
+  assert.equal(sessionStorage[`workspace:${id}`].selection, null, "explicit empty source must not pick B");
+  for (const context of [{ mode: "unknown", selection: null }, { mode: "style", selection: { id: "A", projectId: "../project" } }])
+    assert.ok((await send({ type: "alchemy:open-workspace", context })).error);
+});
+
+test("quick drafts are session-only, source-isolated, ordered and retained on capacity failure", async () => {
+  const { handlers, chrome, sessionStorage } = await background(() => assert.fail("draft storage must not call bridge"));
+  chrome.storage.local.set = async () => assert.fail("drafts must not persist in project or local storage");
+  const popup = { id: "test", url: "chrome-extension://test/popup.html" };
+  const content = { id: "test", frameId: 0, url: "https://example.com/", tab: { id: 4 } };
+  const send = (message, sender = popup) => new Promise(resolve => handlers.message(message, sender, resolve));
+  const context = { mode: "style", selection: { id: "A", projectId: "a".repeat(64) } };
+  const drafts = ["first", "latest"].map(text => ({ type: "alchemy:quick-draft", context, draft: { instructions: { A: text } } }));
+  await Promise.all(drafts.map(message => send(message)));
+  await send({ ...drafts[0], source: "popup" }, content);
+  assert.equal((await send({ type: "alchemy:quick-draft" })).value.draft.instructions.A, "latest");
+  assert.equal((await send({ type: "alchemy:quick-draft" }, content)).value.draft.instructions.A, "first");
+  assert.equal((await send({ type: "alchemy:quick-draft" }, { ...content, tab: { id: 5 } })).value, undefined);
+  const saved = structuredClone(sessionStorage["quick:popup"]);
+  sessionStorage["workspace:occupied"] = { createdAt: Date.now(), draft: { text: "x".repeat(9 * 1024 * 1024) } };
+  assert.match((await send(drafts[0])).error, /空间不足/);
+  assert.deepEqual(sessionStorage["quick:popup"], saved);
+  sessionStorage["workspace:occupied"].createdAt -= 25 * 60 * 60 * 1000;
+  assert.equal((await send(drafts[0])).ok, true);
+  assert.equal(sessionStorage["workspace:occupied"], undefined);
+  sessionStorage["quick:popup"].createdAt -= 25 * 60 * 60 * 1000;
+  assert.equal((await send({ type: "alchemy:quick-draft" })).value, undefined);
+  assert.equal(sessionStorage["quick:popup"], undefined);
+});
+
+
+test("a large quick draft transfers without duplicate image storage and survives failed opening", async () => {
+  const { handlers, chrome, tabs, sessionStorage } = await background(() => assert.fail("draft transfer must not call bridge"));
+  const sender = { id: "test", url: "chrome-extension://test/popup.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const context = { mode: "style", selection: { id: "A", projectId: "a".repeat(64) } };
+  const draft = { subjectDrafts: { 'A:style': 'x'.repeat(5 * 1024 * 1024) }, instructions: { 'A:style:new': 'unsaved' } };
+  assert.equal((await send({ type: "alchemy:quick-draft", context, draft })).ok, true);
+  assert.equal((await send({ type: "alchemy:open-workspace", context, draft })).ok, true);
+  assert.ok(JSON.stringify(sessionStorage).length < 6 * 1024 * 1024);
+  assert.equal((await send({ type: "alchemy:quick-draft" })).value.draft.subjectDrafts['A:style'].length, draft.subjectDrafts['A:style'].length);
+  const id = new URL(tabs[0].url).searchParams.get('handoff');
+  const received = await send({ type: "alchemy:workspace-handoff", id });
+  assert.deepEqual(received.value.draft, { ...draft, multiSubjectDrafts: {}, versions: {}, promptDrafts: {} });
+  assert.ok(JSON.stringify(sessionStorage).length < 6 * 1024 * 1024);
+  assert.equal(sessionStorage['quick:popup'].handoff, undefined);
+  chrome.tabs.create = async () => { throw new Error('tab failed'); };
+  assert.match((await send({ type: "alchemy:open-workspace", context, draft })).error, /tab failed/);
+  assert.equal((await send({ type: "alchemy:quick-draft" })).value.draft.instructions['A:style:new'], 'unsaved');
+  assert.equal(Object.keys(sessionStorage).filter(key => key.startsWith('workspace:')).length, 0);
+});
+
+test("session readers wait for queued writes and handoff consumption is exactly once", async () => {
+  const { handlers, chrome, tabs } = await background(() => assert.fail("session operations do not call bridge"));
+  const sender = { id: "test", url: "chrome-extension://test/popup.html" };
+  const send = message => new Promise(resolve => handlers.message(message, sender, resolve));
+  const context = { mode: "style", selection: null };
+  const originalSet = chrome.storage.session.set;
+  let release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  chrome.storage.session.set = async value => { entered(); await new Promise(resolve => { release = resolve; }); await originalSet(value); };
+  const write = send({ type: "alchemy:quick-draft", context, draft: { instructions: { key: "latest" } } });
+  await waiting;
+  const read = send({ type: "alchemy:quick-draft" });
+  release();
+  await write;
+  assert.equal((await read).value.draft.instructions.key, "latest");
+  chrome.storage.session.set = originalSet;
+  await send({ type: "alchemy:open-workspace", context, draft: { instructions: { key: "handoff" } } });
+  const id = new URL(tabs[0].url).searchParams.get('handoff');
+  const consumed = await Promise.all([send({ type: "alchemy:workspace-handoff", id }), send({ type: "alchemy:workspace-handoff", id })]);
+  assert.equal(consumed.filter(item => item.value).length, 1);
 });

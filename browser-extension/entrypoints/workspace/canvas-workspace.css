@@ -7,7 +7,8 @@
 .canvas-input { flex:1;min-height:0;padding:4px 24px 24px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto 126px;gap:12px; }
 .canvas-stage { display:grid;grid-template-rows:minmax(0,1fr) 60px;min-height:0;gap:8px; }
 .canvas-large { position:relative;min-height:0;min-width:0; }
-.canvas-large > img { position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:contain; }
+.canvas-large > .image-preview { position:absolute;inset:0; }
+.canvas-large .image-preview > img { width:100%;height:100%; }
 .workspace-app .canvas-upload,.canvas-large > .loading-placeholder { position:absolute;inset:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);gap:12px;font-size:12px; }
 .canvas-filmstrip { display:flex;align-items:center;justify-content:safe center;gap:6px;min-width:0;height:60px;overflow-x:auto;overscroll-behavior:contain; }
 .canvas-filmstrip button { height:48px;flex:none;padding:6px 10px;border:0;border-radius:8px;background:transparent;font-size:10px;white-space:nowrap; }

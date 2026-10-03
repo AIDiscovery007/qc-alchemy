@@ -1,3 +1,4 @@
+import type { PromptDraft, WorkspaceDraft, WorkspaceHandoff } from "../../lib/workspace-handoff";
 import { resultDrawers, resultDrawerView } from "../../lib/result-drawer";
 import useProjectLibrary from "./useProjectLibrary";
 import { useMotion } from "../../lib/use-motion";
@@ -8,7 +9,6 @@ import NewProject from "../workspace/NewProject";
 import CanvasWorkspace from "../workspace/CanvasWorkspace";
 import PromptEditor from "../workspace/PromptEditor";
 import RecentProject from "../workspace/RecentProject";
-import ImageInput from "../workspace/ImageInput";
 import SettingsCenter from "./SettingsCenter";
 import TaskCenter from "./TaskCenter";
 import HiddenProjectsToggle from "./HiddenProjectsToggle";
@@ -16,17 +16,12 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { query, readState, request, type UiState } from "../../lib/client";
 import type { Job, Mode, Project, ProjectSummary, SubjectInput, Selection, MultiSubject } from "../../lib/types";
 import ProjectHistory from "./ProjectHistory";
-import SubjectForm from "./SubjectForm";
+import QuickWorkspace from "./QuickWorkspace";
 import MultiInputPreview from "./MultiInputPreview";
-import TaskInstruction, { defaultInstructions } from "./TaskInstruction";
-import MultiSubjectForm from "./MultiSubjectForm";
-import LoadingPlaceholder from "./LoadingPlaceholder";
-import AsyncAction from "./AsyncAction";
+import { defaultInstructions } from "./TaskInstruction";
 import GenerationPanel from "./GenerationPanel";
 import Icon from "./Icon";
 import SelectField from "./SelectField";
-import ModelSettings from "./ModelSettings";
-import InlineHelp from "./InlineHelp";
 import { logo } from "../../lib/brand";
 
 const defaults: UiState["preferences"] = { paired: false, mode: "style" };
@@ -35,7 +30,6 @@ const laneStatus = (job?: Job) => !job ? "待生成" : job.status === "running" 
   : job.status !== "completed" ? "待重试"
   : job.generations?.some((item) => item.status === "completed") ? "提示词 + 图片" : "提示词已就绪";
 const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" })[mode];
-type PromptDraft = Pick<NonNullable<Job["result"]>, "promptZh" | "promptEn" | "negativePrompt">;
 
 export default function App({ embedded = false, workspace = false }: { embedded?: boolean; workspace?: boolean }) {
   const { reduced } = useMotion();
@@ -52,6 +46,9 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const [smallSidebar, setSmallSidebar] = useState(() => matchMedia("(max-width: 860px)").matches);
   const sidebarCollapsed = !(sidebarExpanded ?? !smallSidebar);
   const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 650px)").matches);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const handoffPending = useRef(false);
   const [instructions, setInstructions] = useState<Record<string, string>>({});
   const referenceInput = useRef<HTMLInputElement>(null);
   const [activeCount, setActiveCount] = useState(0);
@@ -141,8 +138,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   const running = job?.status === "running";
   const loadingProject = !!selection && !activeProject;
   const result = job?.result;
-  const promptLoading = !!activeProject && !result && running;
-  const cancelling = !!job && cancellingJobs.includes(job.id);
+    const cancelling = !!job && cancellingJobs.includes(job.id);
   const promptDraft = job && promptDrafts[job.id];
   const reading = selection && !selection.image && !selection.error;
   const referenceError = job && referenceErrors[job.id];
@@ -159,6 +155,18 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     let stopPolling = () => {};
     let previous: Selection | undefined;
     let initialized = false;
+    let ownContext = false;
+    let quickRestored = workspace;
+    let savedQuick: WorkspaceHandoff | undefined;
+    const restoreDraft = (draft?: WorkspaceDraft) => {
+      if (!draft) return;
+      setSubjectDrafts(draft.subjectDrafts || {});
+      setMultiSubjectDrafts(draft.multiSubjectDrafts || {});
+      setPromptDrafts(draft.promptDrafts || {});
+      setInstructions(draft.instructions || {});
+      setVersions(draft.versions || {});
+      setLang(draft.lang || "zh");
+    };
     const refresh = async () => {
       try {
         const revision = modeRevision.current;
@@ -166,13 +174,17 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         const snapshotRevision = selectionRevision.current;
         const value = await readState(previous?.image ? previous.id : undefined, previous?.jobId);
         if (cancelled) return 1500;
+        const firstRefresh = !initialized;
         setPreferences((previous) => ({ ...value.preferences,
-          mode: revision === modeRevision.current && revision % 2 === 0 ? value.preferences.mode : previous.mode,
+          mode: firstRefresh && !ownContext && revision === modeRevision.current && revision % 2 === 0
+            ? savedQuick && savedQuick.selection?.projectId === value.selection?.projectId && savedQuick.selection?.id === value.selection?.id ? savedQuick.mode : value.preferences.mode
+            : previous.mode,
           showHiddenProjects: visibility === visibilityRevision.current ? value.preferences.showHiddenProjects : previous.showHiddenProjects,
         }));
-        const firstRefresh = !initialized;
         if (firstRefresh) setSettings(!value.preferences.paired);
         initialized = true;
+        setDraftReady(quickRestored);
+        if (workspace && (ownContext || !firstRefresh)) return 1500;
         if (!deletingProjects.current && !value.selection && snapshotRevision === selectionRevision.current) {
           previous = undefined;
           setSelection(undefined);
@@ -192,18 +204,38 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       const id = workspace && new URLSearchParams(location.search).get("handoff");
       if (id) {
         try {
-          const handoff = await request<{ selection?: Selection; draft?: { multiSubjectDrafts?: Record<string, MultiSubject[]>; subjectDrafts?: Record<string, string>; promptDrafts?: Record<string, PromptDraft>; instructions?: Record<string, string>; versions?: Record<string, string>; lang?: "zh" | "en" } }>({ type: "alchemy:workspace-handoff", id });
+          ownContext = true;
+          const handoff = await request<WorkspaceHandoff | undefined>({ type: "alchemy:workspace-handoff", id });
           if (cancelled) return;
-          if (handoff?.draft) {
-            setSubjectDrafts(handoff.draft.subjectDrafts || {});
-            setMultiSubjectDrafts(handoff.draft.multiSubjectDrafts || {});
-            setPromptDrafts(handoff.draft.promptDrafts || {});
-            setInstructions(handoff.draft.instructions || {});
-            setVersions(handoff.draft.versions || {});
-            setLang(handoff.draft.lang || "zh");
+          if (!handoff) throw new Error("接续草稿已失效，请从快捷面板重新打开工作台");
+          restoreDraft(handoff.draft);
+          setPreferences(value => ({ ...value, mode: handoff.mode }));
+          if (handoff.selection) {
+            const source = handoff.selection;
+            previous = source;
+            setSelection(source);
+            if (source.projectId) {
+              try {
+                const reference = await request<Selection>({ type: "alchemy:project-reference", id: source.projectId });
+                if (cancelled) return;
+                previous = { ...reference, id: source.id };
+                setSelection(previous);
+              } catch (error) {
+                if (cancelled) return;
+                setSelection({ ...source, error: (error as Error).message });
+              }
+            } else setSelection({ ...source, error: "参考图尚未保存，请重新上传" });
           }
           history.replaceState(null, "", location.pathname);
         } catch (e) { if (!cancelled) setError((e as Error).message); }
+      }
+      if (!workspace) {
+        try {
+          savedQuick = await request<WorkspaceHandoff | undefined>({ type: "alchemy:quick-draft" });
+          if (cancelled) return;
+          restoreDraft(savedQuick?.draft);
+          quickRestored = true;
+        } catch (error) { if (!cancelled) setDraftError(`草稿恢复失败：${(error as Error).message}`); }
       }
       if (!cancelled) stopPolling = pollWhileVisible(refresh);
     };
@@ -273,24 +305,57 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     return () => { cancelled = true; };
   }, [job?.id, !!job?.reenact, referenceError]);
 
+  const draftSnapshot = (): WorkspaceDraft => ({
+    multiSubjectDrafts, subjectDrafts, instructions, promptDrafts, lang,
+    versions: activeProject ? { ...versions, [subjectKey(preferences.mode)]: job?.id || "new" } : versions,
+  });
+  const workspaceContext = () => ({ mode: preferences.mode, selection: selection ? {
+    id: selection.id, projectId: selection.projectId, sourceUrl: selection.sourceUrl, capture: selection.capture,
+  } : null });
+  useEffect(() => {
+    if (workspace || !draftReady) return;
+    let cancelled = false;
+    void request({ type: "alchemy:quick-draft", context: workspaceContext(), draft: draftSnapshot() }).then(
+      () => { if (!cancelled) setDraftError(""); },
+      error => { if (!cancelled) setDraftError(`草稿暂未保存：${error.message}`); },
+    );
+    return () => { cancelled = true; };
+  }, [workspace, draftReady, multiSubjectDrafts, subjectDrafts, instructions, promptDrafts, lang, versions, job?.id, activeProject?.id, selection?.id, selection?.projectId, preferences.mode]);
+
   const openWorkspace = async () => {
+    if (handoffPending.current) return;
+    if (busy || savingMode || subjectUnavailable[subjectKey(preferences.mode)] || reading || (connected && loadingProject)) {
+      setError("正在处理当前输入，请完成后再打开工作台"); return;
+    }
+    handoffPending.current = true;
+    setBusy(true); setError("");
     try {
       const prefix = `${selection?.projectId || selection?.id}:`;
       const forProject = <T,>(items: Record<string, T>) => Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith(prefix)));
-      await request({ type: "alchemy:open-workspace", draft: {
-        multiSubjectDrafts: forProject(multiSubjectDrafts), subjectDrafts: forProject(subjectDrafts), instructions: forProject(instructions), versions: forProject(versions), lang,
+      const draft = draftSnapshot();
+      await request({ type: "alchemy:open-workspace", context: workspaceContext(), draft: {
+        multiSubjectDrafts: forProject(multiSubjectDrafts), subjectDrafts: forProject(subjectDrafts), instructions: forProject(instructions), versions: forProject(draft.versions || {}), lang,
         promptDrafts: Object.fromEntries(Object.entries(promptDrafts).filter(([id]) => activeProject?.jobs.some(job => job.id === id))),
       } });
     } catch (e) { setError((e as Error).message); }
+    finally { handoffPending.current = false; setBusy(false); }
   };
   const uploadReference = async (file?: File, keepComposition = false) => {
-    if (!file) return;
+    if (!file || busy) return;
+    const context = referenceContext.current, revision = selectionRevision.current;
     setBusy(true); setError("");
     try {
       if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024)
         throw new Error("请上传不超过 20 MB 的 PNG、JPEG 或 WebP 图片");
       const image = await normalizeImage(file, 4 * 1024 * 1024);
       const next = await request<Selection>({ type: "alchemy:upload-reference", image });
+      if (context !== referenceContext.current || revision !== selectionRevision.current) throw new Error("当前输入已切换，请重新选择图片");
+      if (!workspace && next.projectId && selection) {
+        const key = `${next.projectId}:${preferences.mode}`;
+        setVersions(items => ({ ...items, [key]: "new" }));
+        setInstructions(items => ({ ...items, [`${key}:new`]: taskInstruction(preferences.mode) }));
+        if (preferences.mode !== "recreate") setSubjectDrafts(items => ({ ...items, [key]: subjectImage(preferences.mode) }));
+      }
       if (keepComposition && next.projectId) {
         const target = await request<Project>({ type: "alchemy:project", id: next.projectId });
         const version = versions[`${next.projectId}:multi-reenact`];
@@ -548,7 +613,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     if (image) setSubjectDrafts(items => ({ ...items, [subjectKey("style")]: image }));
     void start("style");
   };
-  const promptRetry = workspace && <button type="button" className="quiet-button prompt-retry" aria-label="重新生成提示词" title={!result ? "生成提示词后可重新生成" : promptDraft ? "先保存或取消提示词编辑" : "重新生成提示词"} disabled={!result || reverseDisabled} onClick={reverse}><Icon name="retry" /></button>;
+
 
   const newVersion = versions[`${activeProject?.id}:${preferences.mode}`] === "new";
   const versionSelector = modeJobs(preferences.mode).length > 0 && <SelectField className="version-select" label="" aria-label="提示词版本" value={job?.id || "new"} disabled={busy}
@@ -631,12 +696,8 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <span title={connectionText}>
           {connected ? "Codex 已连接" : "Codex 未连接"}
         </span>
-        <button className="text-button" disabled={busy} onClick={showHistory} aria-expanded={historyOpen}>
-          <Icon name={historyOpen ? "back" : "history"} />
-          {historyOpen ? "返回项目" : "项目记录"}
-        </button>
-        <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} />
-        <button className="text-button workspace-entry" onClick={openWorkspace} title="在新标签页打开宽版工作台"><Icon name="expand" />工作台</button>
+        {activeCount > 0 && <button className="text-button" onClick={() => void openWorkspace()}>{activeCount} 个任务</button>}
+        <button className="text-button workspace-entry" disabled={busy || savingMode || !!subjectUnavailable[subjectKey(preferences.mode)]} onClick={() => void openWorkspace()} title="在工作台继续"><Icon name="expand" />工作台</button>
         <button
           className="icon-button"
           title="连接设置"
@@ -674,7 +735,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           >
             {busy ? "正在连接…" : "连接 Codex"}
           </button>
-          {connected && <ModelSettings serviceBusy={serviceBusy} />}
+          {connected && <button className="text-button" onClick={() => void openWorkspace()}>在工作台管理模型与设置<Icon name="arrow" /></button>}
         </section>
       )}
       {error && (
@@ -687,7 +748,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       )}
       {connected && !selectedModel && !settings && <div className="model-notice">
         <span>先为 QC-Reframe 选择可用模型</span>
-        <button className="text-button" onClick={() => setSettings(true)}>选择模型</button>
+        <button className="text-button" onClick={() => workspace ? setSettings(true) : void openWorkspace()}>选择模型</button>
       </div>}
 
       {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
@@ -700,6 +761,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       }} />}
       <div className={workspace ? "workspace-body" : undefined} data-results-open={drawerOpen} data-history={historyOpen}>
       <div ref={editor} className={workspace ? "workspace-editor" : undefined} inert={workspace && narrow && drawerOpen}>
+      {!workspace && draftError && <p className="error" role="alert">{draftError}</p>}
       <main className={workspace && !historyOpen && selection ? "canvas-main" : undefined}>
         {historyOpen ? (
           <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} />
@@ -722,129 +784,20 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           prompt={result && activeJob && <PromptEditor sheet result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={null} onExport={exportResult}
             onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
             onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} />}
-        /> : (
-          <>
-            {!selection && (
-              <section className="empty">
-                <span className="empty-mark"><Icon name="image" /></span>
-                <h1>选择一张参考图</h1>
-              </section>
-            )}
+        /> : !workspace ? <QuickWorkspace contextKey={drawerKey} selection={selection} title={activeProject?.title} mode={preferences.mode}
+          subject={subjectImage(preferences.mode)} instruction={taskInstruction(preferences.mode)} job={job}
+          disabled={blocked || !!promptDraft} modeDisabled={savingMode || busy} reverseDisabled={reverseDisabled}
+          status={reverseStatus || reverseHint} stale={instructionStale || (preferences.mode === "multi-reenact" && multiStale)} cancelling={cancelling} copied={copied} lang={lang} versions={versionSelector}
+          onMode={mode => void saveMode(mode)} onSubject={image => setSubjectDrafts(items => ({ ...items, [subjectKey(preferences.mode)]: image }))}
+          onAvailability={available => setSubjectUnavailable(items => ({ ...items, [subjectKey(preferences.mode)]: !available }))}
+          onInstruction={value => changeInstruction(preferences.mode, value)} onReference={file => void uploadReference(file)}
+          onRotateReference={image => applyReferenceRotation(image, preferences.mode, taskInstruction(preferences.mode))}
+          onSwap={() => { if (preferences.mode !== "recreate") void swapImages(preferences.mode, taskInstruction(preferences.mode)); }}
+          onReverse={reverse} onCancel={cancel} onCopy={copy} onLanguage={setLang} onWorkspace={() => void openWorkspace()} onUpdate={updateJob}
+          generationHint={promptDraft ? "未保存的提示词请在工作台继续编辑" : instructionStale ? "输入已修改，请重新生成提示词" : reverseStatus || (!connected ? "请先连接服务" : !selectedModel ? "请在工作台选择模型" : "")}
+          generationDisabled={!connected || !selectedModel || blocked || !!promptDraft || needsPrompt || !!subjectUnavailable[subjectKey(preferences.mode)]}
+        /> : <section className="empty"><span className="empty-mark"><Icon name="image" /></span><h1>选择一张参考图</h1></section>}
 
-            {!workspace && activeProject && <div className="project-heading"><h1>{activeProject.title}</h1></div>}
-            {referenceError && <div className="error" role="alert">{referenceError}
-              <button className="text-button" disabled={!connected} onClick={() => setReferenceErrors((items) => {
-                const next = { ...items }; delete next[job!.id]; return next;
-              })}>重新读取主体图</button>
-            </div>}
-            {!workspace && <div className="mode-switch" role="group" aria-label="项目逆向路径">
-              <button
-                className={preferences.mode === "style" ? "active" : ""}
-                aria-pressed={preferences.mode === "style"}
-                disabled={savingMode || busy}
-                onClick={() => saveMode("style")}
-              >
-                提取风格{activeProject && modeJob("style") && <small>{laneStatus(modeJob("style"))}</small>}
-              </button>
-              <button
-                className={preferences.mode === "recreate" ? "active" : ""}
-                aria-pressed={preferences.mode === "recreate"}
-                disabled={savingMode || busy}
-                onClick={() => saveMode("recreate")}
-              >
-                完整复刻{activeProject && modeJob("recreate") && <small>{laneStatus(modeJob("recreate"))}</small>}
-              </button>
-              <button className={preferences.mode === "reenact" ? "active" : ""}
-                aria-pressed={preferences.mode === "reenact"} disabled={savingMode || busy}
-                onClick={() => saveMode("reenact")}>
-                主体重演{activeProject && modeJob("reenact") && <small>{laneStatus(modeJob("reenact"))}</small>}
-              </button>
-              <button className={preferences.mode === "multi-reenact" ? "active" : ""} aria-pressed={preferences.mode === "multi-reenact"} disabled={savingMode || busy} onClick={() => saveMode("multi-reenact")}>
-                多图重演{activeProject && modeJob("multi-reenact") && <small>{laneStatus(modeJob("multi-reenact"))}</small>}
-              </button>
-            </div>}
-            {selection && <div className="step-title"><h2><span className="step-index">1</span>{preferences.mode === "multi-reenact" ? "组合画面" : "准备画面"}</h2>{preferences.mode === "multi-reenact" && <span className="multi-subject-count">{multiSubjects.length} 张主体图</span>}</div>}
-            {selection && preferences.mode === "recreate" && (
-              <div className="workspace-inputs single"><ImageInput error={selection.error} image={selection.image} rotation={{ disabled: blocked, onApply: image => applyReferenceRotation(image, "recreate", taskInstruction("recreate")) }} label="风格参考图" alt="本次选择的参考图片" /></div>
-            )}
-            {(selection || result) && (
-              <>
-                {(selection?.error || job?.error) && (
-                  <div className="error" role="alert">
-                    {job?.error || selection?.error}
-                  </div>
-                )}
-                {selection && preferences.mode === "recreate" && (<>
-                  <TaskInstruction value={taskInstruction("recreate")} disabled={blocked} onChange={value => changeInstruction("recreate", value)} />
-                  {!workspace && !promptLoading && <AsyncAction className={workspace ? "workspace-reverse" : ""} status={reverseStatus} onCancel={running ? cancel : undefined} cancelling={cancelling}>
-                  <button
-                    className={workspace ? "outline-button" : "primary"}
-                    disabled={blocked || !selection.image}
-                    onClick={() => start()}
-                    aria-busy={busy || running}
-                  >
-                    {workspace && !busy && !running && <Icon name="edit" />}
-                    {busy
-                      ? "正在提交…"
-                      : restoring
-                        ? "正在恢复原图…"
-                        : running
-                          ? `正在${modeName(preferences.mode)}…`
-                          : workspace ? result ? "重新逆向提示词" : "逆向提示词" : "生成复刻提示词"}
-                  </button>
-                  </AsyncAction>}
-                </>)}
-              </>
-            )}
-
-            {selection && (["style", "reenact"] as const).map((mode) => {
-              const savedJob = modeJob(mode);
-              const savedReference = savedJob && references[savedJob.id];
-              return <SubjectForm workspace={workspace} key={`${selection.projectId || selection.id}-${mode}-${savedJob?.id || "new"}`} mode={mode}
-                selection={{ ...selection, reenact: savedReference?.reenact, subjectError: savedReference?.subjectError }} job={savedJob}
-                instruction={taskInstruction(mode)} onInstructionChange={value => changeInstruction(mode, value)}
-                onAvailabilityChange={available => setSubjectUnavailable(items => ({ ...items, [subjectKey(mode)]: !available }))}
-                subjectImage={subjectImage(mode)} onSubjectChange={(image) => setSubjectDrafts((items) => ({ ...items, [subjectKey(mode)]: image }))}
-                active={preferences.mode === mode} disabled={blocked || !selection.image || (workspace && !!promptDraft)}
-                status={preferences.mode === mode ? reverseStatus : undefined} onCancel={running ? cancel : undefined}
-                hideAction={workspace || promptLoading && preferences.mode === mode} cancelling={cancelling}
-                submitting={busy} onSubmit={(input) => start(mode, input)}
-                onReferenceRotate={(image, instruction) => applyReferenceRotation(image, mode, instruction)}
-                onSwap={instruction => void swapImages(mode, instruction)}
-                onExtract={mode === "style" ? extractStyle : undefined} />;
-            })}
-            {selection && <MultiSubjectForm key={multiKey} image={selection.image} imageError={selection.error} subjects={multiSubjects} instruction={multiPrompt} initialSelectedId={swappedSubjectId}
-              active={preferences.mode === "multi-reenact"} disabled={blocked || !selection.image} status={preferences.mode === "multi-reenact" ? reverseStatus : undefined}
-              hasPrompt={!!multiJob?.result} stale={multiStale} onCancel={running ? cancel : undefined}
-              hideAction={workspace || promptLoading && preferences.mode === "multi-reenact"} cancelling={cancelling}
-              onChange={subjects => setMultiSubjectDrafts(items => ({ ...items, [multiKey]: subjects }))}
-              onInstruction={value => changeInstruction("multi-reenact", value)}
-              onReferenceRotate={image => applyReferenceRotation(image, "multi-reenact", multiPrompt)}
-              onSubmit={input => start("multi-reenact", input)} onReference={file => void uploadReference(file, true)} onSwap={id => void swapImages("multi-reenact", multiPrompt, id)} />}
-            {activeProject && !result && <section className="lane-empty" aria-label={`${modeName(preferences.mode)}待生成`}>
-              <div className="step-title"><h2><span className="step-index">2</span>雕琢提示词{promptRetry}</h2>{versionSelector}</div><LoadingPlaceholder className="empty-prompt" active={!!running}
-                action={!workspace && promptLoading && <button type="button" className="quiet-button" disabled={cancelling} onClick={cancel}>{cancelling ? "正在取消…" : "取消"}</button>}>
-                {running ? job.stage || "正在逆向提示词…" : job?.status === "failed" ? "逆向失败，请重试。" : job?.status === "cancelled" ? "任务已取消，可重新开始。" : "提示词待生成"}
-              </LoadingPlaceholder>
-            </section>}
-
-            {result && activeJob && (
-              <section className="result" aria-label={`${modeName(activeJob.mode)}提示词`}>
-                <PromptEditor result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={versionSelector} retry={promptRetry} onExport={workspace ? exportResult : undefined}
-                  onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
-                  onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} />
-                {!workspace && activeJob.mode === "style" && !activeJob.reenact && (
-                  <InlineHelp label="风格提示词用法">把 [SUBJECT] 替换成你的创作主体。</InlineHelp>
-                )}
-                {!workspace && promptDraft && <p className="fine" role="status">请先保存或取消编辑，再生成图片或导出。</p>}
-                {!workspace && generationPanel}
-                {!workspace && <button className="secondary prompt-export" disabled={!!promptDraft} onClick={exportResult}>
-                  <Icon name="download" />导出 Markdown
-                </button>}
-              </section>
-            )}
-          </>
-        )}
       </main>
       {workspace && !historyOpen && resultPane && generationPanel && createPortal(generationPanel, resultPane)}
       </div>

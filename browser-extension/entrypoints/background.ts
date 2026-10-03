@@ -166,7 +166,65 @@ export default defineBackground(() => {
       selecting = false;
     }
   };
-  const uiMessage = async (message: Record<string, any>) => {
+  const validateDraft = (draft: any) => {
+    if (draft !== undefined && (typeof draft !== "object" || draft === null || Array.isArray(draft) || new TextEncoder().encode(JSON.stringify(draft)).length > 8 * 1024 * 1024))
+      throw new Error("草稿过大，请在工作台保存后重试");
+    if (draft?.multiSubjectDrafts !== undefined && (!draft.multiSubjectDrafts || typeof draft.multiSubjectDrafts !== "object" || Array.isArray(draft.multiSubjectDrafts)
+      || Object.values(draft.multiSubjectDrafts).some(subjects => !validSubjects(subjects, 0))))
+      throw new Error("多图草稿无效，请重新选择主体图");
+  };
+  const handoffContext = (context: any) => {
+    if (!context || !modes.includes(context.mode)) throw new Error("无效工作台模式");
+    const value = context.selection;
+    if (value !== null && (!value || typeof value.id !== "string" || value.id.length > 100 || (value.projectId !== undefined && !/^[\da-f]{64}$/.test(value.projectId))))
+      throw new Error("无效工作台项目");
+    return { mode: context.mode, selection: value ? { id: value.id, projectId: value.projectId, sourceUrl: typeof value.sourceUrl === "string" ? value.sourceUrl : "", capture: value.capture } : null };
+  };
+  // Serialize session writes so rapid input and simultaneous panels cannot reorder drafts.
+  let sessionWrite: Promise<unknown> = Promise.resolve();
+  const sessionTask = <T,>(action: () => Promise<T>) => {
+    const task = sessionWrite.catch(() => {}).then(action);
+    sessionWrite = task;
+    return task;
+  };
+  const storeDraft = (key: string, value: Record<string, any>, transferFrom?: string) => {
+    return sessionTask(async () => {
+      const all = await browser.storage.session.get(null);
+      for (const [storedKey, item] of Object.entries(all)) {
+        if (!storedKey.startsWith("quick:") && !storedKey.startsWith("workspace:")) continue;
+        const createdAt = (item as { createdAt?: number })?.createdAt;
+        if (!createdAt || Date.now() - createdAt > 24 * 60 * 60 * 1000) {
+          await browser.storage.session.remove(storedKey); delete all[storedKey];
+        }
+      }
+      const original = transferFrom ? all[transferFrom] as Record<string, any> | undefined : undefined;
+      const shared = original?.handoff ? all[original.handoff] as Record<string, any> | undefined : original;
+      if (shared?.draft && value.draft) {
+        const draft = { ...shared.draft, ...value.draft };
+        for (const name of ["multiSubjectDrafts", "subjectDrafts", "instructions", "versions", "promptDrafts"])
+          draft[name] = { ...shared.draft[name], ...value.draft[name] };
+        value.draft = draft;
+      }
+      const changes = { [key]: value, ...(transferFrom ? { [transferFrom]: { createdAt: value.createdAt, handoff: key } } : {}) };
+      if (transferFrom) value.source = transferFrom;
+      if (new TextEncoder().encode(JSON.stringify({ ...all, ...changes })).length > 9 * 1024 * 1024)
+        throw new Error("临时草稿空间不足，请先在已打开的工作台保存草稿");
+      await browser.storage.session.set(changes);
+    });
+  };
+  const consumeHandoff = (key: string) => {
+    return sessionTask(async () => {
+      const value = (await browser.storage.session.get(key))[key] as Record<string, any> | undefined;
+      if (value?.source) {
+        const quick = (await browser.storage.session.get(value.source))[value.source] as { handoff?: string } | undefined;
+        // Transfer ownership without ever storing two copies of the image payload.
+        if (quick?.handoff === key) await browser.storage.session.set({ [key]: null, [value.source]: { ...value, source: undefined } });
+      }
+      await browser.storage.session.remove(key);
+      return value && Date.now() - value.createdAt <= 24 * 60 * 60 * 1000 ? value : undefined;
+    });
+  };
+  const uiMessage = async (message: Record<string, any>, source = "popup") => {
     // Expose only this public preference; content scripts cannot read local storage.
     if (message.type === "alchemy:get-motion-preference") {
       const { motionPreference } = await browser.storage.local.get("motionPreference");
@@ -193,24 +251,33 @@ export default defineBackground(() => {
     switch (message.type) {
       case "alchemy:open-workspace": {
         const id = crypto.randomUUID();
-        // Session-only transfer keeps unfinished form input out of durable project records.
+        // Explicit UI context wins over another view's global selection and mode.
         const draft = message.draft;
-        if (draft !== undefined && (typeof draft !== "object" || draft === null || Array.isArray(draft) || new TextEncoder().encode(JSON.stringify(draft)).length > 8 * 1024 * 1024))
-          throw new Error("工作台草稿过大，请先保存提示词后重试");
-        if (draft?.multiSubjectDrafts !== undefined && (!draft.multiSubjectDrafts || typeof draft.multiSubjectDrafts !== "object" || Array.isArray(draft.multiSubjectDrafts)
-          || Object.values(draft.multiSubjectDrafts).some(subjects => !validSubjects(subjects, 0))))
-          throw new Error("多图草稿无效，请重新选择主体图");
-        await browser.storage.session.set({ [`workspace:${id}`]: { mode: preferences?.mode || "style", draft } });
+        validateDraft(draft);
+        const context = handoffContext(message.context ?? { mode: preferences?.mode || "style", selection: selection || null });
+        await storeDraft(`workspace:${id}`, { ...context, draft, createdAt: Date.now() }, message.draft ? `quick:${source}` : undefined);
         try { await browser.tabs.create({ url: `${browser.runtime.getURL("/workspace.html")}?handoff=${id}` }); }
-        catch (error) { await browser.storage.session.remove(`workspace:${id}`); throw error; }
+        catch (error) { await consumeHandoff(`workspace:${id}`); throw error; }
         return;
       }
       case "alchemy:workspace-handoff": {
         if (typeof message.id !== "string" || !/^[\da-f-]{36}$/.test(message.id)) throw new Error("无效工作台入口");
-        const key = `workspace:${message.id}`;
-        const value = (await browser.storage.session.get(key))[key];
-        await browser.storage.session.remove(key);
-        return value;
+        return consumeHandoff(`workspace:${message.id}`);
+      }
+      case "alchemy:quick-draft": {
+        const key = `quick:${source}`;
+        if (message.context !== undefined) {
+          validateDraft(message.draft);
+          await storeDraft(key, { ...handoffContext(message.context), draft: message.draft, createdAt: Date.now() });
+          return;
+        }
+        return sessionTask(async () => {
+          let value = (await browser.storage.session.get(key))[key] as Record<string, any> | undefined;
+          if (value?.handoff) value = (await browser.storage.session.get(value.handoff))[value.handoff] as Record<string, any> | undefined;
+          if (value && Date.now() - value.createdAt <= 24 * 60 * 60 * 1000) return value;
+          await browser.storage.session.remove(key);
+          return;
+        });
       }
       case "alchemy:upload-reference": {
         if (selecting) throw new Error("正在处理图片，请稍候");
@@ -396,8 +463,8 @@ export default defineBackground(() => {
       uiMessage(message).then(value => reply({ ok: true, value }), error => reply({ error: error.message }));
       return true;
     }
-    if ((contentSender || extensionSender) && ["alchemy:get-motion-preference", "alchemy:set-motion-preference", "alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
-      uiMessage(message).then(
+    if ((contentSender || extensionSender) && ["alchemy:get-motion-preference", "alchemy:set-motion-preference", "alchemy:show-hidden-projects", "alchemy:set-project-hidden", "alchemy:projects", "alchemy:project", "alchemy:project-thumbnail", "alchemy:generation-thumbnail", "alchemy:quick-draft", "alchemy:open-workspace", "alchemy:upload-reference", "alchemy:cli-check", "alchemy:cli-update", "alchemy:models-refresh", "alchemy:model-verify", "alchemy:state", "alchemy:connect", "alchemy:mode", "alchemy:query", "alchemy:cancel", "alchemy:reference", "alchemy:project-reference", "alchemy:open-project", "alchemy:ensure-project", "alchemy:delete-projects", "alchemy:start", "alchemy:save-prompt", "alchemy:generate", "alchemy:generation-cancel", "alchemy:generation-reference", "alchemy:generation-image", "alchemy:generation-file-action"].includes(message?.type)) {
+      uiMessage(message, contentSender ? `tab:${sender.tab!.id}` : "popup").then(
         (value) => reply({ ok: true, value }),
         (error) => reply({ error: error.message }),
       );

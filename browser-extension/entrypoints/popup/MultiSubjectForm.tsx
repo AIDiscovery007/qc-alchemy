@@ -6,7 +6,7 @@ import Icon from "./Icon";
 import TaskInstruction from "./TaskInstruction";
 import SelectField from "./SelectField";
 import AsyncAction from "./AsyncAction";
-import { ImagePreviewButton } from "./ImagePreview";
+import ImagePreview from "./ImagePreview";
 
 export default function MultiSubjectForm({ image, imageError, subjects, instruction, active, disabled, status, hideAction = false, cancelling = false, hasPrompt, stale, onChange, onInstruction, onSubmit, onCancel, onReference, onReferenceRotate, onSwap, initialSelectedId = "" }: {
   image?: string; imageError?: string; subjects: MultiSubject[]; instruction: string; active: boolean; disabled: boolean;
@@ -60,12 +60,13 @@ export default function MultiSubjectForm({ image, imageError, subjects, instruct
 
   return <section className="multi-subject-form" hidden={!active} aria-label="多图重演输入">
     <div className="composition-layout" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void addFiles([...event.dataTransfer.files]); }}>
-      <div className="template-card"><button className="template-replace" disabled={locked || !onReference} aria-label="更换参考模板" onClick={() => reference.current?.click()}>
-        {image ? <img src={image} alt="参考模板" width="240" height="300" /> : <LoadingPlaceholder active={active && !imageError}>{imageError || "正在读取模板…"}</LoadingPlaceholder>}<span className="replace-label">更换</span>
-      </button><div className="workspace-input-caption"><strong>参考模板</strong>{image && <ImagePreviewButton src={image} alt="参考模板" rotation={{ disabled: locked, onApply: onReferenceRotate }} />}</div></div>
-      <div className="subject-filmstrip" aria-label="主体编排">{subjects.map((item, i) => <div key={item.id} className="subject-thumbnail"><button className={current?.id === item.id ? "selected" : ""} aria-label={`选择主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => setSelected(item.id)}>
-        {item.subjectImage ? <img src={item.subjectImage} alt={`主体 ${i + 1}`} width="88" height="88" /> : <small>{uploading ? "读取中" : "待上传"}</small>}<span>{i + 1}</span>
-      </button><div className="image-preview-actions">{item.subjectImage && <ImagePreviewButton src={item.subjectImage} alt={`主体 ${i + 1}`} rotation={{ maxBytes: 2 * 1024 * 1024, disabled: locked, onApply: image => onChange(subjects.map(subject => subject.id === item.id ? { ...subject, subjectImage: image } : subject)) }} />}</div></div>)}<button className="add-subject" disabled={locked || subjects.length >= 6} aria-label="添加主体图" title="添加主体图" onClick={() => upload.current?.click()}><Icon name="plus" /><span>添加主体图</span></button></div>
+      <div className="template-card">{image ? <ImagePreview src={image} alt="参考模板" width="240" height="300" imageButton={{ className: "template-replace", disabled: locked || !onReference, "aria-label": "更换参考模板", onClick: () => reference.current?.click() }} rotation={{ disabled: locked, onApply: onReferenceRotate }}><span className="replace-label">更换</span></ImagePreview>
+        : <button className="template-replace" disabled={locked || !onReference} aria-label="更换参考模板" onClick={() => reference.current?.click()}><LoadingPlaceholder active={active && !imageError}>{imageError || "正在读取模板…"}</LoadingPlaceholder><span className="replace-label">更换</span></button>}
+        <div className="workspace-input-caption"><strong>参考模板</strong></div></div>
+      <div className="subject-filmstrip" aria-label="主体编排">{subjects.map((item, i) => <div key={item.id} className="subject-thumbnail">
+        {item.subjectImage ? <ImagePreview src={item.subjectImage} alt={`主体 ${i + 1}`} width="88" height="88" imageButton={{ className: current?.id === item.id ? "selected" : "", "aria-label": `选择主体 ${i + 1}`, "aria-pressed": current?.id === item.id, onClick: () => setSelected(item.id) }} rotation={{ maxBytes: 2 * 1024 * 1024, disabled: locked, onApply: image => onChange(subjects.map(subject => subject.id === item.id ? { ...subject, subjectImage: image } : subject)) }}><span>{i + 1}</span></ImagePreview>
+          : <button className={current?.id === item.id ? "selected" : ""} aria-label={`选择主体 ${i + 1}`} aria-pressed={current?.id === item.id} onClick={() => setSelected(item.id)}><small>{uploading ? "读取中" : "待上传"}</small><span>{i + 1}</span></button>}
+      </div>)}<button className="add-subject" disabled={locked || subjects.length >= 6} aria-label="添加主体图" title="添加主体图" onClick={() => upload.current?.click()}><Icon name="plus" /><span>添加主体图</span></button></div>
       {current && <div className="selected-subject"><div className="subject-meta"><strong>主体 {index + 1}</strong><div className="subject-actions">
         <button type="button" aria-label={`互换主体 ${index + 1} 与参考模板`} title="与参考模板互换" disabled={locked || !image || !current.subjectImage} onClick={() => onSwap(current.id)}><Icon name="swap" /></button>
         <button disabled={locked} onClick={() => { replacing.current = current.id; replace.current?.click(); }}>更换</button>

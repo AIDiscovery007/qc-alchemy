@@ -5,7 +5,7 @@ import Icon from "../popup/Icon";
 import SelectField from "../popup/SelectField";
 import TaskInstruction from "../popup/TaskInstruction";
 import LoadingPlaceholder from "../popup/LoadingPlaceholder";
-import { ImagePreviewButton } from "../popup/ImagePreview";
+import ImagePreview from "../popup/ImagePreview";
 import PromptSheet from "./PromptSheet";
 
 const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
@@ -114,7 +114,7 @@ export default function CanvasWorkspace({ contextKey, mode, image, subjectImage,
     <div className="canvas-input" ref={inputArea}>
       <div className="canvas-stage" inert={sheetOpen}>
         <div className="canvas-large" aria-label="图片展示区" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); target.current = isSubject ? current?.id || "subject" : "reference"; void readFiles([...event.dataTransfer.files]); }}>
-          {currentImage ? <img src={currentImage} alt={label} />
+          {currentImage ? <ImagePreview src={currentImage} alt={label} disabled={locked} rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} />
             : !isSubject ? <LoadingPlaceholder active={!error}>{error || "正在读取参考图…"}</LoadingPlaceholder>
             : <button className="canvas-upload" disabled={locked} onClick={() => choose(current?.id || "subject")}><Icon name="plus" />上传{label}</button>}
         </div>
@@ -128,7 +128,6 @@ export default function CanvasWorkspace({ contextKey, mode, image, subjectImage,
         <SelectField label="逆向模式" aria-label="逆向模式" value={mode} disabled={modeDisabled || uploading} onChange={event => { setOpen(false); setSettings(false); onMode(event.target.value as Mode); }}>
           {(Object.keys(modes) as Mode[]).map(key => <option key={key} value={key}>{modes[key]}</option>)}
         </SelectField>
-        <ImagePreviewButton src={currentImage || ""} alt={label} disabled={locked} rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} />
         <span className="canvas-tool-divider" />
         <button className="quiet-button" disabled={locked} aria-label={currentImage ? "替换当前图片" : "上传当前图片"} title={currentImage ? "替换当前图片" : "上传当前图片"} onClick={() => choose(isSubject ? current?.id || "subject" : "reference")}><Icon name="image" /><span>{currentImage ? "替换" : "上传"}</span></button>
         {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="互换主体与参考" title="互换主体与参考" disabled={locked || !image || (mode === "multi-reenact" ? !current?.subjectImage : !subjectImage)} onClick={() => onSwap(current?.id)}><Icon name="swap" /></button>}
