@@ -15,8 +15,8 @@ const ratios = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 
 export const GenerationEffectContext = createContext<ComponentType<{ running: boolean; image: string; failed: boolean }> | null>(null);
 
-export default function GenerationPanel({ job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, hideActions = false, versionNumber = 1, drawerOpen = true, onCollapse, onRequestState, requestError = "", requestPending = false }: {
-  requestPending?: boolean; requestError?: string; drawerOpen?: boolean; onCollapse?(): void; onRequestState?(pending: boolean, error?: string): void;
+export default function GenerationPanel({ targetGeneration, onTargetSelected, job, lang, disabled, subjectImage, subjects, inputPreview, onUpdate, workspace = false, actionsTarget, hideActions = false, versionNumber = 1, drawerOpen = true, onCollapse, onRequestState, requestError = "", requestPending = false }: {
+  targetGeneration?: string; onTargetSelected?(): void; requestPending?: boolean; requestError?: string; drawerOpen?: boolean; onCollapse?(): void; onRequestState?(pending: boolean, error?: string): void;
   inputPreview?: ReactNode; workspace?: boolean; hideActions?: boolean; actionsTarget?: HTMLElement | null; versionNumber?: number;
   job: Job; lang: "zh" | "en"; disabled: boolean; subjectImage?: string; subjects?: MultiSubject[]; onUpdate(job: Job, subjectImage?: string, subjects?: MultiSubject[]): void;
 }) {
@@ -32,7 +32,8 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   const error = actionError || requestError;
   const [localSubmitting, setSubmitting] = useState(false);
   const submitting = localSubmitting || requestPending;
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(targetGeneration || "");
+  useEffect(() => { if (targetGeneration) { setSelected(targetGeneration); onTargetSelected?.(); } }, [targetGeneration, onTargetSelected]);
   const [asset, setAsset] = useState<{ key: string; image: string; path?: string; width?: number; height?: number }>();
   const previousRatio = job.generations?.at(-1)?.aspectRatio;
   const previousRatioValue = previousRatio ? `${previousRatio.width}:${previousRatio.height}` : "auto";
@@ -136,7 +137,7 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
   </div>;
   const generateButton = <button className="primary generate-button" disabled={disabled || busy || !!running || !validRatio || generic || incomplete || !inputsReady} aria-busy={busy || !!running}
     title={`使用${job.mode === "recreate" ? "" : "当前主体图、参考模板与"}${lang === "zh" ? "中文" : "英文"}提示词生成，包含排除项。使用 Codex 生图额度。`} onClick={() => act()}>
-    {!running && !busy && <Icon name="image" />}{running ? "正在生成图片…" : busy ? "正在提交…" : generations.length ? "再生成一张" : "生成图片"}<Icon name="arrow" />
+    {!running && !busy && <Icon name="image" />}{running ? "生成中，完成后提醒" : busy ? "正在提交…" : generations.length ? "再生成一张" : "生成图片"}<Icon name="arrow" />
   </button>;
   const warning = (generic || incomplete) ? "请先上传主体图，生成专属提示词。" : !inputsReady ? multi ? "请添加至少 2 张可用的主体图。" : "请先上传可用的主体图。" : "";
   const generationControls = <>{ratioControls}{generateButton}{workspace && warning && <p className="hint">{warning}</p>}{workspace && error && <p className="error" role="alert">{error}</p>}</>;
@@ -159,11 +160,11 @@ export default function GenerationPanel({ job, lang, disabled, subjectImage, sub
     {!workspace && error && <div className="error result-notice" role="alert">{error}</div>}
     <div className="preview-canvas">{workspace && error && (image || running) && <p className="error result-request-error" role="alert">{error}</p>}{!workspace && !generation && inputPreview}{submitting ? workspace && drawerOpen ? <LoadingPlaceholder className="generation-submitting">正在提交生成请求…</LoadingPlaceholder> : null : image ? compare ? <div className="compare-images">
       {comparisonInputs}
-      <figure><ImagePreview src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
-    </div> : <ImagePreview className="generation-result-preview" imageClassName="generation-result-image" src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError || error) ? <div className="empty-canvas">
+      <figure><ImagePreview data-reminder-task={drawerOpen ? generation?.id : undefined} src={image} alt="生成结果" /><figcaption>生成结果</figcaption></figure>
+    </div> : <ImagePreview data-reminder-task={drawerOpen ? generation?.id : undefined} className="generation-result-preview" imageClassName="generation-result-image" src={image} alt={`${job.result!.title} · 生成结果`} /> : (generation?.status === "failed" || generation?.status === "cancelled" || imageError || error) ? <div className="empty-canvas">
       <Icon name="image" />
       <h3>{generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "图片暂不可用"}</h3>
-      <p role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || error || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
+      <p data-reminder-task={drawerOpen && generation?.status === "failed" && !imageError && !error ? generation.id : undefined} role={generation?.status === "failed" || imageError ? "alert" : "status"}>{imageError || error || (generation?.status === "failed" ? generation.error || "请重新生成图片。" : "可以重新生成，或查看其他生成记录。")}</p>
       {workspace && <button className="outline-button" disabled={disabled || busy || !!running || !validRatio || generic || incomplete || !inputsReady} onClick={() => act()}>重新生成</button>}
     </div> : !GenerationEffect && generation?.status === "completed" ? <p role="status">正在读取生成图片…</p> : null}{GenerationEffect && drawerOpen && generation && !compare && !submitting && <GenerationEffect key={assetKey} running={generation.status === "running"} image={image}
       failed={generation.status === "failed" || generation.status === "cancelled" || !!imageError} />}</div>

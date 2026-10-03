@@ -1,3 +1,4 @@
+import { noticeLabel, type TaskNotice } from "../../lib/task-reminders";
 import { showMotionDialog } from "../../lib/motion-dialog";
 import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
@@ -10,10 +11,11 @@ import { logo } from "../../lib/brand";
 const modes: Record<Mode, string> = { style: "提取风格", recreate: "完整复刻", reenact: "主体重演", "multi-reenact": "多图重演" };
 const statuses = { running: "进行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
 
-export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hiddenProjectIds, busy, onToggleHidden }: {
+export default function TaskCenter({ unread, onNoticeOpen, onClose, onOpen, onUpdate, showHidden, hiddenProjectIds, busy, onToggleHidden }: {
+  unread: TaskNotice[]; onNoticeOpen(notice: TaskNotice): void;
   showHidden: boolean; hiddenProjectIds: string[]; busy: boolean; onToggleHidden(): void;
   onClose(): void;
-  onOpen(projectId: string, mode: Mode, jobId: string): Promise<void>;
+  onOpen(projectId: string, mode: Mode, jobId: string, generationId?: string): Promise<void>;
   onUpdate?(job: Job): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -71,11 +73,11 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
     finally { if (alive.current) setPending((items) => items.filter((item) => item !== id)); }
   };
 
-  const open = async (job: Job) => {
+  const open = async (job: Job, generation?: Generation) => {
     if (!job.projectId) return;
     setOpening(job.id);
     setActionError("");
-    try { await onOpen(job.projectId, job.mode, job.id); if (alive.current) onClose(); }
+    try { await onOpen(job.projectId, job.mode, job.id, generation?.id); if (alive.current) onClose(); }
     catch (e) { if (alive.current) setActionError((e as Error).message); }
     finally { if (alive.current) setOpening(""); }
   };
@@ -106,12 +108,16 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
       <HiddenProjectsToggle shown={showHidden} disabled={busy} onToggle={onToggleHidden} />
       <button type="button" className="close-btn" aria-label="关闭窗口" onClick={onClose}>×</button></div>
     <div className="task-list">
+      {unread.length > 0 && <section aria-label="未查看结果" className="reminder-unread-list">
+        <div className="settings-row"><strong>{unread.length} 项结果未查看</strong><button className="text-button" onClick={() => void request({ type: "alchemy:reminder-read", ids: unread.map(item => item.id) }).catch(error => setActionError(error.message))}>全部标为已读</button></div>
+        {unread.map(item => <button key={item.id} className="text-button" onClick={() => onNoticeOpen(item)}><span className="reminder-dot" data-failed={item.status === "failed"} />{modes[item.mode]} · {noticeLabel(item)} · {new Date(item.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</button>)}
+      </section>}
       {!loaded && <p className="hint task-scope" role="status">正在读取任务…</p>}
       {error && <div className="error" role="alert">{error}</div>}
       {actionError && <div className="error" role="alert">{actionError}</div>}
       {loaded && !tasks.length && !error && <div className="empty-canvas"><h3>暂无任务</h3></div>}
       <ul>{tasks.map(({ job, task, generation, timestamp }) => <li key={task.id} className="task-item" data-status={task.status}>
-        <button type="button" className="task-image-open" aria-label={`打开项目：${job.result?.title || "参考图项目"} · ${modes[job.mode]}`} disabled={!job.projectId || !!opening} onClick={() => void open(job)}>
+        <button type="button" className="task-image-open" aria-label={`打开项目：${job.result?.title || "参考图项目"} · ${modes[job.mode]}`} disabled={!job.projectId || !!opening} onClick={() => void open(job, generation)}>
           <TaskImage image={images[job.projectId || job.id]} onVisible={() => loadImage(job)} />
         </button>
         <div className="task-meta" role="status" aria-atomic="true"><strong>{job.result?.title || "参考图项目"} · {modes[job.mode]}</strong>
@@ -120,7 +126,7 @@ export default function TaskCenter({ onClose, onOpen, onUpdate, showHidden, hidd
           {task.error && <small className="task-error">{task.error}</small>}
         </div>
         <button type="button" className="text-link task-cancel" style={{ visibility: task.status === "running" ? "visible" : "hidden" }} disabled={pending.includes(task.id)} onClick={() => void cancel(job, generation)}>{pending.includes(task.id) ? "正在取消…" : "取消"}</button>
-        {job.projectId && <button type="button" className="outline-button" title={`打开逆向版本 ${job.id}`} disabled={!!opening} onClick={() => void open(job)}>{opening === job.id ? "正在打开…" : "查看项目"}</button>}
+        {job.projectId && <button type="button" className="outline-button" title={`打开逆向版本 ${job.id}`} disabled={!!opening} onClick={() => void open(job, generation)}>{opening === job.id ? "正在打开…" : "查看项目"}</button>}
       </li>)}</ul>
     </div>
   </dialog>;

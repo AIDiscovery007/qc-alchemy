@@ -134,6 +134,9 @@ createServer(async (req, res) => {
         }
         if(['style','recreate','reenact'].includes(previewOptions.get('mode')))job.mode=previewOptions.get('mode');
         if(previewOptions.get('keepResult')==='1')job.result=${JSON.stringify(result)};
+        if (previewOptions.has('reminder')) {job.id='11111111-1111-4111-8111-111111111111';if(job.generations?.length)job.generations[0].id='22222222-2222-4222-8222-222222222222';}
+        if (/^[a-f0-9-]{36}$/.test(previewOptions.get('task') || '')) job.id=previewOptions.get('task');
+        if (/^[a-f0-9-]{36}$/.test(previewOptions.get('generation') || '') && job.generations?.length) job.generations[0].id=previewOptions.get('generation');
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
         const projects=[{id:projectId,title:state.startsWith('multi')?'水彩里的日常':state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
@@ -193,6 +196,27 @@ createServer(async (req, res) => {
           get:async()=>{throw new Error('Access to storage is not allowed from this context.');},
           set:async()=>{throw new Error('Access to storage is not allowed from this context.');}
         }},runtime:{id:'preview',getManifest:()=>({name:'QC-Reframe preview',version:'0.1.18'}),onMessage:{addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)},sendMessage:async(message)=>{
+          if(message.type.startsWith('alchemy:reminder-')) {
+            const preferences=JSON.parse(localStorage.getItem('preview-reminders')||'{"sound":false,"tone":"soft","volume":30}');
+            if(message.type==='alchemy:reminder-settings')localStorage.setItem('preview-reminders',JSON.stringify(message.preferences));
+            if(message.type==='alchemy:reminder-test')return {error:'界面预览不播放声音；请在实际扩展中试听。'};
+            const generation=previewOptions.get('reminderTask')==='image'?job.generations?.[0]:undefined;
+            const notice={id:generation?.id||job.id,jobId:job.id,projectId,mode:job.mode,generationId:generation?.id,status:(generation||job).status,createdAt:job.createdAt,hidden:!!projects.find(p=>p.id===projectId)?.hidden};
+            const readKey='preview-reminder-read:'+ (previewOptions.get('case')||'default')+':'+notice.id;
+            if(message.type==='alchemy:reminder-read'&&message.ids?.includes(notice.id)||message.type==='alchemy:reminder-view'&&message.visible&&message.seen?.includes(notice.id))localStorage.setItem(readKey,'true');
+            const unread=previewOptions.has('reminder')&&!localStorage.getItem(readKey)?[notice]:[];
+            if(message.type==='alchemy:reminder-open') {
+              if(message.id!=='all'&&!unread.some(item=>item.id===message.id))return {error:'这条提醒已查看或项目已隐藏，请在任务中心查看。'};
+              const target=new URL('/workspace.html',location.origin);
+              target.search=new URLSearchParams(previewOptions);
+              for(const key of ['tasks','task','generation'])target.searchParams.delete(key);
+              if(message.id==='all')target.searchParams.set('tasks','unread');
+              else {target.searchParams.set('task',notice.jobId);if(notice.generationId)target.searchParams.set('generation',notice.generationId);}
+              window.open(target.href,'_blank');
+            }
+            const toastKey='preview-reminder-toast:'+readKey;
+            return {ok:true,value:{unread,preferences:message.preferences||preferences,desktop:previewOptions.has('notificationDenied')?'denied':'granted',audioSupported:true,connectionError:'',audioError:'',toast:message.type==='alchemy:reminder-view'&&message.visible&&previewOptions.get('reminder')==='toast'&&!sessionStorage.getItem(toastKey)&&(sessionStorage.setItem(toastKey,'true'),true)?unread:undefined}};
+          }
           if(message.type==='alchemy:get-motion-preference')return {ok:true,value:localStorage.getItem('preview-motion-preference')||'system'};
           if(message.type==='alchemy:set-motion-preference'){
             if(previewOptions.get('motionSave')==='failed')return {error:'示例：保存失败'};
@@ -352,6 +376,8 @@ createServer(async (req, res) => {
             '<body><div id="preview-notice">界面预览 · 示例数据 · 不执行逆向</div>',
           ),
       );
+    if (path === '/popup.html' && new URL(req.url, 'http://127.0.0.1').searchParams.has('panelClip'))
+      content = Buffer.from(content.toString().replace('</head>', '<style>#root{position:fixed;top:12px;right:12px;width:400px;height:620px;overflow:auto;border-radius:20px;background:#fffefa;box-shadow:0 4px 24px #0002}</style></head>'));
     res.writeHead(200, { "Content-Type": type });
     res.end(content);
   } catch {

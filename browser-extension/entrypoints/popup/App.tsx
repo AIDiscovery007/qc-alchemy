@@ -1,3 +1,5 @@
+import { ReminderToast, useTaskReminders } from "./TaskReminders";
+import { type TaskNotice } from "../../lib/task-reminders";
 import type { PromptDraft, WorkspaceDraft, WorkspaceHandoff } from "../../lib/workspace-handoff";
 import { resultDrawers, resultDrawerView } from "../../lib/result-drawer";
 import useProjectLibrary from "./useProjectLibrary";
@@ -33,6 +35,11 @@ const modeName = (mode: Mode) => ({ style: "提取风格", recreate: "完整复�
 
 export default function App({ embedded = false, workspace = false }: { embedded?: boolean; workspace?: boolean }) {
   const { reduced } = useMotion();
+  const reminderRoot = useRef<HTMLDivElement>(null);
+  const reminders = useTaskReminders(reminderRoot);
+  const [targetPrompt, setTargetPrompt] = useState<{ jobId: string; request: number }>();
+  const [targetGeneration, setTargetGeneration] = useState<{ jobId: string; id: string }>();
+  const openNotice = (notice?: TaskNotice) => { void request({ type: "alchemy:reminder-open", id: notice?.id || "all" }).catch(error => setError(error.message)); };
   const [projectSearchTarget, setProjectSearchTarget] = useState<HTMLDivElement | null>(null);
   const [resultPane, setResultPane] = useState<HTMLElement | null>(null);
   const [generationActions, setGenerationActions] = useState<HTMLDivElement | null>(null);
@@ -201,7 +208,28 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       return 1500;
     };
     const initialize = async () => {
-      const id = workspace && new URLSearchParams(location.search).get("handoff");
+      const params = new URLSearchParams(location.search);
+      const taskId = workspace && params.get("task");
+      if (workspace && params.get("tasks") === "unread") { setTasksOpen(true); history.replaceState(null, "", location.pathname); }
+      if (taskId && /^[\da-f-]{36}$/.test(taskId)) {
+        ownContext = true;
+        try {
+          const target = await query<Job>(`/jobs/${taskId}`);
+          const reference = await request<Selection>({ type: "alchemy:project-reference", id: target.projectId });
+          if (cancelled) return;
+          previous = reference; setSelection(reference);
+          setPreferences(value => ({ ...value, mode: target.mode }));
+          setVersions(value => ({ ...value, [`${target.projectId}:${target.mode}`]: target.id }));
+          const generationId = params.get("generation");
+          if (generationId && target.generations?.some(item => item.id === generationId)) setTargetGeneration({ jobId: target.id, id: generationId });
+          else {
+            setTargetPrompt({ jobId: target.id, request: Date.now() });
+            dispatchDrawer({ type: "toggle", key: `${target.projectId}:${target.mode}:${target.id}`, open: false, seen: "" });
+          }
+          history.replaceState(null, "", location.pathname);
+        } catch (error) { if (!cancelled) setError((error as Error).message); }
+      }
+      const id = workspace && params.get("handoff");
       if (id) {
         try {
           ownContext = true;
@@ -586,7 +614,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const reverseStatus = reading ? selection?.stage || "正在读取图片…" : running ? job?.stage || "正在逆向提示词…"
+  const reverseStatus = reading ? selection?.stage || "正在读取图片…" : running ? `${job?.stage || "正在逆向提示词…"} · 完成后会提醒你`
     : restoring ? "正在恢复原图…" : loadingProject ? "正在读取模板项目…" : cliBusy ? "Codex 正在升级…"
     : modelBusy ? "正在验证模型…" : busy ? "正在提交…" : undefined;
 
@@ -646,7 +674,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     if (!workspace || !narrow || !drawerOpen) return;
     if (editor.current?.contains(document.activeElement) || document.activeElement === document.body) resultPane?.querySelector<HTMLButtonElement>(".result-collapse")?.focus({ preventScroll: true });
   }, [workspace, narrow, drawerOpen, resultPane]);
-  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} job={activeJob} lang={lang} workspace={workspace}
+  const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} onTargetSelected={() => setTargetGeneration(undefined)} targetGeneration={targetGeneration?.jobId === activeJob.id ? targetGeneration.id : undefined} job={activeJob} lang={lang} workspace={workspace}
                   drawerOpen={drawerOpen} onCollapse={closeResults} requestError={drawer.error} requestPending={drawer.pending}
                   onRequestState={(pending, error) => dispatchDrawer({ type: pending ? "request" : "settled", key: drawerKey, error })} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (workspace && needsPrompt) || (activeJob.mode === "multi-reenact" && multiStale)}
                   subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
@@ -662,19 +690,21 @@ export default function App({ embedded = false, workspace = false }: { embedded?
                   }} /> : null;
 
   return (
-    <div className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion={reduced ? "reduce" : "full"} data-motion-input="keyboard" data-sidebar-collapsed={sidebarCollapsed}
+    <div ref={reminderRoot} className={`${workspace ? "app workspace-app" : "app"}${preferences.mode === "multi-reenact" ? " multi-mode" : ""}`} data-motion={reduced ? "reduce" : "full"} data-motion-input="keyboard" data-sidebar-collapsed={sidebarCollapsed}
       onPointerDownCapture={event => { event.currentTarget.dataset.motionInput = "pointer"; }}
       onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
       onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}
       onKeyDown={event => {
         if (event.key === "Escape" && drawerOpen && !event.defaultPrevented && !(event.target as Element).closest("dialog")) { event.stopPropagation(); closeResults(); }
       }}>
+      {reminders.toast.length > 0 && <ReminderToast container={reminderRoot.current?.querySelector("dialog[open]") || reminderRoot.current} notices={reminders.toast} onClose={reminders.dismiss} onOpen={openNotice} />}
+      {!workspace && reminders.unread.length > 0 && <button className="text-button" onClick={() => openNotice(reminders.unread.length === 1 ? reminders.unread[0] : undefined)}><span className="reminder-dot" data-failed={reminders.unread.some(item => item.status === "failed")} />{reminders.unread.length} 项结果未查看</button>}
       {workspace && <aside id="workspace-sidebar" className="sidebar" aria-label="工作台导航">
         <div className="logo-row"><img src={logo} alt="QC-Reframe" /><div><strong>QC-Reframe</strong></div><button className="quiet-button sidebar-toggle" aria-label={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} title={sidebarCollapsed ? "展开项目栏" : "收起项目栏"} aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={() => setSidebarExpanded(sidebarCollapsed)}><Icon name="sidebar" /></button></div>
         <button className="new-project" aria-label="新建项目" disabled={busy || !connected} onClick={() => { setError(""); setNewProjectOpen(true); }}><Icon name="plus" /><span>新建项目</span></button>
         <input ref={referenceInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图新建项目" onChange={(e) => { void uploadReference(e.target.files?.[0]); e.target.value = ""; }} />
         <button className={`nav-action ${historyOpen ? "active" : ""}`} aria-label="全部项目" disabled={busy || !connected} onClick={showHistory}><Icon name="grid" /><span>全部项目</span><span className="count">{library.recent.total}</span></button>
-        <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span>{activeCount > 0 && <span className="count">{activeCount}</span>}</button>
+        <button className="nav-action" aria-label="任务中心" disabled={!connected} onClick={() => setTasksOpen(true)}><Icon name="clock" /><span>任务中心</span>{reminders.unread.length > 0 && <span className="reminder-dot" data-failed={reminders.unread.some(item => item.status === "failed")} role="img" aria-label={`${reminders.unread.length} 项结果未查看`} />}{activeCount > 0 && <span className="count">{activeCount}</span>}</button>
         <div className="sidebar-label">最近项目</div>
         <div className="project-nav">{recentProjects.map(item => <RecentProject key={item.id} project={item} currentMode={preferences.mode} active={!historyOpen && activeProject?.id === item.id} disabled={busy} onOpen={() => void openProject(item)} />)}</div>
         <div className="sidebar-bottom"><button className="nav-action" aria-label="设置中心" onClick={() => setSettings(true)}><Icon name="settings" /><span>设置中心</span></button><div className="connection-state"><i className={`online-dot ${connected ? "" : "offline"}`} />{connected ? "Codex 已连接" : "本机未连接"}</div></div>
@@ -753,10 +783,17 @@ export default function App({ embedded = false, workspace = false }: { embedded?
 
       {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
       {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
-      {workspace && tasksOpen && <TaskCenter showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId) => {
+      {workspace && tasksOpen && <TaskCenter unread={reminders.unread} onNoticeOpen={openNotice} showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId, generationId) => {
         const next = await request<Selection>({ type: "alchemy:open-project", id: projectId });
         selectionRevision.current++; setSelection(next); setHistoryOpen(false);
         setVersions(items => ({ ...items, [`${projectId}:${mode}`]: jobId }));
+        if (generationId) {
+          setTargetGeneration({ jobId, id: generationId });
+          dispatchDrawer({ type: "toggle", key: `${projectId}:${mode}:${jobId}`, open: true, seen: "" });
+        } else {
+          setTargetPrompt({ jobId, request: Date.now() });
+          dispatchDrawer({ type: "toggle", key: `${projectId}:${mode}:${jobId}`, open: false, seen: "" });
+        }
         await saveMode(mode);
       }} />}
       <div className={workspace ? "workspace-body" : undefined} data-results-open={drawerOpen} data-history={historyOpen}>
@@ -765,13 +802,13 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       <main className={workspace && !historyOpen && selection ? "canvas-main" : undefined}>
         {historyOpen ? (
           <ProjectHistory searchTarget={projectSearchTarget} workspace={workspace} projects={library.data.items.filter(visibleProject)} page={library.page} total={library.data.total} pageSize={library.data.pageSize} search={library.search} status={library.status} onStatus={library.setStatus} loading={library.loading} loadError={library.error} onPage={library.setPage} onSearch={library.setSearch} onRetry={library.refresh} busy={busy} onOpen={openProject} onDelete={deleteProjects} showHidden={showHidden} onSetHidden={setProjectsHidden} />
-        ) : workspace && selection ? <CanvasWorkspace contextKey={drawerKey} mode={preferences.mode}
+        ) : workspace && selection ? <CanvasWorkspace onPromptRevealed={() => setTargetPrompt(undefined)} revealPrompt={targetPrompt?.jobId === activeJob?.id ? targetPrompt?.request : undefined} contextKey={drawerKey} mode={preferences.mode}
           image={selection.image} subjectImage={subjectImage(preferences.mode)} subjects={multiSubjects}
           selected={canvasSelections[subjectKey(preferences.mode)] || "reference"} onSelect={id => setCanvasSelections(items => ({ ...items, [subjectKey(preferences.mode)]: id }))}
           instruction={taskInstruction(preferences.mode)} onInstruction={value => changeInstruction(preferences.mode, value)}
           disabled={blocked || !!promptDraft} modeDisabled={savingMode || busy} reverseDisabled={reverseDisabled} running={!!running} cancelling={cancelling}
           status={reverseStatus || (promptDraft ? "编辑未保存" : reverseHint || genericHint || (job?.status === "cancelled" ? "已取消" : ""))}
-          error={referenceError || selection.error || job?.error} stale={instructionStale || (preferences.mode === "multi-reenact" && multiStale) || genericPrompt}
+          error={referenceError || selection.error || job?.error} errorTaskId={!referenceError && !selection.error && job?.status === "failed" ? job.id : undefined} stale={instructionStale || (preferences.mode === "multi-reenact" && multiStale) || genericPrompt}
           hasPrompt={!!result} promptEditing={!!promptDraft} reduced={reduced} versions={versionSelector} generationActions={setGenerationActions}
           onMode={mode => void saveMode(mode)} onSubject={image => setSubjectDrafts(items => ({ ...items, [subjectKey(preferences.mode)]: image }))}
           onAvailability={available => setSubjectUnavailable(items => ({ ...items, [subjectKey(preferences.mode)]: !available }))}
@@ -781,7 +818,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
           onSwap={id => { if (preferences.mode !== "recreate") void swapImages(preferences.mode, taskInstruction(preferences.mode), id); }}
           onReverse={reverse} onExtract={extractStyle} onCancel={cancel}
           onRetryReference={referenceError ? () => setReferenceErrors(items => { const next = { ...items }; delete next[job!.id]; return next; }) : undefined}
-          prompt={result && activeJob && <PromptEditor sheet result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={null} onExport={exportResult}
+          prompt={result && activeJob && <PromptEditor taskId={activeJob.id} sheet result={result} draft={promptDraft} lang={lang} copied={copied} saving={!!savingPrompt} disabled={!connected} versionSelector={null} onExport={exportResult}
             onLanguage={setLang} onCopy={copy} onEdit={() => setPromptDrafts(items => ({ ...items, [activeJob.id]: { promptZh: result.promptZh, promptEn: result.promptEn, negativePrompt: result.negativePrompt } }))}
             onDraft={draft => setPromptDrafts(items => ({ ...items, [activeJob.id]: draft }))} onSave={savePrompt} onCancel={() => discardPrompt(activeJob.id)} />}
         /> : !workspace ? <QuickWorkspace contextKey={drawerKey} selection={selection} title={activeProject?.title} mode={preferences.mode}

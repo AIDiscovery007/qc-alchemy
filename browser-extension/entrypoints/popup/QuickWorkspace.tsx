@@ -69,7 +69,7 @@ export default function QuickWorkspace({ contextKey, selection, title, mode, sub
     </div>
     <input ref={referenceFile} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传参考图" onChange={e => { onReference(e.target.files?.[0]); e.target.value = ""; }} />
     <input ref={subjectFile} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传主体图" onChange={e => { void uploadSubject(e.target.files?.[0]); e.target.value = ""; }} />
-    {(error || selection?.error || job?.error) && <p className="error" role="alert">{error || job?.error || selection?.error}</p>}
+    {(error || selection?.error || job?.error) && <p data-reminder-task={!error && job?.error && job.status === "failed" ? job.id : undefined} className="error" role="alert">{error || job?.error || selection?.error}</p>}
     {multi ? <div className="quick-handoff"><span>多图编排在工作台继续</span><button className="primary" disabled={uploading} onClick={onWorkspace}>打开工作台<Icon name="arrow" /></button></div> : selection ? <div className="quick-compose">
       <textarea aria-label="任务指令" rows={2} value={instruction} disabled={locked} onChange={e => onInstruction(e.target.value)} />
       <div className="quick-submit"><span role="status">{status || (stale ? "输入已修改" : job?.status === "cancelled" ? "已取消" : "")}</span>{job?.status === "running" ? <button className="text-button" disabled={cancelling} onClick={onCancel}>{cancelling ? "正在取消…" : "取消"}</button> : <button className="primary" disabled={reverseDisabled || uploading} onClick={onReverse}>{job?.result ? "重新生成" : "生成提示词"}<Icon name="arrow" /></button>}</div>
@@ -77,7 +77,7 @@ export default function QuickWorkspace({ contextKey, selection, title, mode, sub
     {multi && job?.status === "running" && <div className="quick-submit"><span role="status">{status}</span><button className="text-button" disabled={cancelling} onClick={onCancel}>{cancelling ? "正在取消…" : "取消"}</button></div>}
     {job?.result && <section id="quick-prompt" className="quick-prompt" hidden={!promptOpen} aria-label="当前提示词" onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setPromptOpen(false); promptToggle.current?.focus(); } }}>
       <div className="quick-prompt-head"><div className="language-tabs"><button aria-pressed={lang === "zh"} onClick={() => onLanguage("zh")}>中</button><button aria-pressed={lang === "en"} onClick={() => onLanguage("en")}>EN</button></div><button className="text-button" data-copied={copied} onClick={onCopy}>{copied ? "已复制" : "复制"}</button></div>
-      <p className="quick-prompt-text">{lang === "zh" ? job.result.promptZh : job.result.promptEn}</p>
+      <p className="quick-prompt-text" data-reminder-task={job.id}>{lang === "zh" ? job.result.promptZh : job.result.promptEn}</p>
       <button className="text-button" onClick={onWorkspace}>完整编辑<Icon name="arrow" /></button>
     </section>}
     {job && <QuickResult key={job.id} job={job} lang={lang} subject={subject} disabled={generationDisabled || uploading} hint={generationHint} onSubject={() => subjectFile.current?.click()} onReverse={onReverse} onUpdate={onUpdate} onWorkspace={onWorkspace} />}
@@ -113,7 +113,7 @@ function QuickResult({ job, lang, subject, disabled, hint, onSubject, onReverse,
     finally { pending.current = false; if (mounted.current) setCancelling(false); }
   };
   return <section className="quick-result" aria-label="当前生图结果"><div className="quick-result-head"><strong>生成结果</strong><button className="text-button" onClick={onWorkspace}>工作台查看<Icon name="arrow" /></button></div>
-    {asset?.key === key && generation?.status === "completed" ? <ImagePreview src={asset.image} alt="当前生成结果" /> : generation ? <p role="status">{generation?.status === "running" ? generation?.stage || "正在生成图片…" : generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "正在读取结果…"}</p> : null}
+    {asset?.key === key && generation?.status === "completed" ? <ImagePreview data-reminder-task={generation.id} src={asset.image} alt="当前生成结果" /> : generation ? <p data-reminder-task={generation.status === "failed" ? generation.id : undefined} role="status">{generation?.status === "running" ? generation?.stage || "正在生成图片…" : generation?.status === "failed" ? "图片生成失败" : generation?.status === "cancelled" ? "图片生成已取消" : "正在读取结果…"}</p> : null}
     {(error || generation?.error) && <p className="error" role="alert">{error || generation?.error}</p>}
     {!running && job.mode !== "multi-reenact" && (generic || incomplete || !inputsReady || hint) && <p className="quick-generation-hint" role="status">{!inputsReady ? <>先添加主体图 <button className="text-button" onClick={onSubject}>上传主体</button></> : generic || incomplete ? <>需要专属提示词 <button className="text-button" onClick={onReverse}>重新逆向</button></> : hint}</p>}
     {generation?.status === "running" ? <button className="text-button" disabled={cancelling} onClick={() => void act(true)}>{cancelling ? "正在取消…" : "取消生图"}</button> : job.mode !== "multi-reenact" && <button className="primary" disabled={disabled || cancelling || generic || incomplete || !inputsReady} onClick={() => void act(false)}>{cancelling ? "正在提交…" : "生成图片"}<Icon name="arrow" /></button>}

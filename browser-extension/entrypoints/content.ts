@@ -270,7 +270,7 @@ export default defineContentScript({
       positioningFrame = requestAnimationFrame(() => { positioningFrame = 0; position(); });
     };
     ctx.addEventListener(document, "pointermove", (event) => {
-      if (event.composedPath().includes(host) || !menu.hidden || selecting) return;
+      if (event.composedPath().includes(host) || selecting) return;
       const elements = document.elementsFromPoint(event.clientX, event.clientY);
       let found: typeof selected;
       for (const el of elements) {
@@ -304,8 +304,10 @@ export default defineContentScript({
           break;
         }
       }
-      if (!found && shadow.activeElement === trigger) return;
+      if (!found && (!menu.hidden || shadow.activeElement === trigger)) return;
       if (selected?.element !== found?.element || selected?.src !== found?.src) {
+        // A new image gets only the logo; cancel the old menu before moving its anchor.
+        closeMenu(menu.contains(shadow.activeElement));
         placement = undefined;
         anchor = undefined;
         selected = found;

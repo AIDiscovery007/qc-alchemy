@@ -1,3 +1,4 @@
+import { startReminderService } from "../lib/reminder-background";
 import { browser } from "wxt/browser";
 import { bridge } from "../lib/bridge";
 import { captureImage } from "../lib/capture";
@@ -29,6 +30,7 @@ const validSubjects = (subjects: unknown, minimum = 2): subjects is MultiSubject
   && new Set(subjects.map(subject => subject.id)).size === subjects.length;
 
 export default defineBackground(() => {
+  const reminders = startReminderService();
   void browser.storage.local.setAccessLevel({
     accessLevel: "TRUSTED_CONTEXTS",
   });
@@ -161,6 +163,7 @@ export default defineBackground(() => {
         reenact: mode !== "recreate" ? reenact : undefined, subjectError: undefined, generationSubjectImage: undefined, generationSubjects: undefined };
       if (!projectId || stored.selection?.projectId === projectId)
         await browser.storage.local.set({ selection: mode === "multi-reenact" ? { ...next, reenact: { basePrompt: reenact!.basePrompt } } : next });
+      void reminders.wake();
       return { selection: next, job };
     } finally {
       selecting = false;
@@ -360,7 +363,9 @@ export default defineBackground(() => {
       case "alchemy:set-project-hidden": {
         if (!Array.isArray(message.ids) || !message.ids.length || message.ids.length > 1000 || message.ids.some((id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) || typeof message.hidden !== "boolean")
           throw new Error("请选择有效项目和隐藏状态");
-        return bridge("/projects/visibility", token, { ids: message.ids, hidden: message.hidden });
+        const result = await bridge("/projects/visibility", token, { ids: message.ids, hidden: message.hidden });
+        await reminders.projectsChanged(message.ids, message.hidden);
+        return result;
       }
       case "alchemy:delete-projects": {
         if (!Array.isArray(message.ids) || !message.ids.length || message.ids.length > 1000 || message.ids.some((id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)))
@@ -372,6 +377,7 @@ export default defineBackground(() => {
           const latest = await browser.storage.local.get("selection") as { selection?: Selection };
           if (latest.selection?.projectId && result.deletedIds.includes(latest.selection.projectId))
             await browser.storage.local.remove("selection");
+          await reminders.projectsChanged(result.deletedIds);
           return result;
         } finally { selecting = false; }
       }
@@ -435,7 +441,9 @@ export default defineBackground(() => {
           if (message.subjects !== undefined && (!validSubjects(message.subjects) || message.subjectImage !== undefined))
             throw new Error("请添加 2–6 张有效主体图");
           const subjects = message.subjects?.map(({ id, subjectImage, role, detail }: MultiSubject) => ({ id, subjectImage, role, detail }));
-          return bridge(path, token, { language: message.language, subjectImage: message.subjectImage, subjects, aspectRatio });
+          const job = await bridge(path, token, { language: message.language, subjectImage: message.subjectImage, subjects, aspectRatio });
+          void reminders.wake();
+          return job;
         }
         if (typeof message.generationId !== "string" || !/^[\da-f-]{36}$/.test(message.generationId)) throw new Error("无效生图记录");
         if (message.type === "alchemy:generation-file-action") {

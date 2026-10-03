@@ -749,3 +749,28 @@ test("hidden jobs are excluded before the thirty-record task history limit", asy
     if (!attempt) await restart();
   }
 });
+
+test("authenticated task feed wakes after committed completion, follows hidden/deleted projects and survives restart", async t => {
+  let finish;
+  const { request, dir, restart } = await setup(t, { agent: () => new Promise(resolve => { finish = resolve; }) });
+  assert.equal((await request('/task-feed', { headers: { Authorization: 'Bearer wrong' } })).status, 401);
+  assert.equal((await request('/task-feed?revision=' + 'x'.repeat(101))).status, 400);
+  const job = await (await request('/jobs', post({ image, mode: 'recreate' }))).json();
+  const first = await (await request('/task-feed')).json();
+  assert.equal(first.tasks[0].status, 'running');
+  const waiting = request('/task-feed?revision=' + encodeURIComponent(first.revision));
+  finish(result);
+  const next = await (await waiting).json();
+  assert.equal(next.tasks[0].status, 'completed');
+  assert.equal(JSON.parse(await readFile(join(dir, 'records', job.id + '.json'))).status, 'completed');
+  assert.ok(!JSON.stringify(next).includes(result.promptZh));
+  const hiding = request('/task-feed?revision=' + encodeURIComponent(next.revision));
+  await request('/projects/visibility', post({ ids: [job.projectId], hidden: true }));
+  assert.equal((await (await hiding).json()).tasks[0].hidden, true);
+  await restart();
+  const restored = await (await request('/task-feed')).json();
+  assert.notEqual(restored.revision, next.revision);
+  assert.equal(restored.tasks[0].status, 'completed');
+  await request('/projects/delete', post({ ids: [job.projectId] }));
+  assert.equal((await (await request('/task-feed')).json()).tasks.length, 0);
+});

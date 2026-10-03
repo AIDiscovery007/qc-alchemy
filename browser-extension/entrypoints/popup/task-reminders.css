@@ -1,0 +1,20 @@
+.reminder-dot { display: inline-block; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 1px rgb(38 36 31 / .12); margin-inline-start: 6px; }
+.reminder-toast { position: fixed; inset: auto 20px 20px auto; margin: 0; max-width: calc(100vw - 32px); padding: 12px 14px; border: 1px solid #e5e1d8; border-radius: 14px; background: #fffefa; color: #26241f; box-shadow: 0 8px 30px rgb(40 34 24 / .12); font: 13px/1.6 -apple-system, 'PingFang SC', sans-serif; z-index: 1000; }
+.reminder-toast:popover-open { display: flex; align-items: center; gap: 12px; }
+.reminder-toast button { cursor: pointer; border: 0; background: transparent; color: inherit; font: inherit; padding: 4px; }
+.reminder-toast .text-button { text-decoration: underline; text-underline-offset: 3px; }
+.reminder-switch { cursor: pointer; }
+.reminder-switch input { appearance: none; position: relative; width: 34px; height: 20px; margin: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--surface-muted); cursor: pointer; flex-shrink: 0; }
+.reminder-switch input::before { content: ''; position: absolute; width: 14px; height: 14px; top: 2px; left: 2px; border-radius: 50%; background: var(--muted); }
+.reminder-switch input:checked { background: var(--yellow); border-color: var(--yellow); }
+.reminder-switch input:checked::before { left: 16px; background: var(--ink); }
+.reminder-switch input:disabled { opacity: .5; cursor: not-allowed; }
+.reminder-sound-controls { display: grid; gap: 16px; margin-top: 20px; }
+.reminder-sound-controls .outline-button { justify-self: start; }
+.reminder-unread-list { display: grid; gap: 8px; padding: 12px 0; }
+.reminder-unread-list button { text-align: left; }
+
+.settings-center-content .reminder-sound-controls .select-field, .settings-center-content .reminder-sound-controls .fine { margin: 0; }
+.task-center .reminder-unread-list > button { justify-content: flex-start; gap: 8px; }
+
+.reminder-dot[data-failed="true"] { background: #b64a3d; }

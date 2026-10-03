@@ -41,6 +41,7 @@ function background(local = { preferences: { token: "private-token" } }) {
   runInNewContext(compiled, {
     exports: {}, defineBackground: fn => fn(), crypto, URLSearchParams, TextEncoder, console,
     require: name => ({
+      "../lib/reminder-background": { startReminderService: () => ({ wake: async () => {}, projectsChanged: async () => {} }) },
       "wxt/browser": { browser }, "../lib/bridge": { bridge },
       "../lib/capture": { captureImage: async () => ({ image, capture: "original" }) },
     })[name],

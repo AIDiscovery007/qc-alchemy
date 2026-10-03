@@ -146,7 +146,6 @@ test("the logo trigger opens all three actions without collecting, with Escape r
 test("immediate reverse uses the image that opened the menu and never sends collect", async t => {
   const ui = setup(t), first = new ImageElement("https://example.com/a.png");
   ui.hover(first); ui.trigger.emit("click", { detail: 0 });
-  ui.hover(new ImageElement("https://example.com/b.png", 400));
   ui.openButton.emit("click", { detail: 0 });
   assert.equal(ui.menu.hidden, true);
   assert.equal(ui.requests.length, 1);
@@ -158,6 +157,33 @@ test("immediate reverse uses the image that opened the menu and never sends coll
   await settle();
   assert.equal(ui.notice.querySelector("strong").textContent, "打开失败");
   assert.equal(ui.geometry({ type: "alchemy:rect", ...target }), null);
+});
+
+test("moving to another image collapses the menu, cancels entry and retargets only after reopening", t => {
+  for (const [reducedMotion, detail] of [[false, 1], [false, 0], [true, 1]]) {
+    const ui = setup(t, { reducedMotion });
+    const first = new ImageElement("https://example.com/a.png"), second = new ImageElement("https://example.com/b.png", 400);
+    ui.hover(first); ui.trigger.emit("click", { detail });
+    ui.hover(first);
+    assert.equal(ui.menu.hidden, false, "moving within the same image keeps actions reachable");
+    ui.document.emit("pointermove", { composedPath: () => [ui.host], clientX: 410, clientY: 30 });
+    assert.equal(ui.menu.hidden, false, "moving into extension controls does not retarget");
+    ui.hover(second); ui.tick();
+    assert.equal(ui.menu.hidden, true);
+    assert.equal(ui.trigger["aria-expanded"], "false");
+    assert.equal(ui.shadow.activeElement, ui.trigger, "focus leaves the hidden menu");
+    assert.equal(ui.liquidStates.at(-1).open, false);
+    assert.equal(ui.liquidStates.at(-1).instant, true);
+    assert.ok(ui.openButton.animations.every(animation => animation.cancelled > 0));
+    ui.openButton.emit("click", { detail });
+    ui.collectButton.emit("click", { detail });
+    assert.equal(ui.requests.length, 0, "stale menu actions cannot submit the previous image");
+    ui.trigger.emit("click", { detail });
+    ui.collectButton.emit("click", { detail });
+    assert.equal(ui.requests.length, 1);
+    assert.equal(ui.requests[0].message.target.src, second.currentSrc);
+    assert.equal(ui.requests[0].message.target.rect.x, second.bounds.x);
+  }
 });
 
 test("outside clicks dismiss the menu and a reused image cannot submit its old reference", t => {
@@ -329,7 +355,6 @@ test("the three menu actions support arrow navigation, Home, End and Escape", t 
 test("collecting from the menu uses its pinned image and rejects a recycled source", t => {
   const ui = setup(t), first = new ImageElement("https://example.com/a.png");
   ui.hover(first); ui.trigger.emit("click");
-  ui.hover(new ImageElement("https://example.com/b.png", 400));
   ui.collectButton.emit("click");
   assert.equal(ui.requests[0].message.target.src, first.currentSrc);
   assert.equal(ui.requests[0].message.type, "alchemy:collect");

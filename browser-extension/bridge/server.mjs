@@ -1,3 +1,4 @@
+import { createTaskFeed } from "./task-feed.mjs";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile, writeFile, readdir, rename, lstat } from "node:fs/promises";
@@ -120,6 +121,7 @@ export async function createBridge({
     await writeFile(tokenPath, token, { mode: 0o600 });
   }
   const jobs = new Map();
+  const taskFeed = createTaskFeed();
   const controllers = new Map();
   let projects;
   let saveTail = Promise.resolve();
@@ -127,10 +129,12 @@ export async function createBridge({
     // Serialize metadata writes, not inference; cancellation and completion can overlap.
     saveTail = saveTail.catch(() => {}).then(async () => {
       const path = join(paths.records, `${job.id}.json`);
-      await writeFile(`${path}.tmp`, JSON.stringify(job), { mode: 0o600 });
+      const committed = JSON.stringify(job);
+      await writeFile(`${path}.tmp`, committed, { mode: 0o600 });
       await rename(`${path}.tmp`, path);
       projects?.updateJob(job);
       await projects?.touch(job.projectId);
+      taskFeed.update(JSON.parse(committed));
     });
     return saveTail;
   };
@@ -179,11 +183,13 @@ export async function createBridge({
         }
       }
       jobs.set(job.id, job);
+      taskFeed.update(job);
     } catch {
       /* A damaged history record must not prevent startup. */
     }
   }
   projects = await createProjectStore({ dataDir: paths.records, legacyDir: dataDir, jobs, images, readReference: async (id) => decodeImage(await storedImage(jobs.get(id))) });
+  for (const job of jobs.values()) taskFeed.update(job);
   await images.collect();
   await thumbnails.collect();
   let mutationTail = Promise.resolve();
@@ -352,6 +358,7 @@ export async function createBridge({
         const unique = [...new Set(ids)];
         if (unique.some((id) => !projects.summary(id))) throw bad("项目不存在，请刷新后重试", 404);
         const updatedIds = await projects.setHidden(unique, hidden);
+        taskFeed.touch();
         json(200, { updatedIds, hidden, revision: projects.revision });
         return;
       }
@@ -365,6 +372,7 @@ export async function createBridge({
           throw bad("所选项目仍在逆向或生图，请完成或取消任务后再删除", 409);
         try {
           const deletedIds = await projects.remove(unique);
+          taskFeed.touch();
           if (!controllers.size) { await images.collect(); await thumbnails.collect(); }
           else collectionPending = true;
           json(200, { deletedIds });
@@ -403,6 +411,17 @@ export async function createBridge({
           decodeImage(reference.image);
           json(200, reference);
         } else json(200, query.get("revision") === project.revision ? { unchanged: true, revision: project.revision } : projects.get(project.id));
+        return;
+      }
+      if (req.method === "GET" && path === "/task-feed") {
+        validateQuery(["revision"]);
+        const cursor = query.get("revision") || "";
+        if (cursor.length > 100) throw bad("无效版本参数");
+        await taskFeed.wait(cursor, res);
+        if (!res.destroyed) {
+          const snapshot = taskFeed.snapshot(jobs, projects);
+          json(200, cursor === snapshot.revision ? { revision: cursor, unchanged: true } : snapshot);
+        }
         return;
       }
       if (req.method === "GET" && path === "/jobs") {
@@ -684,6 +703,7 @@ export async function createBridge({
         throw error;
       }
       jobs.set(id, job);
+      taskFeed.touch();
       json(202, job);
       void (async () => {
         try {
@@ -735,6 +755,7 @@ export async function createBridge({
     }
   });
   server.on("close", () => {
+    taskFeed.close();
     cli.close();
     models.close();
     for (const controller of controllers.values()) controller.abort();

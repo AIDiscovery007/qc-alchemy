@@ -190,7 +190,10 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
   const messages = [];
   const tabs = [];
   const sessionStorage = {};
+  const reminderStorage = {};
   const chrome = {
+    action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
+    alarms: { create: async () => {}, onAlarm: { addListener() {} } },
     runtime: {
       id: "test",
       getURL: (path) => `chrome-extension://test${path}`,
@@ -206,6 +209,7 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
       },
     },
     storage: {
+      onChanged: { addListener() {} },
       session: {
         set: async (value) => Object.assign(sessionStorage, structuredClone(value)),
         get: async (key) => key === null ? structuredClone(sessionStorage) : ({ [key]: structuredClone(sessionStorage[key]) }),
@@ -213,12 +217,15 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
       },
       local: {
         setAccessLevel: async () => {},
+        remove: async key => { delete reminderStorage[key]; },
         get: async () => ({
+          ...reminderStorage,
           preferences: { token: "test" },
           selection: { id: "old", jobId: "active" },
         }),
         set: async (value) => {
-          handlers.selection = value.selection;
+          Object.assign(reminderStorage, value);
+          if ("selection" in value) handlers.selection = value.selection;
         },
       },
     },
@@ -247,7 +254,8 @@ async function background(fetch = async () => ({ ok: true, json: async () => ({ 
     AbortSignal,
     TextEncoder,
     URLSearchParams,
-    fetch,
+    setTimeout, clearTimeout,
+    fetch: (url, options) => String(url).includes("/task-feed") ? Promise.resolve({ ok: true, json: async () => ({ revision: "test", tasks: [] }) }) : fetch(url, options),
     ...globals,
   });
   assert.equal(typeof handlers.message, "function");

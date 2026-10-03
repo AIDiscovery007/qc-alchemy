@@ -1,3 +1,4 @@
+import { ReminderSettings } from "./TaskReminders";
 import { showMotionDialog } from "../../lib/motion-dialog";
 import { pollWhileVisible } from "../../lib/visible-poll";
 import { useEffect, useRef, useState } from "react";
@@ -25,7 +26,7 @@ type CliStatus = {
   command?: string | null;
   operation?: { status: "running" | "completed" | "failed"; stage: string; error?: string; startedAt: string; finishedAt?: string } | null;
 };
-const sections = { appearance: "界面与动效", models: "插件模型", cli: "Codex 与更新", connection: "本机连接", storage: "本地数据" };
+const sections = { reminders: "任务提醒", appearance: "界面与动效", models: "插件模型", cli: "Codex 与更新", connection: "本机连接", storage: "本地数据" };
 const sources = { npm: "npm", homebrew: "Homebrew", standalone: "独立安装版", app: "Codex App 内置", custom: "自定义安装", missing: "未检测到" };
 
 export default function SettingsCenter({ connected, serviceBusy, onClose, onConnected }: {
@@ -114,6 +115,7 @@ export default function SettingsCenter({ connected, serviceBusy, onClose, onConn
         {Object.entries(sections).map(([key, label]) => <button key={key} aria-current={section === key ? "page" : undefined} onClick={() => setSection(key as keyof typeof sections)}>{label}</button>)}
       </nav>
       <div className="settings-center-content">
+        {section === "reminders" && <ReminderSettings />}
         {section === "appearance" && <section aria-labelledby="appearance-title">
           <h3 id="appearance-title">界面与动效</h3>
           <SelectField label="减少动态效果" value={preference} disabled={savingMotion} onChange={event => void changeMotion(event.target.value as MotionPreference)}>
