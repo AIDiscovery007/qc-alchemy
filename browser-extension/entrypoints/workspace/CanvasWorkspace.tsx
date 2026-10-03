@@ -106,33 +106,15 @@ export default function CanvasWorkspace({ contextKey, mode, image, subjectImage,
   };
   const returnFocus = () => {
     const destination = hasPrompt ? trigger.current : generate.current;
-    inputArea.current?.removeAttribute('inert');
+    inputArea.current?.querySelectorAll('[inert]').forEach(element => element.removeAttribute('inert'));
     return destination?.disabled ? modeControl.current?.querySelector('select') || null : destination;
   };
   const sheetOpen = open && hasPrompt;
-  return <section className="canvas-workspace" aria-label={`${modes[mode]}工作区`}>
-    <div className="canvas-floating-tools" role="group" aria-label="画布工具栏" ref={modeControl}>
-      <SelectField label="逆向模式" aria-label="逆向模式" value={mode} disabled={modeDisabled || uploading} onChange={event => { setOpen(false); setSettings(false); onMode(event.target.value as Mode); }}>
-        {(Object.keys(modes) as Mode[]).map(key => <option key={key} value={key}>{modes[key]}</option>)}
-      </SelectField>
-      <span className="canvas-tool-divider" />
-      <button className="quiet-button" disabled={locked} aria-label={currentImage ? "替换当前图片" : "上传当前图片"} title={currentImage ? "替换当前图片" : "上传当前图片"} onClick={() => choose(isSubject ? current?.id || "subject" : "reference")}><Icon name="image" /><span>{currentImage ? "替换" : "上传"}</span></button>
-      {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="互换主体与参考" title="互换主体与参考" disabled={locked || !image || (mode === "multi-reenact" ? !current?.subjectImage : !subjectImage)} onClick={() => onSwap(current?.id)}><Icon name="swap" /></button>}
-      {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="移除主体" title="移除主体" disabled={locked || !isSubject} onClick={remove}><Icon name="trash" /></button>}
-      {mode === "multi-reenact" && <button ref={settingsTrigger} className="quiet-button canvas-icon-tool" aria-label="主体设置" title="主体设置" aria-expanded={settings} disabled={locked || !current} onClick={() => setSettings(!settings)}><Icon name="settings" /></button>}
-      {versions && <><span className="canvas-tool-divider" /><div className="canvas-versions">{versions}</div></>}
-      {hasPrompt && <button ref={trigger} className="quiet-button canvas-prompt-link" aria-label={sheetOpen ? "收起提示词" : "展开提示词"} aria-expanded={sheetOpen} aria-controls="workspace-prompt-sheet" onClick={() => { setSettings(false); setOpen(!sheetOpen); }}><Icon name={sheetOpen ? "chevronDown" : "edit"} /><span>{sheetOpen ? "收起" : "提示词"}</span><i className={stale ? "canvas-stale-dot" : "canvas-ready-dot"} /></button>}
-      {settings && current && <div ref={settingsPanel} className="canvas-subject-settings" role="group" aria-label="主体设置" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setSettings(false); settingsTrigger.current?.focus(); } }}>
-        <div className="canvas-subject-head"><strong>{label}</strong><button className="quiet-button" aria-label="关闭主体设置" onClick={() => { setSettings(false); settingsTrigger.current?.focus(); }}><Icon name="close" /></button></div>
-        <SelectField label="用途" aria-label="主体用途" disabled={locked} value={current.role} onChange={event => update({ role: event.target.value })}>{["自动", "人物", "物品", "服饰", "场景", "细节"].map(role => <option key={role}>{role}</option>)}</SelectField>
-        <input aria-label="主体保留特征" placeholder="保留特征" maxLength={2000} disabled={locked} value={current.detail} onChange={event => update({ detail: event.target.value })} />
-        <button className="quiet-button" aria-label="主体前移" disabled={locked || index === 0} onClick={() => reorder(-1)}>←</button><button className="quiet-button" aria-label="主体后移" disabled={locked || index === subjects.length - 1} onClick={() => reorder(1)}>→</button>
-      </div>}
-    </div>
-    <div className="canvas-input" ref={inputArea} inert={sheetOpen}>
-      <div className="canvas-stage">
+  return <section className="canvas-workspace" data-prompt-open={sheetOpen} aria-label={`${modes[mode]}工作区`}>
+    <div className="canvas-input" ref={inputArea}>
+      <div className="canvas-stage" inert={sheetOpen}>
         <div className="canvas-large" aria-label="图片展示区" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); target.current = isSubject ? current?.id || "subject" : "reference"; void readFiles([...event.dataTransfer.files]); }}>
-          {currentImage ? <><img src={currentImage} alt={label} /><ImagePreviewButton src={currentImage} alt={label} className="canvas-preview" rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} /></>
+          {currentImage ? <img src={currentImage} alt={label} />
             : !isSubject ? <LoadingPlaceholder active={!error}>{error || "正在读取参考图…"}</LoadingPlaceholder>
             : <button className="canvas-upload" disabled={locked} onClick={() => choose(current?.id || "subject")}><Icon name="plus" />上传{label}</button>}
         </div>
@@ -142,7 +124,26 @@ export default function CanvasWorkspace({ contextKey, mode, image, subjectImage,
           <button aria-label="查看参考图" aria-pressed={!isSubject} onClick={() => select("reference")}>{image ? <img src={image} alt="" /> : <Icon name="image" />}参考图</button>
         </div>
       </div>
-      <div className="canvas-composer">
+      <div className="canvas-floating-tools" role="group" aria-label="画布工具栏" ref={modeControl}>
+        <SelectField label="逆向模式" aria-label="逆向模式" value={mode} disabled={modeDisabled || uploading} onChange={event => { setOpen(false); setSettings(false); onMode(event.target.value as Mode); }}>
+          {(Object.keys(modes) as Mode[]).map(key => <option key={key} value={key}>{modes[key]}</option>)}
+        </SelectField>
+        <ImagePreviewButton src={currentImage || ""} alt={label} disabled={locked} rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} />
+        <span className="canvas-tool-divider" />
+        <button className="quiet-button" disabled={locked} aria-label={currentImage ? "替换当前图片" : "上传当前图片"} title={currentImage ? "替换当前图片" : "上传当前图片"} onClick={() => choose(isSubject ? current?.id || "subject" : "reference")}><Icon name="image" /><span>{currentImage ? "替换" : "上传"}</span></button>
+        {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="互换主体与参考" title="互换主体与参考" disabled={locked || !image || (mode === "multi-reenact" ? !current?.subjectImage : !subjectImage)} onClick={() => onSwap(current?.id)}><Icon name="swap" /></button>}
+        {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="移除主体" title="移除主体" disabled={locked || !isSubject} onClick={remove}><Icon name="trash" /></button>}
+        {mode === "multi-reenact" && <button ref={settingsTrigger} className="quiet-button canvas-icon-tool" aria-label="主体设置" title="主体设置" aria-expanded={settings} disabled={locked || !current} onClick={() => setSettings(!settings)}><Icon name="settings" /></button>}
+        {versions && <><span className="canvas-tool-divider" /><div className="canvas-versions">{versions}</div></>}
+        {hasPrompt && <button ref={trigger} className="quiet-button canvas-prompt-link" aria-label={sheetOpen ? "收起提示词" : "展开提示词"} aria-expanded={sheetOpen} aria-controls="workspace-prompt-sheet" onClick={() => { setSettings(false); setOpen(!sheetOpen); }}><Icon name={sheetOpen ? "chevronDown" : "edit"} /><span>{sheetOpen ? "收起" : "提示词"}</span><i className={stale ? "canvas-stale-dot" : "canvas-ready-dot"} /></button>}
+        {settings && current && <div ref={settingsPanel} className="canvas-subject-settings" role="group" aria-label="主体设置" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setSettings(false); settingsTrigger.current?.focus(); } }}>
+          <div className="canvas-subject-head"><strong>{label}</strong><button className="quiet-button" aria-label="关闭主体设置" onClick={() => { setSettings(false); settingsTrigger.current?.focus(); }}><Icon name="close" /></button></div>
+          <SelectField label="用途" aria-label="主体用途" disabled={locked} value={current.role} onChange={event => update({ role: event.target.value })}>{["自动", "人物", "物品", "服饰", "场景", "细节"].map(role => <option key={role}>{role}</option>)}</SelectField>
+          <input aria-label="主体保留特征" placeholder="保留特征" maxLength={2000} disabled={locked} value={current.detail} onChange={event => update({ detail: event.target.value })} />
+          <button className="quiet-button" aria-label="主体前移" disabled={locked || index === 0} onClick={() => reorder(-1)}>←</button><button className="quiet-button" aria-label="主体后移" disabled={locked || index === subjects.length - 1} onClick={() => reorder(1)}>→</button>
+        </div>}
+      </div>
+      <div className="canvas-composer" inert={sheetOpen}>
         <TaskInstruction value={instruction} disabled={disabled || uploading || promptEditing} onChange={onInstruction} />
         <div className="canvas-composer-bar">
           <span className={uploadError || error ? "canvas-error" : ""} role={uploadError || error ? "alert" : "status"} title={uploadError || error || status}>{uploadError || error || (uploading ? "正在读取图片…" : status || (stale ? "提示词待更新" : ""))}{onRetryReference && <button className="text-button" onClick={onRetryReference}>重试</button>}</span>

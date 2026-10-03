@@ -27,7 +27,6 @@
 .workspace-app .workspace-results .result-toolbar button { padding:7px 9px; }
 .workspace-app .workspace-results .result-toolbar .result-collapse { width:36px;height:36px;padding:0; }
 .workspace-app .workspace-results .preview-canvas { margin:0;min-height:0;border-radius:0; }
-.workspace-app .workspace-results .preview-canvas > .image-preview > img { filter:none;border-radius:0; }
 .workspace-app .workspace-results .result-footer { height:127px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:11px;position:relative; }
 .workspace-app .workspace-results [data-pending="true"] .result-footer { visibility:hidden; }
 .workspace-app .workspace-results .result-caption { padding:0;font-size:11px;flex:none;max-width:100%; }
@@ -38,8 +37,6 @@
 .workspace-app .workspace-results .result-thumb span { display:none; }
 .workspace-app .workspace-results .result-bottom { margin:0;padding:4px 9px;gap:5px;max-width:100%;border:0;border-radius:13px;background:var(--surface);box-shadow:none;flex-wrap:nowrap; }
 .workspace-app .workspace-results .result-bottom button { width:36px;height:36px;min-height:36px; }
-.workspace-app .workspace-results .result-bottom button:first-child { margin:0; }
-.workspace-app .workspace-results .result-bottom button:first-child::after { display:none; }
 .workspace-app .workspace-results .result-footer > .error { position:absolute;bottom:100%;left:0;right:0; }
 .workspace-app .workspace-results .image-file-notice { position:absolute;bottom:44px;left:0;right:0; }
 .workspace-app .generation-submitting { position:absolute;inset:0;border-radius:0; }
