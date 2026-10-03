@@ -7,3 +7,13 @@
 !/AGENTS.md
 !/agent-logs/
 !/browser-extension/
+
+# Track only collaboration role documents; keep local skills and other agent data ignored.
+!/.agents/
+/.agents/*
+!/.agents/roles/
+/.agents/roles/*
+!/.agents/roles/supervisor.md
+!/.agents/roles/project-manager.md
+!/.agents/roles/executor.md
+!/.agents/roles/assignments.md
