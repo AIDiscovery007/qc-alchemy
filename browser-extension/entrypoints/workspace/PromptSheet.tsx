@@ -46,8 +46,8 @@ export default function PromptSheet({ open, onOpenChange, children, returnFocus,
     el.setAttribute('aria-hidden', String(!next));
     el.style.visibility = 'visible';
     if (next && !wasOpen) handle.current?.focus({ preventScroll: true });
-    if (restore) queueMicrotask(() => {
-      // The parent can clear its inert input region before focus returns there.
+    if (restore) requestAnimationFrame(() => {
+      // Wait for the parent to reveal the composer and clear inert before restoring focus.
       if (mounted.current && !opened.current && (el.contains(document.activeElement) || document.activeElement === document.body)) {
         latest.current.returnFocus()?.focus({ preventScroll: true });
       }

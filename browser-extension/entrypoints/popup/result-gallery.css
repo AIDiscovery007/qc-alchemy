@@ -85,4 +85,4 @@
 .app .compact-results .result-history:empty { display:none; }
 .app .compact-results .thumbnail-loading { background:var(--surface-muted); }
 
-.app .result-footer { display:contents; }
+.app .result-footer,.app .result-controls { display:contents; }

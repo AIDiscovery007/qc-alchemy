@@ -4,13 +4,21 @@
 
 在浏览器里收集灵感，在本机工作台调整主体、提示词与结果。沿用 Codex 登录和额度，无需另外填写模型 API Key。
 
-**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　·　[下载 v0.2.0](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.2.0)　·　[效果画廊](browser-extension/docs/gallery/README.md)　·　[使用手册](browser-extension/README.md)
+**[开始使用 ↗](browser-extension/docs/INSTALL_WITH_CODEX.md#让-codex-帮你安装)**　·　[下载 v0.3.0](https://github.com/AIDiscovery007/qc-reframe/releases/tag/v0.3.0)　·　[效果画廊](browser-extension/docs/gallery/README.md)　·　[使用手册](browser-extension/README.md)
 
-## 新工作台，让画面成为主角
+## v0.3.0，让作品回到同一个画廊
+
+左侧「作品画廊」汇集所有项目的生成结果，按图片原比例自由排列，支持搜索、筛选、原图预览和返回来源项目。列表按需加载，浏览大量作品时只渲染附近卡片。
+
+工作台采用等宽双画布，输入与结果完整居中、同步对齐。任务完成后可通过未读标记和桌面通知接回创作，提示音由你主动开启；隐藏项目可随时恢复或撤销操作。
+
+[查看 v0.3.0 更新与升级说明 →](browser-extension/docs/releases/v0.3.0.md)
+
+## 工作台，让画面成为主角
 
 ![v0.2.0 工作台：参考画布、主体图条、紧凑工具栏和水彩生成结果](browser-extension/docs/media/v0.2.0-workspace.png)
 
-*当前 v0.2.0 构建的示例预览，使用已公开的[水彩陶瓷杯案例](browser-extension/docs/gallery/watercolor-mug/README.md)，不执行模型调用。*
+*此图为 v0.2.0 的历史界面预览，使用已公开的[水彩陶瓷杯案例](browser-extension/docs/gallery/watercolor-mug/README.md)，不执行模型调用。*
 
 图片完整适应固定画布，图条切换主体与参考。四种逆向路径、图片操作和提示词版本集中在下方工具栏；生成结果在另一侧展开，便于对照和继续创作。
 
@@ -21,7 +29,7 @@
 
 ![v0.2.0 提示词面板展开：语言、编辑、目标尺寸与生图操作](browser-extension/docs/media/v0.2.0-prompt-sheet.png)
 
-*同一示例工作台的展开状态。提示词版本、输入草稿与生成历史分别保留。*
+*同一 v0.2.0 示例工作台的展开状态。提示词版本、输入草稿与生成历史分别保留。*
 
 </details>
 
@@ -35,7 +43,7 @@
   <img src="browser-extension/docs/media/v0.2.0-floating.png" width="320" alt="v0.2.0 网页悬浮面板：参考图和完整复刻快捷入口" />
 </p>
 
-*左：工具栏弹窗。右：网页悬浮面板。均为当前构建与公开素材的示例预览；窄屏按顺序阅读。*
+*左：工具栏弹窗。右：网页悬浮面板。均为 v0.2.0 构建与公开素材的历史示例预览；窄屏按顺序阅读。*
 
 打开工作台时，**当前项目、模式、提示词版本与未提交输入一起接续**。关闭面板不取消已提交任务，多个项目可并行推进。
 

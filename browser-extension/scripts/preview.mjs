@@ -2,6 +2,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, sep } from "node:path";
+import sharp from "sharp";
 import { galleryAsset, gallerySetup, galleryMessages } from "./gallery-preview.mjs";
 
 const port = Number(process.env.PREVIEW_PORT || 43188);
@@ -25,6 +26,11 @@ const svg =
 const image = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 const gallery = Object.fromEntries(await Promise.all(["reference", "subject", "result"].map(async role => [role, `data:image/png;base64,${(await readFile(new URL(`../docs/gallery/watercolor-mug/${role}.png`, import.meta.url))).toString("base64")}`])));
 const person = `data:image/png;base64,${(await readFile(new URL("../docs/gallery/watercolor-portrait/subject.png", import.meta.url))).toString("base64")}`;
+// Optional local image pair for visual comparison only; never load project records or write assets.
+const alignment = await Promise.all([process.env.PREVIEW_INPUT_IMAGE || 'docs/gallery/urban-poster/reference.png', process.env.PREVIEW_RESULT_IMAGE || 'docs/gallery/urban-poster/result.png'].map(async path => {
+  const bytes = await readFile(path), metadata = await sharp(bytes).metadata();
+  return { image: `data:image/${metadata.format};base64,${bytes.toString('base64')}`, width: metadata.width, height: metadata.height };
+}));
 const job = {
   id: "preview",
   mode: "style",
@@ -110,14 +116,20 @@ createServer(async (req, res) => {
         const job = ${JSON.stringify(job)};
         if (state === 'running') { job.status='running';job.stage='Codex 正在观察图片…';delete job.result; }
         if (state === 'failed') { job.status='failed';job.error='Codex 连接失败，请检查登录状态后重试';delete job.result; }
-        if (state.startsWith('generation')) {
+        if (state.startsWith('generation') || state==='alignment') {
           job.reenact={basePrompt:'保留图 1 主体，迁移图 2 风格'};
           job.result.promptZh=job.result.promptZh.replace('[SUBJECT]','图 1 的主体');
           job.result.promptEn=job.result.promptEn.replace('[SUBJECT]','the subject in image 1');
-          if(state==='generation-completed')job.generations=[{id:'preview-generation',createdAt:job.createdAt,prompt:job.result.promptZh,negativePrompt:job.result.negativePrompt,model:'preview-vision',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
+          if(state==='generation-completed'||state==='alignment')job.generations=[{id:'preview-generation',createdAt:job.createdAt,prompt:job.result.promptZh,negativePrompt:job.result.negativePrompt,model:'preview-vision',status:'completed',stage:'图片已生成',language:'zh',extension:'png'}];
+        }
+        const alignment = ${JSON.stringify(alignment)};
+        if(state==='alignment') {
+          job.mode='recreate';job.instruction='分析参考图的主体、内容、构图、配色、光影与材质，生成可用于文生图的完整提示词。';
+          job.result.title='双画布对齐示例';
+          job.generations=Array.from({length:Math.min(12,Math.max(1,Number(previewOptions.get('results'))||1))},(_,i)=>({...job.generations[0],id:'alignment-result-'+i}));
         }
         const gallery = ${JSON.stringify(gallery)};
-        const template = state === 'gallery' || state.startsWith('multi') ? gallery.reference : ${JSON.stringify(image)};
+        const template = state==='alignment'?alignment[0].image:state === 'gallery' || state.startsWith('multi') ? gallery.reference : ${JSON.stringify(image)};
         const subject = state === 'gallery' ? gallery.subject : template;
         const projectId='a'.repeat(64), secondId='b'.repeat(64);
         job.projectId=projectId;
@@ -140,7 +152,7 @@ createServer(async (req, res) => {
         if (/^[a-f0-9-]{36}$/.test(previewOptions.get('task') || '')) job.id=previewOptions.get('task');
         if (/^[a-f0-9-]{36}$/.test(previewOptions.get('generation') || '') && job.generations?.length) job.generations[0].id=previewOptions.get('generation');
         const older={...structuredClone(job),id:'older-style',createdAt:'2026-09-01T00:00:00Z',result:{...job.result,title:'早期风格版本',promptZh:'早期版本：保留原始构图，迁移平涂质感。'},generations:[]};
-        const projects=[{id:projectId,title:state.startsWith('multi')?'水彩里的日常':state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:[job]},
+        const projects=[{id:projectId,title:state.startsWith('multi')?'水彩里的日常':state==='gallery'?'午后，一杯水彩':'暖纸底几何模板',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:job.sourceUrl,capture:'original',jobs:state.endsWith('-new')?[]:state==='projects'?[job,reenact,older]:state==='alignment'?[job,older]:[job]},
           {id:secondId,title:'另一个空白项目',createdAt:job.createdAt,updatedAt:job.createdAt,sourceUrl:'https://example.com/second',capture:'original',jobs:[]}];
         if(state==='library') {
           const count=Math.min(1000,Math.max(0,Number(previewOptions.get('count')??61)||0));
@@ -177,7 +189,7 @@ createServer(async (req, res) => {
           return {items:filtered.slice((page-1)*pageSize,page*pageSize).map(summary),total:filtered.length,page,pageSize,revision:'preview-'+projectsRevision};
         };
         const selection=(project)=>({id:project.id,projectId:project.id,image:project.image||template,capture:'original',sourceUrl:project.sourceUrl});
-        const data={preferences:{token:state==='empty'?'':'preview',mode:previewOptions.get('mode')|| (state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style')},selection:state==='empty'||state==='library'||state==='works'?undefined:selection(projects[0])};
+        const data={preferences:{token:state==='empty'?'':'preview',mode:previewOptions.get('mode')|| (state==='alignment'?'recreate':state.startsWith('multi')?'multi-reenact':state.startsWith('reenact')?'reenact':'style')},selection:state==='empty'||state==='library'||state==='works'?undefined:selection(projects[0])};
         if(previewOptions.has('reference') && data.selection) {
           data.selection.image='';
           setTimeout(()=>{
@@ -269,10 +281,10 @@ createServer(async (req, res) => {
           }
           if(message.type==='alchemy:project-thumbnail') {
             const project=projects.find(p=>p.id===message.id),cover=!message.reference&&summary(project).cover;
-            return {ok:true,value:{image:cover?(state==='gallery'?gallery.result:template):project.image||template,source:cover?{kind:'generation',jobId:cover.jobId,generationId:cover.generationId}:{kind:'reference'}}};
+            return {ok:true,value:{image:cover?(state==='alignment'?alignment[1].image:state==='gallery'?gallery.result:template):project.image||template,source:cover?{kind:'generation',jobId:cover.jobId,generationId:cover.generationId}:{kind:'reference'}}};
           }
           ${galleryMessages}
-          if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='gallery'?gallery.result:template,source:{kind:'generation',jobId:message.id,generationId:message.generationId}}};
+          if(message.type==='alchemy:generation-thumbnail')return {ok:true,value:{image:state==='alignment'?alignment[1].image:state==='gallery'?gallery.result:template,source:{kind:'generation',jobId:message.id,generationId:message.generationId}}};
           if(message.type==='alchemy:query')return {ok:true,value:structuredClone(message.path==='/health'?{ready:true,hiddenProjectIds:projects.filter(p=>p.hidden).map(p=>p.id),visibleActive:visibleProjects().flatMap(p=>p.jobs).reduce((n,j)=>n+Number(j.status==='running')+(j.generations||[]).filter(g=>g.status==='running').length,0),projectsRevision:'preview-'+projectsRevision,skill:'alchemy · 预览',model:models.selected,modelBusy:models.verification?.status==='running',active:models.verification?.status==='running'?1:projects.some(p=>p.jobs.some(j=>j.status==='running'||j.generations?.some(g=>g.status==='running')))?1:0}:message.path==='/jobs'?visibleProjects().flatMap(p=>p.jobs):message.path==='/projects'?visibleProjects().map(summary):message.path.startsWith('/projects/')?structuredClone({...summary(projects.find(p=>p.id===message.path.split('/')[2])),jobs:projects.find(p=>p.id===message.path.split('/')[2]).jobs}):findJob(message.path.split('/')[2]))};
           if(message.type==='alchemy:delete-projects') {
             if(state==='delete-failed')return {error:'本机服务暂时不可用，请重试'};
@@ -309,7 +321,7 @@ createServer(async (req, res) => {
           if(message.type==='alchemy:generation-reference')return {ok:true,value:{image:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjectImage||template,subjects:findJob(message.id).generations.find(g=>g.id===message.generationId)?.subjects}};
           if(message.type==='alchemy:generation-image') {
             if(previewOptions.get('fx')==='image-error')throw new Error('预览：图片读取失败');
-            return {ok:true,value:{image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png',...(state==='gallery'?{}:{width:320,height:400})}};
+            return {ok:true,value:{image:state==='alignment'?alignment[1].image:state==='gallery'?gallery.result:template,path:'/example/QC-Reframe/'+message.generationId+'-generated.png',...(state==='alignment'?{width:alignment[1].width,height:alignment[1].height}:state==='gallery'?{}:{width:320,height:400})}};
           }
           if(message.type==='alchemy:save-prompt') {
             const job=findJob(message.id);

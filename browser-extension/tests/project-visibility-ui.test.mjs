@@ -27,7 +27,7 @@ function fixture(overrides = {}) {
   const context = {
     exports, hiddenProjectIds: ['hidden'], showHidden: false, selection: { projectId: 'visible' }, project: { id: 'visible' },
     visibilityPending: { current: false }, visibilityRevision: { current: 0 }, selectionRevision: { current: 0 }, projectRevision: { current: 0 }, deletingProjects: { current: false },
-    document: { activeElement: { isConnected: false, matches: () => false } }, requestAnimationFrame: callback => callback(),
+    document: { activeElement: { isConnected: false, matches: selector => selector === ":focus-visible" } }, requestAnimationFrame: callback => callback(),
     visibilityFeedback: { current: { focus: () => state.focus++ } },
     setBusy: value => state.busy = value, setVisibilityError: value => state.error = value,
     setVisibilityNotice: value => state.notice = value,

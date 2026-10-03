@@ -107,13 +107,13 @@ export default function CanvasWorkspace({ revealPrompt, onPromptRevealed, contex
   };
   const returnFocus = () => {
     const destination = hasPrompt ? trigger.current : generate.current;
-    inputArea.current?.querySelectorAll('[inert]').forEach(element => element.removeAttribute('inert'));
     return destination?.disabled ? modeControl.current?.querySelector('select') || null : destination;
   };
   const sheetOpen = open && hasPrompt;
   return <section className="canvas-workspace" data-prompt-open={sheetOpen} aria-label={`${modes[mode]}工作区`}>
     <div className="canvas-input" ref={inputArea}>
       <div className="canvas-stage" inert={sheetOpen}>
+        <div className="canvas-label"><strong>{label}</strong><span>{modes[mode]}</span></div>
         <div className="canvas-large" aria-label="图片展示区" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); target.current = isSubject ? current?.id || "subject" : "reference"; void readFiles([...event.dataTransfer.files]); }}>
           {currentImage ? <ImagePreview src={currentImage} alt={label} disabled={locked} rotation={{ disabled: locked, maxBytes: (isSubject ? 2 : 4) * 1024 * 1024, onApply: next => isSubject ? current ? update({ subjectImage: next }) : onSubject(next) : onReferenceRotate(next) }} />
             : !isSubject ? <LoadingPlaceholder active={!error}>{error || "正在读取参考图…"}</LoadingPlaceholder>
@@ -125,6 +125,7 @@ export default function CanvasWorkspace({ revealPrompt, onPromptRevealed, contex
           <button aria-label="查看参考图" aria-pressed={!isSubject} onClick={() => select("reference")}>{image ? <img src={image} alt="" /> : <Icon name="image" />}参考图</button>
         </div>
       </div>
+      <div className="canvas-controls">
       <div className="canvas-floating-tools" role="group" aria-label="画布工具栏" ref={modeControl}>
         <SelectField label="逆向模式" aria-label="逆向模式" value={mode} disabled={modeDisabled || uploading} onChange={event => { setOpen(false); setSettings(false); onMode(event.target.value as Mode); }}>
           {(Object.keys(modes) as Mode[]).map(key => <option key={key} value={key}>{modes[key]}</option>)}
@@ -135,7 +136,6 @@ export default function CanvasWorkspace({ revealPrompt, onPromptRevealed, contex
         {mode !== "recreate" && <button className="quiet-button canvas-icon-tool" aria-label="移除主体" title="移除主体" disabled={locked || !isSubject} onClick={remove}><Icon name="trash" /></button>}
         {mode === "multi-reenact" && <button ref={settingsTrigger} className="quiet-button canvas-icon-tool" aria-label="主体设置" title="主体设置" aria-expanded={settings} disabled={locked || !current} onClick={() => setSettings(!settings)}><Icon name="settings" /></button>}
         {versions && <><span className="canvas-tool-divider" /><div className="canvas-versions">{versions}</div></>}
-        {hasPrompt && <button ref={trigger} className="quiet-button canvas-prompt-link" aria-label={sheetOpen ? "收起提示词" : "展开提示词"} aria-expanded={sheetOpen} aria-controls="workspace-prompt-sheet" onClick={() => { setSettings(false); setOpen(!sheetOpen); }}><Icon name={sheetOpen ? "chevronDown" : "edit"} /><span>{sheetOpen ? "收起" : "提示词"}</span><i className={stale ? "canvas-stale-dot" : "canvas-ready-dot"} /></button>}
         {settings && current && <div ref={settingsPanel} className="canvas-subject-settings" role="group" aria-label="主体设置" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setSettings(false); settingsTrigger.current?.focus(); } }}>
           <div className="canvas-subject-head"><strong>{label}</strong><button className="quiet-button" aria-label="关闭主体设置" onClick={() => { setSettings(false); settingsTrigger.current?.focus(); }}><Icon name="close" /></button></div>
           <SelectField label="用途" aria-label="主体用途" disabled={locked} value={current.role} onChange={event => update({ role: event.target.value })}>{["自动", "人物", "物品", "服饰", "场景", "细节"].map(role => <option key={role}>{role}</option>)}</SelectField>
@@ -146,17 +146,19 @@ export default function CanvasWorkspace({ revealPrompt, onPromptRevealed, contex
       <div className="canvas-composer" inert={sheetOpen}>
         <TaskInstruction value={instruction} disabled={disabled || uploading || promptEditing} onChange={onInstruction} />
         <div className="canvas-composer-bar">
+        {hasPrompt && <button ref={trigger} className="quiet-button canvas-prompt-link" aria-label={sheetOpen ? "收起提示词" : "展开提示词"} aria-expanded={sheetOpen} aria-controls="workspace-prompt-sheet" onClick={() => { setSettings(false); setOpen(true); }}><Icon name={sheetOpen ? "chevronDown" : "edit"} /><span>{sheetOpen ? "收起" : "提示词"}</span><i className={stale ? "canvas-stale-dot" : "canvas-ready-dot"} /></button>}
           <span data-reminder-task={!uploadError && error ? errorTaskId : undefined} className={uploadError || error ? "canvas-error" : ""} role={uploadError || error ? "alert" : "status"} title={uploadError || error || status}>{uploadError || error || (uploading ? "正在读取图片…" : status || (stale ? "提示词待更新" : ""))}{onRetryReference && <button className="text-button" onClick={onRetryReference}>重试</button>}</span>
           {mode === "style" && subjectImage && <button className="quiet-button canvas-generic" disabled={locked || promptEditing || !instruction.trim()} title="不使用主体图，仅提取通用风格" onClick={onExtract}>仅提取风格</button>}
           <button ref={generate} className="primary canvas-generate" disabled={running ? cancelling : reverseDisabled || uploading} aria-busy={running} onClick={running ? onCancel : onReverse}><Icon name={running ? "close" : hasPrompt ? "retry" : "edit"} />{running ? cancelling ? "正在取消…" : "取消" : hasPrompt ? stale ? "更新提示词" : "重新生成" : "生成提示词"}{!running && <Icon name="arrow" />}</button>
         </div>
       </div>
-    </div>
-    <input hidden ref={upload} type="file" accept="image/png,image/jpeg,image/webp" multiple={mode === "multi-reenact"} aria-label="上传画布图片" onChange={event => { void readFiles([...event.target.files || []]); event.target.value = ""; }} />
     <PromptSheet open={sheetOpen} onOpenChange={setOpen} returnFocus={returnFocus} reduced={reduced}>
       {stale && <div className="canvas-prompt-notice"><span role="status">{status || "提示词待更新"}</span><button className="text-button" onClick={() => setOpen(false)}>返回输入</button></div>}
       <div className="canvas-prompt-content">{prompt}</div>
       <div className="canvas-generation-actions" ref={generationActions} />
     </PromptSheet>
+      </div>
+    </div>
+    <input hidden ref={upload} type="file" accept="image/png,image/jpeg,image/webp" multiple={mode === "multi-reenact"} aria-label="上传画布图片" onChange={event => { void readFiles([...event.target.files || []]); event.target.value = ""; }} />
   </section>;
 }

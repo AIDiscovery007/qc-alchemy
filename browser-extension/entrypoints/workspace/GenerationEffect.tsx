@@ -42,11 +42,11 @@ export default function GenerationEffect({ running, image, failed }: { running: 
         context.fillStyle = "#e7e2d7";
         context.fillRect(0, 0, canvas.width, canvas.height);
         // img-fx 0.5.1 trims 0.6% of the shorter edge. Compose within that crop
-        // so its cover-based reveal matches our existing contain + 16px padding.
+        // so its cover-based reveal matches the aligned canvas with edge-to-edge contain.
         const trim = Math.min(canvas.width, canvas.height) * 0.006;
         context.translate(trim, trim);
         context.scale((canvas.width - 2 * trim) / width, (canvas.height - 2 * trim) / height);
-        const scale = Math.min(Math.max(1, width - 32) / source.naturalWidth, Math.max(1, height - 32) / source.naturalHeight);
+        const scale = Math.min(Math.max(1, width) / source.naturalWidth, Math.max(1, height) / source.naturalHeight);
         const w = source.naturalWidth * scale, h = source.naturalHeight * scale;
         context.drawImage(source, (width - w) / 2, (height - h) / 2, w, h);
         const composed = new Image();

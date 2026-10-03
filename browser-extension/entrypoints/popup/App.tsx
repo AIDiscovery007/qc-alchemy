@@ -1,3 +1,4 @@
+import ProjectVisibilityToast from "./ProjectVisibilityToast";
 import { ReminderToast, useTaskReminders } from "./TaskReminders";
 import { type TaskNotice } from "../../lib/task-reminders";
 import type { PromptDraft, WorkspaceDraft, WorkspaceHandoff } from "../../lib/workspace-handoff";
@@ -548,6 +549,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
     }
     visibilityPending.current = true;
     const focus = document.activeElement;
+    const keyboardFocus = focus?.matches(":focus-visible");
     setBusy(true); setVisibilityError("");
     const revision = ++selectionRevision.current;
     projectRevision.current++;
@@ -564,7 +566,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         const remaining = changed.filter(id => !updatedIds.includes(id));
         setVisibilityNotice(undo && remaining.length ? { ids: remaining, hidden: !hidden, undone: false } : { ids: updatedIds, hidden, undone: undo });
         if (undo && remaining.length) setVisibilityError(`还有 ${remaining.length} 个项目未撤销，请重试。`);
-        requestAnimationFrame(() => { if (focus && (!focus.isConnected || focus.matches(":disabled"))) visibilityFeedback.current?.focus(); });
+        requestAnimationFrame(() => { if (keyboardFocus && focus && (!focus.isConnected || focus.matches(":disabled"))) visibilityFeedback.current?.focus(); });
       }
       library.refresh();
       setRefreshNonce(value => value + 1);
@@ -707,10 +709,10 @@ export default function App({ embedded = false, workspace = false }: { embedded?
   }, [workspace, drawerOpen, resultPane]);
   useEffect(() => {
     if (!workspace || !narrow || !drawerOpen) return;
-    if (editor.current?.contains(document.activeElement) || document.activeElement === document.body) resultPane?.querySelector<HTMLButtonElement>(".result-collapse")?.focus({ preventScroll: true });
+    if (editor.current?.contains(document.activeElement) || document.activeElement === document.body) resultReturn.current?.focus({ preventScroll: true });
   }, [workspace, narrow, drawerOpen, resultPane]);
   const generationPanel = activeJob?.result ? <GenerationPanel key={activeJob.id} onTargetSelected={() => setTargetGeneration(undefined)} targetGeneration={targetGeneration?.jobId === activeJob.id ? targetGeneration.id : undefined} job={activeJob} lang={lang} workspace={workspace}
-                  drawerOpen={drawerOpen} onCollapse={closeResults} requestError={drawer.error} requestPending={drawer.pending}
+                  drawerOpen={drawerOpen} requestError={drawer.error} requestPending={drawer.pending}
                   onRequestState={(pending, error) => dispatchDrawer({ type: pending ? "request" : "settled", key: drawerKey, error })} versionNumber={modeJobs(preferences.mode).length - modeJobs(preferences.mode).findIndex(item => item.id === activeJob.id)} actionsTarget={generationActions} disabled={!connected || !selectedModel || busy || modelBusy || cliBusy || !!running || !!promptDraft || (workspace && needsPrompt) || (activeJob.mode === "multi-reenact" && multiStale)}
                   subjectImage={activeJob.mode === "recreate" ? undefined : subjectImage(activeJob.mode)}
                   inputPreview={multiPreview}
@@ -730,7 +732,7 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       onKeyDownCapture={event => { event.currentTarget.dataset.motionInput = "keyboard"; }}
       onClickCapture={event => { if (!event.detail) event.currentTarget.dataset.motionInput = "keyboard"; }}
       onKeyDown={event => {
-        if (event.key === "Escape" && drawerOpen && !event.defaultPrevented && !(event.target as Element).closest("dialog")) { event.stopPropagation(); closeResults(); }
+        if (event.key === "Escape" && drawerOpen && !event.defaultPrevented && !(event.target as Element).closest('dialog, .canvas-workspace[data-prompt-open="true"]')) { event.stopPropagation(); closeResults(); }
       }}>
       {reminders.toast.length > 0 && <ReminderToast container={reminderRoot.current?.querySelector("dialog[open]") || reminderRoot.current} notices={reminders.toast} onClose={reminders.dismiss} onOpen={openNotice} />}
       {!workspace && reminders.unread.length > 0 && <button className="text-button" onClick={() => openNotice(reminders.unread.length === 1 ? reminders.unread[0] : undefined)}><span className="reminder-dot" data-failed={reminders.unread.some(item => item.status === "failed")} />{reminders.unread.length} 项结果未查看</button>}
@@ -748,10 +750,14 @@ export default function App({ embedded = false, workspace = false }: { embedded?
       <div className={workspace ? "workspace-main" : "compact-main"}>
       {workspace && !galleryOpen && <header className="workspace-head"><div><h1>{historyOpen ? "全部项目" : activeProject?.title || "新项目"}</h1></div><div className="head-actions">
         {historyOpen && <div ref={setProjectSearchTarget} />}
-        {!historyOpen && drawer.content && !drawerOpen && <button ref={resultReturn} className="outline-button result-return" aria-controls="workspace-results" aria-expanded={false} onClick={() => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}><Icon name="image" />{drawer.label}</button>}
+        {!historyOpen && drawer.content && <button ref={narrow ? undefined : resultReturn} className="outline-button result-return" aria-controls="workspace-results" aria-expanded={drawerOpen} aria-label={drawerOpen ? "收起生成结果" : drawer.label} onClick={drawerOpen ? closeResults : () => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}><Icon name="image" />{drawerOpen ? "收起结果" : drawer.label}</button>}
         {historyOpen ? <HiddenProjectsToggle shown={showHidden} disabled={busy || !connected} onToggle={() => void toggleHiddenProjects()} /> : activeProject && <button type="button" className="text-button project-visibility-action" disabled={busy || !connected}
           onClick={() => void setProjectsHidden([activeProject.id], !activeProject.hidden).catch(error => setVisibilityError(error.message))}>{activeProject.hidden ? "恢复项目" : "隐藏项目"}</button>}
       </div></header>}
+      {workspace && !historyOpen && !galleryOpen && drawer.content && <div className="workspace-canvas-tabs" role="group" aria-label="画布视图">
+        <button ref={narrow && !drawerOpen ? resultReturn : undefined} aria-pressed={!drawerOpen} onClick={closeResults}>输入画布</button>
+        <button ref={narrow && drawerOpen ? resultReturn : undefined} aria-pressed={drawerOpen} onClick={() => dispatchDrawer({ type: "toggle", key: drawerKey, open: true, seen: drawer.completed })}>生成结果</button>
+      </div>}
       {!workspace && !embedded && <header>
         <div className="brand">
           <img className="brand-mark" src={logo} alt="" />
@@ -818,11 +824,9 @@ export default function App({ embedded = false, workspace = false }: { embedded?
         <button className="text-button" onClick={() => workspace ? setSettings(true) : void openWorkspace()}>选择模型</button>
       </div>}
 
-      {!tasksOpen && visibilityError && <div className="error" role="alert">{visibilityError}</div>}
-      {visibilityNotice && <div ref={visibilityFeedback} className="project-visibility-feedback" tabIndex={-1}>
-        <span role="status">{visibilityNotice.undone ? "已撤销 · " : ""}{visibilityNotice.hidden ? "已隐藏" : "已恢复"} {visibilityNotice.ids.length} 个项目</span>
-        {!visibilityNotice.undone && <button type="button" className="text-button" disabled={busy} onClick={() => void setProjectsHidden(visibilityNotice.ids, !visibilityNotice.hidden, true).catch(error => setVisibilityError(error.message))}>撤销</button>}
-      </div>}
+      {(visibilityNotice || (!tasksOpen && visibilityError)) && <ProjectVisibilityToast notice={visibilityNotice} error={tasksOpen ? "" : visibilityError} busy={busy} containerRef={visibilityFeedback}
+        onDismiss={() => { setVisibilityNotice(undefined); setVisibilityError(""); }}
+        onUndo={() => { if (visibilityNotice) void setProjectsHidden(visibilityNotice.ids, !visibilityNotice.hidden, true).catch(error => setVisibilityError(error.message)); }} />}
       {workspace && newProjectOpen && <NewProject busy={busy} error={error} onClose={() => setNewProjectOpen(false)} onUpload={() => referenceInput.current?.click()} />}
       {workspace && settings && <SettingsCenter connected={connected} serviceBusy={serviceBusy} onClose={() => setSettings(false)} onConnected={() => setPreferences(value => ({ ...value, paired: true }))} />}
       {workspace && tasksOpen && <TaskCenter visibilityError={visibilityError} unread={reminders.unread} onNoticeOpen={openNotice} showHidden={showHidden} hiddenProjectIds={hiddenProjectIds} busy={busy} onToggleHidden={() => void toggleHiddenProjects()} onClose={() => setTasksOpen(false)} onUpdate={updateJob} onOpen={async (projectId, mode, jobId, generationId) => {
