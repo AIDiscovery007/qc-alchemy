@@ -220,9 +220,17 @@ details p { white-space: pre-wrap; margin-bottom: 0; overflow-wrap: anywhere; }
 .project-pagination .secondary { width: auto; margin: 0; padding: 8px 14px; }
 .project-page-items[data-loading="true"], .workspace-project-grid[data-loading="true"] { opacity: .6; }
 
-.hidden-projects-toggle[aria-pressed="true"] { background: var(--yellow); border-color: transparent; }
-.hidden-projects-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; white-space: nowrap; }
-.hidden-projects-toggle span { width: 12px; }
+.hidden-projects-toggle { position: relative; flex-shrink: 0; }
+.hidden-projects-toggle[aria-pressed="true"]:not(:disabled) { background: var(--yellow); }
+.hidden-projects-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.hidden-projects-toggle > span { position: absolute; inset: 0; display: grid; place-items: center; transform-origin: center; }
+.hidden-projects-toggle .visibility-eye-open { opacity: 0; transform: scaleY(.1); }
+.hidden-projects-toggle[aria-pressed="true"] .visibility-eye-open { opacity: 1; transform: scaleY(1); }
+.hidden-projects-toggle[aria-pressed="true"] .visibility-eye-closed { opacity: 0; transform: scaleY(.7); }
+.app[data-motion="full"][data-motion-input="pointer"] .hidden-projects-toggle > span { transition: transform 180ms ease-in-out, opacity 180ms ease-in-out; }
+@media (prefers-reduced-motion: reduce) {
+  .app .hidden-projects-toggle, .app .hidden-projects-toggle > span { transition: none !important; }
+}
 .history-view-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .project-visibility-action { flex-shrink: 0; white-space: nowrap; }
 .project-visibility-feedback { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 16px; padding: 8px 12px; border-radius: 8px; background: var(--surface-muted); font-size: 12px; }
